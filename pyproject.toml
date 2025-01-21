@@ -26,7 +26,11 @@ dependencies = [
 ]
 
 [project.scripts]
-layup = "layup.layup:main"
+layup = "layup_cmdline.main:main"
+layup-visualise = "layup_cmdline.visualise:main"
+layup-orbitfit = "layup_cmdline.orbitfit:main"
+layup-predict = "layup_cmdline.predict:main"
+layup-bootstrap = "layup_cmdline.bootstrap:main"
 
 [project.urls]
 "Source Code" = "https://github.com/Smithsonian/layup"
