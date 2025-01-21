@@ -29,7 +29,6 @@ def main():
 
 
 def execute(args):
-
     if args.p:
         print("print statement used for visualise")
     else:
