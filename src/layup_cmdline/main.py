@@ -62,7 +62,7 @@ def main():
     if args.version:
         import layup
 
-        #print(layup.__version__)
+        # print(layup.__version__)
         print("layup.__version__ has not be added yet")
         return
 
