@@ -1,5 +1,5 @@
 #
-# The `layup visualise` subcommand implementation
+# The `layup visualize` subcommand implementation
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
@@ -8,9 +8,9 @@ import os
 
 def main():
     parser = LayupArgumentParser(
-        prog="layup visualise",
+        prog="layup visualize",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="This would start visualise",
+        description="This would start visualize",
     )
 
     optional = parser.add_argument_group("Optional arguments")
@@ -30,6 +30,6 @@ def main():
 
 def execute(args):
     if args.p:
-        print("print statement used for visualise")
+        print("print statement used for visualize")
     else:
-        print("Hello world this would start visualise")
+        print("Hello world this would start visualize")

@@ -27,7 +27,7 @@ dependencies = [
 
 [project.scripts]
 layup = "layup_cmdline.main:main"
-layup-visualise = "layup_cmdline.visualise:main"
+layup-visualize = "layup_cmdline.visualize:main"
 layup-orbitfit = "layup_cmdline.orbitfit:main"
 layup-predict = "layup_cmdline.predict:main"
 layup-bootstrap = "layup_cmdline.bootstrap:main"

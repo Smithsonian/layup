@@ -32,7 +32,7 @@ def main():
     description = "layup survey simulator suite."
     epilog_text = (
         "These are the most common layup verbs:\n\n"
-        "   visualise      visualise orbits\n"
+        "   visualize      visualise orbits\n"
         "   orbitfit       fit orbits\n"
         "   predict        predict orbits\n"
         "   bootstrap      Download datafiles required to run layup\n"
