@@ -32,3 +32,7 @@ def execute(args):
         print("print statement used for orbitfit")
     else:
         print("Hello world this would start orbitfit")
+
+
+if __name__ == "__main__":
+    main()

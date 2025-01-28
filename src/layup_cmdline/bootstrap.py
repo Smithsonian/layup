@@ -32,3 +32,7 @@ def execute(args):
         print("print statement used for bootstrap")
     else:
         print("Hello world this would start bootstrap")
+
+
+if __name__ == "__main__":
+    main()
