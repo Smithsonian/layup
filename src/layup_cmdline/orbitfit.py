@@ -37,7 +37,7 @@ def execute(args):
 
     # Showing how Configs file is called and how parameters are used
     configs = layupConfigs("src/layup/config_setups/Default_config_file.ini")
-    print(configs.auxiliary.jpl_planets)
+    print("printing the filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
 
 if __name__ == "__main__":
