@@ -6,28 +6,23 @@ from layup_cmdline.layupargumentparser import LayupArgumentParser
 import sys
 
 
-
-
 def execute(args):  # pragma: no cover
-
-
-
 
     #
     # NOTE: DO NOT MOVE THESE IMPORTS TO THE TOP LEVEL OF THE MODULE !!!
     #
-    #       Importing sorcha from the function and not at the top-level of the module
+    #       Importing layup from the function and not at the top-level of the module
     #       allows us to exit quickly and print the help/error message (in case there
-    #       was a mistake on the command line). Importing sorcha can take 5 seconds or
+    #       was a mistake on the command line). Importing layup can take 5 seconds or
     #       more, and making the user wait that long just to print out an erro message
     #       is poor user experience.
     #
-    from layup.utilities.layup_copy_configs import copy_demo_configs
+    from layup.utilities.layupCopyConfigs import copy_demo_configs
     import os
 
     copy_location = os.path.abspath(args.path)
-    which_configs="Default"
-    return copy_demo_configs(copy_location,which_configs, args.force)
+    which_configs = "Default"
+    return copy_demo_configs(copy_location, which_configs, args.force)
 
 
 def main():
@@ -55,6 +50,7 @@ def main():
 
     args = parser.parse_args()
     return execute(args)
+
 
 if __name__ == "__main__":
     main()

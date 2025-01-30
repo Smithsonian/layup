@@ -33,6 +33,12 @@ def execute(args):
     else:
         print("Hello world this would start orbitfit")
 
+    from layup.utilities.layupConfigs import layupConfigs
+
+    # Showing how Configs file is called and how parameters are used
+    configs = layupConfigs("src/layup/config_setups/Default_config_file.ini")
+    print(configs.auxiliary.jpl_planets)
+
 
 if __name__ == "__main__":
     main()

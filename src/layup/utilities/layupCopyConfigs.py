@@ -28,11 +28,12 @@ def copy_demo_configs(copy_location, which_configs, force_overwrite):
     None
 
     """
+    # For the future multiple config file formats can be stored in config_setups and be called
 
     _ = FindDirectoryOrExit(copy_location, "filepath")
 
     config_data_root = files("layup.config_setups")
-    
+
     configs = {
         "Default": ["Default_config_file.ini"],
     }
@@ -43,9 +44,7 @@ def copy_demo_configs(copy_location, which_configs, force_overwrite):
     #     config_locations = [fn for fns in configs.values() for fn in fns]
     else:
         sys.exit(
-            "String '{}' not recognised for 'configs' variable. Must be 'Default' or 'all'.".format(
-                which_configs
-            )
+            "String '{}' not recognised for 'configs' variable. Must be 'Default'.".format(which_configs)
         )
 
     for fn in config_locations:
