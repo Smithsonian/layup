@@ -10,7 +10,6 @@ def test_layupCopyConfigs(tmp_path):
 
     assert os.path.isfile(os.path.join(tmp_path, "Default_config_file.ini"))
 
-
     # test that files are successfully overwritten if -f flag used
     copy_demo_configs(tmp_path, "Default", True)
 
@@ -27,10 +26,7 @@ def test_layupCopyConfigs(tmp_path):
     with pytest.raises(SystemExit) as e2:
         copy_demo_configs(tmp_path, "laphroaig", True)
 
-    assert (
-        e2.value.code
-        == "String 'laphroaig' not recognised for 'configs' variable. Must be 'Default'."
-    )
+    assert e2.value.code == "String 'laphroaig' not recognised for 'configs' variable. Must be 'Default'."
 
     # test the error message if file exists and overwrite isn't forced
 
@@ -41,5 +37,3 @@ def test_layupCopyConfigs(tmp_path):
         e3.value.code
         == "Identically named file exists at location. Re-run with -f or --force to force overwrite."
     )
-
-

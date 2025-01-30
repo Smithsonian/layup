@@ -11,7 +11,9 @@ from layup.utilities.dataUtilitiesForTests import get_config_setups_filepath
 def test_FindFileOrExit():
     from layup.utilities.fileAccessUtils import FindFileOrExit
 
-    test_file = FindFileOrExit(get_config_setups_filepath("Default_config_file.ini"),"Default_config_file.ini")
+    test_file = FindFileOrExit(
+        get_config_setups_filepath("Default_config_file.ini"), "Default_config_file.ini"
+    )
 
     with pytest.raises(SystemExit) as e:
         FindFileOrExit("totally_fake_file.txt", "test")

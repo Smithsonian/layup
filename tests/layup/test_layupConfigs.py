@@ -1,13 +1,9 @@
-
-
 import pytest
 from layup.utilities.dataUtilitiesForTests import get_config_setups_filepath
 from layup.utilities.layupConfigs import (
     layupConfigs,
     auxiliaryConfigs,
 )
-
-
 
 
 correct_auxciliary_URLs = {
@@ -52,7 +48,6 @@ def test_layupConfigs():
     assert correct_auxciliary_filenames == test_configs.auxiliary.__dict__["data_file_list"]
 
 
-
 ##################################################################################################################################
 
 # auxiliary config test
@@ -95,5 +90,3 @@ def test_auxiliary_config_making_url_none(file):
 
     test_configs = auxiliaryConfigs(**aux_configs)
     assert getattr(test_configs, file + "_url") == None
-
-
