@@ -43,7 +43,7 @@ def test_layupConfigs():
     """
     tests that sorchaConfigs reads in config file correctly
     """
-    # general test to make sure, overall, everything works. checks just one file: sorcha_config_demo.ini
+    # general test to make sure, overall, everything works. checks just one file: "Default_config_file.ini"
 
     config_file_location = get_config_setups_filepath("Default_config_file.ini")
     test_configs = layupConfigs(config_file_location)

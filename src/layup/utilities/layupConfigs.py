@@ -81,7 +81,7 @@ class auxiliaryConfigs:
 
     @property
     def default_url(self):
-        """returns a dictionary of the default urls used in this version of sorcha"""
+        """returns a dictionary of the default urls used in this version of layup"""
         return {
             "planet_ephemeris": self.__class__.planet_ephemeris_url,
             "earth_predict": self.__class__.earth_predict_url,
@@ -96,7 +96,7 @@ class auxiliaryConfigs:
 
     @property
     def default_filenames(self):
-        """returns a dictionary of the default filenames used in this version"""
+        """returns a dictionary of the default filenames used in this version of layup"""
         return {
             "planet_ephemeris": self.__class__.planet_ephemeris,
             "earth_predict": self.__class__.earth_predict,

@@ -16,7 +16,7 @@ def get_config_setups_filepath(filename):
         The full path to the file.
     """
 
-    # This file's path: `<base_directory>/src/sorcha/utilities/test_data_utilities.py`
+    # This file's path: `<base_directory>/src/layup/utilities/dataUtilitiesForTests.py
     # THIS_DIR = `<base_directory>/`
     THIS_DIR = Path(__file__).parent.parent.parent.parent
 

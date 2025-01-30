@@ -6,7 +6,6 @@ import pytest
 import glob
 
 from layup.utilities.dataUtilitiesForTests import get_config_setups_filepath
-# from layup.utilities.layupArguments import sorchaArguments
 
 
 def test_FindFileOrExit():
