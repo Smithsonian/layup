@@ -22,12 +22,12 @@ def FindFileOrExit(arg_fn, argname):
 
     """
 
-    pplogger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
 
     if os.path.exists(arg_fn):
         return arg_fn
     else:
-        pplogger.error("ERROR: filename {} supplied for {} argument does not exist.".format(arg_fn, argname))
+        logger.error("ERROR: filename {} supplied for {} argument does not exist.".format(arg_fn, argname))
         sys.exit("ERROR: filename {} supplied for {} argument does not exist.".format(arg_fn, argname))
 
 
@@ -49,10 +49,10 @@ def FindDirectoryOrExit(arg_fn, argname):
         The filepath of the directory to be checked.
     """
 
-    pplogger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
 
     if os.path.isdir(arg_fn):
         return arg_fn
     else:
-        pplogger.error("ERROR: filepath {} supplied for {} argument does not exist.".format(arg_fn, argname))
+        logger.error("ERROR: filepath {} supplied for {} argument does not exist.".format(arg_fn, argname))
         sys.exit("ERROR: filepath {} supplied for {} argument does not exist.".format(arg_fn, argname))

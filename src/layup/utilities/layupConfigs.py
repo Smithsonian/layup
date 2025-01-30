@@ -204,14 +204,14 @@ class layupConfigs:
     """auxiliaryConfigs dataclass which stores the keywords from the AUXILIARY section of the config file."""
 
     # When adding a new config dataclass or new dataclass config parameters remember to add these to the function PrintConfigsToLog below.
-    pplogger: None = None
+    logger: None = None
     """The Python logger instance"""
 
     # this __init__ overrides a dataclass's inbuilt __init__ because we want to populate this from a file, not explicitly ourselves
     def __init__(self, config_file_location=None):
 
         # attach the logger object so we can print things to the Sorcha logs
-        self.pplogger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
 
         if config_file_location:  # if a location to a config file is supplied...
             # Save a raw copy of the configuration to the logs as a backup.
