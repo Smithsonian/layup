@@ -223,6 +223,8 @@ class layupConfigs:
             self._read_configs_from_object(
                 config_object
             )  # now we call a function that populates the class attributes
+        else:
+            self._populate_configs_class_with_default()
 
     def _read_configs_from_object(self, config_object):
         """
@@ -258,5 +260,25 @@ class layupConfigs:
 
             else:
                 config_instance = config_section()  # if section not in config file take default values
+            section_key = section.lower()
+            setattr(self, section_key, config_instance)
+
+    def _populate_configs_class_with_default(self):
+        """
+        function that populates the class attributes
+
+        Parameters
+        -----------
+        None
+
+        Returns
+        ----------
+        None
+        """
+        section_list = {
+            "AUXILIARY": auxiliaryConfigs,
+        }
+        for section, config_section in section_list.items():
+            config_instance = config_section()
             section_key = section.lower()
             setattr(self, section_key, config_instance)

@@ -13,16 +13,16 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="This would start orbitfit",
     )
-    required = parser.add_argument_group("Required arguments")
-    required.add_argument(
+    optional = parser.add_argument_group("Optional arguments")
+    optional.add_argument(
         "-c",
         "--config",
         help="Input configuration file name",
         type=str,
         dest="c",
-        required=True,
+        required=False,
     )
-    optional = parser.add_argument_group("Optional arguments")
+
     optional.add_argument(
         "-p",
         "--print",
@@ -46,9 +46,13 @@ def execute(args):
     from layup.utilities.layupConfigs import layupConfigs
 
     # Showing how Configs file is called and how parameters are used
-    FindFileOrExit(args.c, "-c, --config")
-    configs = layupConfigs(args.c)
-    print("printing the filename of jpl_planets:", configs.auxiliary.jpl_planets)
+    if args.c:
+        FindFileOrExit(args.c, "-c, --config")
+        configs = layupConfigs(args.c)
+        print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
+    else:
+        configs = layupConfigs()
+        print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
 
 if __name__ == "__main__":
