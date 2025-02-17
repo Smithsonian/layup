@@ -66,7 +66,6 @@ def test_layupConfigs():
     ],
 )
 def test_auxiliary_config_url_given_filename_not(file):
-
     aux_configs = {file + "_url": "new_url"}
     with pytest.raises(SystemExit) as error_text:
         test_configs = auxiliaryConfigs(**aux_configs)

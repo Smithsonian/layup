@@ -3,7 +3,6 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-import os
 
 
 def main():

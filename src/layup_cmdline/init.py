@@ -3,11 +3,9 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-import sys
 
 
 def execute(args):  # pragma: no cover
-
     #
     # NOTE: DO NOT MOVE THESE IMPORTS TO THE TOP LEVEL OF THE MODULE !!!
     #

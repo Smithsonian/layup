@@ -1,9 +1,6 @@
 from dataclasses import dataclass
 import configparser
-import logging
 import sys
-import os
-import numpy as np
 
 
 @dataclass
@@ -125,7 +122,6 @@ class auxiliaryConfigs:
                     self.default_filenames[file] == getattr(self, file)
                     and getattr(self, file + "_url") != self.default_url[file]
                 ):
-                    logging.error(f"ERROR: url for {file} given but filename for {file} not given")
                     sys.exit(f"ERROR: url for {file} given but filename for {file} not given")
 
                 elif (
@@ -203,27 +199,16 @@ class layupConfigs:
     auxiliary: auxiliaryConfigs = None
     """auxiliaryConfigs dataclass which stores the keywords from the AUXILIARY section of the config file."""
 
-    # When adding a new config dataclass or new dataclass config parameters remember to add these to the function PrintConfigsToLog below.
-    logger: None = None
-    """The Python logger instance"""
-
     # this __init__ overrides a dataclass's inbuilt __init__ because we want to populate this from a file, not explicitly ourselves
     def __init__(self, config_file_location=None):
-
-        # attach the logger object so we can print things to the Sorcha logs
-        self.logger = logging.getLogger(__name__)
-
         if config_file_location:  # if a location to a config file is supplied...
-            # Save a raw copy of the configuration to the logs as a backup.
-            with open(config_file_location, "r") as file:
-                logging.info(f"Copy of configuration file {config_file_location}:\n{file.read()}")
-
             config_object = configparser.ConfigParser()  # create a ConfigParser object
             config_object.read(config_file_location)  # and read the whole config file into it
             self._read_configs_from_object(
                 config_object
             )  # now we call a function that populates the class attributes
         else:
+            # if a file is not supplied the config class will be populated with the default values.
             self._populate_configs_class_with_default()
 
     def _read_configs_from_object(self, config_object):
@@ -250,7 +235,6 @@ class layupConfigs:
         # general function that reads in config file sections into there config dataclasses
         for section, config_section in section_list.items():
             if config_object.has_section(section):
-
                 extra_args = {}
                 # example for using extra args in a config section
                 if section == "OUTPUT":
@@ -259,13 +243,15 @@ class layupConfigs:
                 config_instance = config_section(**section_dict, **extra_args)
 
             else:
-                config_instance = config_section()  # if section not in config file take default values
+                config_instance = (
+                    config_section()
+                )  # if section not in config file take default values, This means if a blank config file is read in it will populate class with defaults.
             section_key = section.lower()
             setattr(self, section_key, config_instance)
 
     def _populate_configs_class_with_default(self):
         """
-        function that populates the class attributes
+        function that populates the class attributes with their default values
 
         Parameters
         -----------

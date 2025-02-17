@@ -4,7 +4,6 @@
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 from layup.utilities.fileAccessUtils import FindFileOrExit
-import os
 
 
 def main():
