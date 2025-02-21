@@ -3,7 +3,7 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-import os
+from layup.utilities.fileAccessUtils import FindFileOrExit
 
 
 def main():
@@ -13,6 +13,15 @@ def main():
         description="This would start orbitfit",
     )
     optional = parser.add_argument_group("Optional arguments")
+    optional.add_argument(
+        "-c",
+        "--config",
+        help="Input configuration file name",
+        type=str,
+        dest="c",
+        required=False,
+    )
+
     optional.add_argument(
         "-p",
         "--print",
@@ -32,3 +41,18 @@ def execute(args):
         print("print statement used for orbitfit")
     else:
         print("Hello world this would start orbitfit")
+
+    from layup.utilities.layupConfigs import layupConfigs
+
+    # Showing how Configs file is called and how parameters are used
+    if args.c:
+        FindFileOrExit(args.c, "-c, --config")
+        configs = layupConfigs(args.c)
+        print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
+    else:
+        configs = layupConfigs()
+        print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
+
+
+if __name__ == "__main__":
+    main()

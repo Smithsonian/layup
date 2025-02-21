@@ -3,7 +3,6 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-import os
 
 
 def main():
@@ -32,3 +31,7 @@ def execute(args):
         print("print statement used for predict")
     else:
         print("Hello world this would start predict")
+
+
+if __name__ == "__main__":
+    main()
