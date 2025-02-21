@@ -27,7 +27,7 @@ def main():
     parser = LayupArgumentParser(
         prog="layup init",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Initialize configuration files for a new simulation.",
+        description="Initializes layup.",
     )
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")

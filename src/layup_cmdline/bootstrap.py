@@ -3,7 +3,8 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-import os
+
+from layup.utilities.fileAccessUtils import FindFileOrExit
 
 
 def main():
@@ -22,6 +23,15 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-c",
+        "--config",
+        help="Input configuration file name",
+        type=str,
+        dest="c",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -32,6 +42,17 @@ def execute(args):
         print("print statement used for bootstrap")
     else:
         print("Hello world this would start bootstrap")
+    # Showing how Configs file is called and how parameters are used
+
+    from layup.utilities.layupConfigs import layupConfigs
+
+    if args.c:
+        FindFileOrExit(args.c, "-c, --config")
+        configs = layupConfigs(args.c)
+        print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
+    else:
+        configs = layupConfigs()
+        print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
 
 if __name__ == "__main__":

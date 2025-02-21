@@ -36,7 +36,7 @@ def main():
         "   orbitfit       fit orbits\n"
         "   predict        predict orbits\n"
         "   bootstrap      Download datafiles required to run layup\n"
-        "   init           Initialize a new simulation.\n"
+        "   init           Initialize layup.\n"
         "\n"
         "To get more information, run the verb with --help. For example:\n\n"
         "   layup orbitfit --help\n"
