@@ -1,6 +1,6 @@
 import pytest
-from layup.utilities.dataUtilitiesForTests import get_config_setups_filepath
-from layup.utilities.layupConfigs import (
+from layup.utilities.data_utilities_for_tests import get_config_setups_filepath
+from layup.utilities.layup_configs import (
     layupConfigs,
     auxiliaryConfigs,
 )

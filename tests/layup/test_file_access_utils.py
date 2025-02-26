@@ -5,18 +5,18 @@ import configparser
 import pytest
 import glob
 
-from layup.utilities.dataUtilitiesForTests import get_config_setups_filepath
+from layup.utilities.data_utilities_for_tests import get_config_setups_filepath
 
 
-def test_FindFileOrExit():
-    from layup.utilities.fileAccessUtils import FindFileOrExit
+def test_find_file_or_exit():
+    from layup.utilities.file_access_utils import find_file_or_exit
 
-    test_file = FindFileOrExit(
+    test_file = find_file_or_exit(
         get_config_setups_filepath("Default_config_file.ini"), "Default_config_file.ini"
     )
 
     with pytest.raises(SystemExit) as e:
-        FindFileOrExit("totally_fake_file.txt", "test")
+        find_file_or_exit("totally_fake_file.txt", "test")
 
     assert test_file == get_config_setups_filepath("Default_config_file.ini")
     assert e.type == SystemExit
@@ -25,13 +25,13 @@ def test_FindFileOrExit():
     return
 
 
-def test_FindDirectoryOrExit():
-    from layup.utilities.fileAccessUtils import FindDirectoryOrExit
+def test_find_directory_or_exit():
+    from layup.utilities.file_access_utils import find_directory_or_exit
 
-    test_dir = FindDirectoryOrExit("./", "test")
+    test_dir = find_directory_or_exit("./", "test")
 
     with pytest.raises(SystemExit) as e:
-        FindDirectoryOrExit("./fake_dir/", "test")
+        find_directory_or_exit("./fake_dir/", "test")
 
     assert test_dir == "./"
     assert e.type == SystemExit

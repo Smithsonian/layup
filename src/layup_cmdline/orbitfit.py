@@ -3,7 +3,7 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-from layup.utilities.fileAccessUtils import FindFileOrExit
+from layup.utilities.file_access_utils import FindFileOrExit
 
 
 def main():
@@ -42,7 +42,7 @@ def execute(args):
     else:
         print("Hello world this would start orbitfit")
 
-    from layup.utilities.layupConfigs import layupConfigs
+    from layup.utilities.layup_configs import layupConfigs
 
     # Showing how Configs file is called and how parameters are used
     if args.c:

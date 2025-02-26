@@ -4,7 +4,7 @@
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 
-from layup.utilities.fileAccessUtils import FindFileOrExit
+from layup.utilities.file_access_utils import FindFileOrExit
 
 
 def main():
@@ -44,7 +44,7 @@ def execute(args):
         print("Hello world this would start bootstrap")
     # Showing how Configs file is called and how parameters are used
 
-    from layup.utilities.layupConfigs import layupConfigs
+    from layup.utilities.layup_configs import layupConfigs
 
     if args.c:
         FindFileOrExit(args.c, "-c, --config")
