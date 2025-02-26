@@ -1,8 +1,8 @@
 import pytest
 from layup.utilities.data_utilities_for_tests import get_config_setups_filepath
 from layup.utilities.layup_configs import (
-    layupConfigs,
-    auxiliaryConfigs,
+    LayupConfigs,
+    AuxiliaryConfigs,
 )
 
 
@@ -35,14 +35,14 @@ correct_auxciliary_filenames = [
 # Layup Configs test
 
 
-def test_layupConfigs():
+def test_layup_configs():
     """
     tests that sorchaConfigs reads in config file correctly
     """
     # general test to make sure, overall, everything works. checks just one file: "Default_config_file.ini"
 
     config_file_location = get_config_setups_filepath("Default_config_file.ini")
-    test_configs = layupConfigs(config_file_location)
+    test_configs = LayupConfigs(config_file_location)
     # check each section to make sure you get what you expect
     assert correct_auxciliary_URLs == test_configs.auxiliary.__dict__["urls"]
     assert correct_auxciliary_filenames == test_configs.auxiliary.__dict__["data_file_list"]
@@ -68,7 +68,7 @@ def test_layupConfigs():
 def test_auxiliary_config_url_given_filename_not(file):
     aux_configs = {file + "_url": "new_url"}
     with pytest.raises(SystemExit) as error_text:
-        test_configs = auxiliaryConfigs(**aux_configs)
+        AuxiliaryConfigs(**aux_configs)
     assert error_text.value.code == f"ERROR: url for {file} given but filename for {file} not given"
 
 
@@ -87,5 +87,5 @@ def test_auxiliary_config_url_given_filename_not(file):
 def test_auxiliary_config_making_url_none(file):
     aux_configs = {file: "new_filename"}
 
-    test_configs = auxiliaryConfigs(**aux_configs)
+    test_configs = AuxiliaryConfigs(**aux_configs)
     assert getattr(test_configs, file + "_url") == None

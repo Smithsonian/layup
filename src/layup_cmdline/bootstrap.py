@@ -44,14 +44,14 @@ def execute(args):
         print("Hello world this would start bootstrap")
     # Showing how Configs file is called and how parameters are used
 
-    from layup.utilities.layup_configs import layupConfigs
+    from layup.utilities.layup_configs import LayupConfigs
 
     if args.c:
         FindFileOrExit(args.c, "-c, --config")
-        configs = layupConfigs(args.c)
+        configs = LayupConfigs(args.c)
         print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
     else:
-        configs = layupConfigs()
+        configs = LayupConfigs()
         print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
 
