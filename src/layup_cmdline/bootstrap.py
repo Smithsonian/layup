@@ -4,7 +4,7 @@
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 
-from layup.utilities.file_access_utils import FindFileOrExit
+from layup.utilities.file_access_utils import find_file_or_exit
 
 
 def main():
@@ -47,7 +47,7 @@ def execute(args):
     from layup.utilities.layup_configs import LayupConfigs
 
     if args.c:
-        FindFileOrExit(args.c, "-c, --config")
+        find_file_or_exit(args.c, "-c, --config")
         configs = LayupConfigs(args.c)
         print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
     else:
