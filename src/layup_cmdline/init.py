@@ -15,7 +15,7 @@ def execute(args):  # pragma: no cover
     #       more, and making the user wait that long just to print out an erro message
     #       is poor user experience.
     #
-    from layup.utilities.layupCopyConfigs import copy_demo_configs
+    from layup.utilities.layup_copy_configs import copy_demo_configs
     import os
 
     copy_location = os.path.abspath(args.path)

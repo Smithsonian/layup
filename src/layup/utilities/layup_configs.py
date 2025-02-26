@@ -4,7 +4,7 @@ import sys
 
 
 @dataclass
-class auxiliaryConfigs:
+class AuxiliaryConfigs:
     """Data class for holding auxiliary section configuration file keys and validating them."""
 
     planet_ephemeris: str = "de440s.bsp"
@@ -193,10 +193,10 @@ class auxiliaryConfigs:
 
 
 @dataclass
-class layupConfigs:
+class LayupConfigs:
     """Dataclass which stores configuration file keywords in dataclasses."""
 
-    auxiliary: auxiliaryConfigs = None
+    auxiliary: AuxiliaryConfigs = None
     """auxiliaryConfigs dataclass which stores the keywords from the AUXILIARY section of the config file."""
 
     # this __init__ overrides a dataclass's inbuilt __init__ because we want to populate this from a file, not explicitly ourselves
@@ -228,7 +228,7 @@ class layupConfigs:
 
         # list of sections and corresponding config file
         section_list = {
-            "AUXILIARY": auxiliaryConfigs,
+            "AUXILIARY": AuxiliaryConfigs,
         }
         # when adding new sections in config file this general function needs the name of the section in uppercase
         # to be the same as the attributes defined above in lowercase e.g. section INPUT has attribute input
@@ -262,7 +262,7 @@ class layupConfigs:
         None
         """
         section_list = {
-            "AUXILIARY": auxiliaryConfigs,
+            "AUXILIARY": AuxiliaryConfigs,
         }
         for section, config_section in section_list.items():
             config_instance = config_section()

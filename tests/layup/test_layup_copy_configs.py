@@ -3,7 +3,7 @@ import pytest
 
 
 def test_layupCopyConfigs(tmp_path):
-    from layup.utilities.layupCopyConfigs import copy_demo_configs
+    from layup.utilities.layup_copy_configs import copy_demo_configs
 
     # test that the config files are successfully copied
     copy_demo_configs(tmp_path, "Default", False)

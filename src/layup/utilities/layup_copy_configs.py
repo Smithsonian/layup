@@ -5,7 +5,7 @@ import shutil
 import sys
 from importlib.resources import files
 
-from layup.utilities.fileAccessUtils import FindDirectoryOrExit
+from layup.utilities.file_access_utils import find_directory_or_exit
 
 
 def copy_demo_configs(copy_location, which_configs, force_overwrite):
@@ -30,7 +30,7 @@ def copy_demo_configs(copy_location, which_configs, force_overwrite):
     """
     # For the future multiple config file formats can be stored in config_setups and be called
 
-    _ = FindDirectoryOrExit(copy_location, "filepath")
+    _ = find_directory_or_exit(copy_location, "filepath")
 
     config_data_root = files("layup.config_setups")
 
