@@ -11,14 +11,12 @@ from layup.utilities.data_utilities_for_tests import get_config_setups_filepath
 def test_find_file_or_exit():
     from layup.utilities.file_access_utils import find_file_or_exit
 
-    test_file = find_file_or_exit(
-        get_config_setups_filepath("Default_config_file.ini"), "Default_config_file.ini"
-    )
+    test_file = find_file_or_exit(get_config_setups_filepath("default_config.ini"), "default_config.ini")
 
     with pytest.raises(SystemExit) as e:
         find_file_or_exit("totally_fake_file.txt", "test")
 
-    assert test_file == get_config_setups_filepath("Default_config_file.ini")
+    assert test_file == get_config_setups_filepath("default_config.ini")
     assert e.type == SystemExit
     assert e.value.code == "ERROR: filename totally_fake_file.txt supplied for test argument does not exist."
 
