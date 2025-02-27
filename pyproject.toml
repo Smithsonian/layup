@@ -32,6 +32,7 @@ layup-orbitfit = "layup_cmdline.orbitfit:main"
 layup-predict = "layup_cmdline.predict:main"
 layup-bootstrap = "layup_cmdline.bootstrap:main"
 layup-init = "layup_cmdline.init:main"
+layup-convert = "layup_cmdline.convert:main"
 
 [project.urls]
 "Source Code" = "https://github.com/Smithsonian/layup"
