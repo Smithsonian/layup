@@ -37,7 +37,7 @@ def main():
         "   orbitfit       fit orbits\n"
         "   convert        convert orbits to different formats\n"
         "   predict        predict orbits\n"
-        "   visualize      visualise orbits\n"
+        "   visualize      visualize orbits\n"
         "\n"
         "To get more information, run the verb with --help. For example:\n\n"
         "   layup orbitfit --help\n"
