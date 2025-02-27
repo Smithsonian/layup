@@ -8,7 +8,7 @@ def test_layupCopyConfigs(tmp_path):
     # test that the config files are successfully copied
     copy_demo_configs(tmp_path, "Default", False)
 
-    assert os.path.isfile(os.path.join(tmp_path, "Default_config_file.ini"))
+    assert os.path.isfile(os.path.join(tmp_path, "default_config.ini"))
 
     # test that files are successfully overwritten if -f flag used
     copy_demo_configs(tmp_path, "Default", True)

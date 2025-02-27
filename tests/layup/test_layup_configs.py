@@ -39,9 +39,9 @@ def test_layup_configs():
     """
     tests that sorchaConfigs reads in config file correctly
     """
-    # general test to make sure, overall, everything works. checks just one file: "Default_config_file.ini"
+    # general test to make sure, overall, everything works. checks just one file: "default_config.ini"
 
-    config_file_location = get_config_setups_filepath("Default_config_file.ini")
+    config_file_location = get_config_setups_filepath("default_config.ini")
     test_configs = LayupConfigs(config_file_location)
     # check each section to make sure you get what you expect
     assert correct_auxciliary_URLs == test_configs.auxiliary.__dict__["urls"]

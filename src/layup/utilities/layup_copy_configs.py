@@ -35,7 +35,7 @@ def copy_demo_configs(copy_location, which_configs, force_overwrite):
     config_data_root = files("layup.config_setups")
 
     configs = {
-        "Default": ["Default_config_file.ini"],
+        "Default": ["default_config.ini"],
     }
 
     if which_configs in configs:
