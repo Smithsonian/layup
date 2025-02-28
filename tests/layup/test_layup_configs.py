@@ -27,6 +27,7 @@ correct_auxciliary_filenames = [
     "naif0012.tls",
     "meta_kernel.txt",
     "ObsCodes.json.gz",
+    "ObsCodes.json",
     "pck00010.pck",
 ]
 
@@ -37,7 +38,7 @@ correct_auxciliary_filenames = [
 
 def test_layup_configs():
     """
-    tests that sorchaConfigs reads in config file correctly
+    tests that LayupConfigs reads in config file correctly
     """
     # general test to make sure, overall, everything works. checks just one file: "default_config.ini"
 
@@ -61,7 +62,7 @@ def test_layup_configs():
         "earth_historical",
         "jpl_planets",
         "leap_seconds",
-        "observatory_codes",
+        "observatory_codes_compressed",
         "orientation_constants",
     ],
 )
@@ -80,7 +81,7 @@ def test_auxiliary_config_url_given_filename_not(file):
         "earth_historical",
         "jpl_planets",
         "leap_seconds",
-        "observatory_codes",
+        "observatory_codes_compressed",
         "orientation_constants",
     ],
 )

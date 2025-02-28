@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import configparser
 import sys
 
@@ -7,74 +7,76 @@ import sys
 class AuxiliaryConfigs:
     """Data class for holding auxiliary section configuration file keys and validating them."""
 
+    naif_base_url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels"
+    ssd_base_url = "https://ssd.jpl.nasa.gov/ftp/eph"
+
     planet_ephemeris: str = "de440s.bsp"
     """filename of planet_ephemeris"""
-    planet_ephemeris_url: str = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp"
+    planet_ephemeris_url: str = f"{naif_base_url}/spk/planets/de440s.bsp"
     """url for planet_ephemeris"""
 
     earth_predict: str = "earth_200101_990827_predict.bpc"
     """filename of earth_predict"""
-    earth_predict_url: str = (
-        "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_200101_990827_predict.bpc"
-    )
+    earth_predict_url: str = f"{naif_base_url}/pck/earth_200101_990827_predict.bpc"
     """url for earth_predict"""
 
     earth_historical: str = "earth_620120_240827.bpc"
     """filename of earth_histoical"""
-    earth_historical_url: str = (
-        "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_620120_240827.bpc"
-    )
+    earth_historical_url: str = f"{naif_base_url}/pck/earth_620120_240827.bpc"
     """url for earth_historical"""
 
     earth_high_precision: str = "earth_latest_high_prec.bpc"
     """filename of earth_high_precision"""
-    earth_high_precision_url: str = (
-        "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_latest_high_prec.bpc"
-    )
+    earth_high_precision_url: str = f"{naif_base_url}/pck/earth_latest_high_prec.bpc"
     """url of earth_high_precision"""
 
     jpl_planets: str = "linux_p1550p2650.440"
     """filename of jpl_planets"""
-    jpl_planets_url: str = "https://ssd.jpl.nasa.gov/ftp/eph/planets/Linux/de440/linux_p1550p2650.440"
+    jpl_planets_url: str = f"{ssd_base_url}/planets/Linux/de440/linux_p1550p2650.440"
     """url of jpl_planets"""
 
     jpl_small_bodies: str = "sb441-n16.bsp"
     """filename of jpl_small_bodies"""
-    jpl_small_bodies_url: str = "https://ssd.jpl.nasa.gov/ftp/eph/small_bodies/asteroids_de441/sb441-n16.bsp"
+    jpl_small_bodies_url: str = f"{ssd_base_url}/small_bodies/asteroids_de441/sb441-n16.bsp"
     """url of jpl_small_bodies"""
 
     leap_seconds: str = "naif0012.tls"
     """filename of leap_seconds"""
-    leap_seconds_url: str = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls"
+    leap_seconds_url: str = f"{naif_base_url}/lsk/naif0012.tls"
     """url of leap_seconds"""
 
     meta_kernel: str = "meta_kernel.txt"
-    """filename of meta_kernal"""
+    """filename of meta_kernel"""
 
-    observatory_codes: str = "ObsCodes.json.gz"
-    """filename of observatory_codes"""
-    observatory_codes_url: str = "https://minorplanetcenter.net/Extended_Files/obscodes_extended.json.gz"
+    observatory_codes: str = "ObsCodes.json"
+    """filename of observatory_codes (uncompressed)"""
+
+    observatory_codes_compressed: str = "ObsCodes.json.gz"
+    """filename of observatory_codes as compressed file"""
+    observatory_codes_compressed_url: str = (
+        "https://minorplanetcenter.net/Extended_Files/obscodes_extended.json.gz"
+    )
     """url of observatory_codes_compressed"""
 
     orientation_constants: str = "pck00010.pck"
     """filename of observatory_constants"""
-    orientation_constants_url: str = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc"
+    orientation_constants_url: str = f"{naif_base_url}/pck/pck00010.tpc"
     """url of observatory_constants"""
 
-    data_file_list: list = None
+    data_file_list: list[str] = field(default_factory=list)
     """convenience list of all the file names"""
 
-    urls: dict = None
-    """dictionary of filename: url"""
+    urls: dict = field(default_factory=dict)
+    """dictionary of {filename: url}"""
 
-    data_files_to_download: list = None
+    data_files_to_download: list[str] = field(default_factory=list)
     """list of files that need to be downloaded"""
 
-    ordered_kernel_files: list = None
+    ordered_kernel_files: list[str] = field(default_factory=list)
     """list of kernels ordered from least to most precise - used to assemble meta_kernel file"""
 
-    registry: list = None
-    """Default Pooch registry to define which files will be tracked and retrievable"""
+    registry: list[str] = field(default_factory=dict)
+    """the Pooch registry to define which files will be tracked and retrievable"""
 
     @property
     def default_url(self):
@@ -87,7 +89,7 @@ class AuxiliaryConfigs:
             "jpl_planets": self.__class__.jpl_planets_url,
             "jpl_small_bodies": self.__class__.jpl_small_bodies_url,
             "leap_seconds": self.__class__.leap_seconds_url,
-            "observatory_codes": self.__class__.observatory_codes_url,
+            "observatory_codes_compressed": self.__class__.observatory_codes_compressed_url,
             "orientation_constants": self.__class__.orientation_constants_url,
         }
 
@@ -103,18 +105,18 @@ class AuxiliaryConfigs:
             "jpl_small_bodies": self.__class__.jpl_small_bodies,
             "leap_seconds": self.__class__.leap_seconds,
             "meta_kernel": self.__class__.meta_kernel,
-            "observatory_codes": self.__class__.observatory_codes,
+            "observatory_codes_compressed": self.__class__.observatory_codes_compressed,
             "orientation_constants": self.__class__.orientation_constants,
         }
 
     def __post_init__(self):
-        """Automagically validates the auxiliary configs after initialisation."""
+        """create lists of files and validate the auxiliary configs after initialization."""
         self._create_lists_auxiliary_configs()
         self._validate_auxiliary_configs()
 
     def _validate_auxiliary_configs(self):
         """
-        validates the auxililary config attributes after initialisation.
+        validates the auxiliary config attributes after initialization.
         """
         for file in self.default_filenames:
             if file != "meta_kernel":
@@ -132,11 +134,7 @@ class AuxiliaryConfigs:
 
     def _create_lists_auxiliary_configs(self):
         """
-        creates lists of the auxililary config attributes after initialisation.
-
-        Parameters
-        -----------
-        None.
+        creates lists of the auxiliary config attributes after initialization.
 
         Returns
         ----------
@@ -151,7 +149,7 @@ class AuxiliaryConfigs:
             self.jpl_planets: self.jpl_planets_url,
             self.jpl_small_bodies: self.jpl_small_bodies_url,
             self.leap_seconds: self.leap_seconds_url,
-            self.observatory_codes: self.observatory_codes_url,
+            self.observatory_codes_compressed: self.observatory_codes_compressed_url,
             self.orientation_constants: self.orientation_constants_url,
         }
 
@@ -164,6 +162,7 @@ class AuxiliaryConfigs:
             self.jpl_small_bodies,
             self.leap_seconds,
             self.meta_kernel,
+            self.observatory_codes_compressed,
             self.observatory_codes,
             self.orientation_constants,
         ]
@@ -176,7 +175,7 @@ class AuxiliaryConfigs:
             self.jpl_planets,
             self.jpl_small_bodies,
             self.leap_seconds,
-            self.observatory_codes,
+            self.observatory_codes_compressed,
             self.orientation_constants,
         ]
 
