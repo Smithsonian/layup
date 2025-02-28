@@ -108,6 +108,7 @@ def _remove_files(aux_config: AuxiliaryConfigs, retriever: pooch.Pooch) -> None:
     """
 
     for file_name in aux_config.data_file_list:
-        file_path = retriever.fetch(file_name)
-        print(f"Deleting file: {file_path}")
-        os.remove(file_path)
+        file_path = os.path.join(retriever.abspath, file_name)
+        if os.path.exists(file_path):
+            print(f"Deleting file: {file_path}")
+            os.remove(file_path)
