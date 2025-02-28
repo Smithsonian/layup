@@ -67,6 +67,9 @@ def test_layup_configs():
     ],
 )
 def test_auxiliary_config_url_given_filename_not(file):
+    """Users can update the filenames in the config file as desired, but if they
+    update the URL for a file, they must also update the filename for that file
+    as well. This test checks that the user cannot update just the URL."""
     aux_configs = {file + "_url": "new_url"}
     with pytest.raises(SystemExit) as error_text:
         AuxiliaryConfigs(**aux_configs)
