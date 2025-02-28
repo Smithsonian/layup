@@ -15,8 +15,7 @@ import spiceypy as spice
 import pandas as pd
 import healpy as hp
 
-import MPC_library # for a small number of routines
-import tracklets as tr
+import support_routines as tr
 
 first=lambda x: x[0]
 second=lambda x: x[1]
