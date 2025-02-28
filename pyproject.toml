@@ -49,10 +49,10 @@ dev = [
 
 [build-system]
 requires = [
-    "setuptools>=62", # Used to build and package the Python project
-    "setuptools_scm>=6.2", # Gets release version from git. Makes it available programmatically
+    "scikit-build-core>=0.10",
+    "pybind11"
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "scikit_build_core.build"
 
 [tool.setuptools_scm]
 write_to = "src/layup/_version.py"
