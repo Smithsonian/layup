@@ -7,7 +7,7 @@ from pandas.testing import assert_frame_equal
 import tempfile
 
 from layup.utilities.file_readers.CSVReader import CSVDataReader
-from sorcha.utilities.dataUtilitiesForTests import get_test_filepath
+from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
