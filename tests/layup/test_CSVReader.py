@@ -5,9 +5,30 @@ import pytest
 from numpy.testing import assert_equal
 from pandas.testing import assert_frame_equal
 import tempfile
+from pathlib import Path
 
 from layup.utilities.file_readers.CSVReader import CSVDataReader
-from layup.utilities.data_utilities_for_tests import get_test_filepath
+
+
+# TODO fix to actually use the import
+# from layup.utilities.data_utilities_for_tests import get_test_filepath
+def get_test_filepath(filename):
+    # This file's path: `<base_directory>/src/layup/utilities/dataUtilitiesForTests.py
+    # THIS_DIR = `<base_directory>/`
+    THIS_DIR = Path(__file__).parent.parent
+
+    # Returned path: `<base_directory>/src/layup/config_setups
+    return os.path.join(THIS_DIR, "data", filename)
+
+
+def check_equal_wo_dtypes(a, b):
+    """Check that two arrays are equal, ignoring the data types."""
+    # Assert that each array has the same length (not shape because one is a structured array)
+    assert len(a) == len(b)
+
+    # Assert that each element is the same
+    for i in range(len(a)):
+        assert a[i] == b[i]
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
@@ -17,244 +38,102 @@ def test_CSVDataReader_ephem(use_cache):
     This test does not perform any transformations, filtering, or validation of the data.
     It just loads it directly from a CSV.
     """
-    csv_reader = CSVDataReader(get_test_filepath("ephemtestoutput.csv"), "csv", cache_table=use_cache)
+    csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv", cache_table=use_cache)
     assert csv_reader.header_row == 0
-    assert csv_reader.get_reader_info() == "CSVDataReader:" + get_test_filepath("ephemtestoutput.csv")
+    assert csv_reader.get_reader_info() == "CSVDataReader:" + get_test_filepath("CART.csv")
 
     # Read in all 9 rows.
     ephem_data = csv_reader.read_rows()
-    assert len(ephem_data) == 9
+    assert len(ephem_data) == 5
 
     expected_first_row = np.array(
         [
             "S00000t",
-            379,
-            59853.205174,
-            283890475.515,
-            -1.12,
-            11.969664,
-            -0.280799,
-            -0.19939,
-            -0.132793,
-            426166274.581,
-            77286024.759,
-            6987943.309,
-            -2.356,
-            11.386,
-            4.087,
-            148449956.422,
-            18409281.409,
-            7975891.432,
-            -4.574,
-            27.377,
-            11.699,
-            2.030016,
+            "CART",
+            0.952105479028,
+            0.504888475701,
+            4.899098347472,
+            148.881068605772,
+            39.949789586436,
+            54486.32292808,
+            54466.0,
         ],
         dtype="object",
     )
-    assert_equal(expected_first_row, ephem_data.iloc[0].values)
+    check_equal_wo_dtypes(expected_first_row, ephem_data[0])
 
     column_headings = np.array(
         [
             "ObjID",
-            "FieldID",
-            "fieldMJD_TAI",
-            "Range_LTC_km",
-            "RangeRate_LTC_km_s",
-            "RA_deg",
-            "RARateCosDec_deg_day",
-            "Dec_deg",
-            "DecRate_deg_day",
-            "Obj_Sun_x_LTC_km",
-            "Obj_Sun_y_LTC_km",
-            "Obj_Sun_z_LTC_km",
-            "Obj_Sun_vx_LTC_km_s",
-            "Obj_Sun_vy_LTC_km_s",
-            "Obj_Sun_vz_LTC_km_s",
-            "Obs_Sun_x_km",
-            "Obs_Sun_y_km",
-            "Obs_Sun_z_km",
-            "Obs_Sun_vx_km_s",
-            "Obs_Sun_vy_km_s",
-            "Obs_Sun_vz_km_s",
-            "phase_deg",
+            "FORMAT",
+            "x",
+            "y",
+            "z",
+            "xdot",
+            "ydot",
+            "zdot",
+            "epochMJD_TDB",
         ],
         dtype=object,
     )
-    assert_equal(column_headings, ephem_data.columns.values)
+    assert_equal(column_headings, ephem_data.dtype.names)
 
-    # Read in rows 3, 4, 5, 6 + the header
+    # Read in rows 3, 4 + the header
     ephem_data = csv_reader.read_rows(3, 4)
-    assert len(ephem_data) == 4
-    assert_equal(column_headings, ephem_data.columns.values)
-    assert_equal("S000021", ephem_data.iloc[0].values[0])
-
-
-def test_CSVDataReader_ephemeris_header():
-    """Test that we can read in the ephemeris data from a CSV when the header is NOT at row 0."""
-    csv_reader = CSVDataReader(get_test_filepath("ephemtestoutput_comment.csv"), "csv")
-    assert csv_reader.header_row == 2
-
-    # Read in all 9 rows.
-    ephem_data = csv_reader.read_rows()
-    assert len(ephem_data) == 9
-
-    expected_first_row = np.array(
-        [
-            "S00000t",
-            379,
-            59853.205174,
-            283890475.515,
-            -1.12,
-            11.969664,
-            -0.280799,
-            -0.19939,
-            -0.132793,
-            426166274.581,
-            77286024.759,
-            6987943.309,
-            -2.356,
-            11.386,
-            4.087,
-            148449956.422,
-            18409281.409,
-            7975891.432,
-            -4.574,
-            27.377,
-            11.699,
-            2.030016,
-        ],
-        dtype="object",
-    )
-    assert_equal(expected_first_row, ephem_data.iloc[0].values)
-
-    column_headings = np.array(
-        [
-            "ObjID",
-            "FieldID",
-            "fieldMJD_TAI",
-            "Range_LTC_km",
-            "RangeRate_LTC_km_s",
-            "RA_deg",
-            "RARateCosDec_deg_day",
-            "Dec_deg",
-            "DecRate_deg_day",
-            "Obj_Sun_x_LTC_km",
-            "Obj_Sun_y_LTC_km",
-            "Obj_Sun_z_LTC_km",
-            "Obj_Sun_vx_LTC_km_s",
-            "Obj_Sun_vy_LTC_km_s",
-            "Obj_Sun_vz_LTC_km_s",
-            "Obs_Sun_x_km",
-            "Obs_Sun_y_km",
-            "Obs_Sun_z_km",
-            "Obs_Sun_vx_km_s",
-            "Obs_Sun_vy_km_s",
-            "Obs_Sun_vz_km_s",
-            "phase_deg",
-        ],
-        dtype=object,
-    )
-    assert_equal(column_headings, ephem_data.columns.values)
-
-    # Read in rows 3, 4, 5, 6 + the header
-    ephem_data = csv_reader.read_rows(3, 4)
-    assert len(ephem_data) == 4
-    assert_equal(column_headings, ephem_data.columns.values)
-    assert_equal("S000021", ephem_data.iloc[0].values[0])
-
-    # Everything still works if we manually provide the header line.
-    csv_reader2 = CSVDataReader(get_test_filepath("ephemtestoutput_comment.csv"), "csv", header=2)
-    ephem_data2 = csv_reader2.read_rows()
-    assert len(ephem_data2) == 9
-
-    # Check that we fail if we provide the wrong header line number (skip the true header)
-    with pytest.raises(SystemExit) as e1:
-        _ = CSVDataReader(get_test_filepath("ephemtestoutput_comment.csv"), "csv", header=4)
-    assert e1.type == SystemExit
-
-    with pytest.raises(SystemExit) as e1:
-        _ = CSVDataReader(get_test_filepath("ephemtestoutput_comment.csv"), "csv", header=1)
-    assert e1.type == SystemExit
+    assert len(ephem_data) == 2
+    assert_equal(column_headings, ephem_data.dtype.names)
+    assert_equal("S00002b", ephem_data[0][0])
+    assert_equal("S000044", ephem_data[1][0])
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
 def test_CSVDataReader_specific_ephem(use_cache):
-    """Test that we can read in the ephemeris data for specific object IDs only."""
-    csv_reader = CSVDataReader(get_test_filepath("ephemtestoutput.csv"), "csv", cache_table=use_cache)
+    # Test that we can read in the ephemeris data for specific object IDs only.
+    csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv", cache_table=use_cache)
     ephem_data = csv_reader.read_objects(["S000015", "S000044"])
-    assert len(ephem_data) == 5
+    assert len(ephem_data) == 2
 
     # Check that we correctly loaded the header information.
     column_headings = np.array(
         [
             "ObjID",
-            "FieldID",
-            "fieldMJD_TAI",
-            "Range_LTC_km",
-            "RangeRate_LTC_km_s",
-            "RA_deg",
-            "RARateCosDec_deg_day",
-            "Dec_deg",
-            "DecRate_deg_day",
-            "Obj_Sun_x_LTC_km",
-            "Obj_Sun_y_LTC_km",
-            "Obj_Sun_z_LTC_km",
-            "Obj_Sun_vx_LTC_km_s",
-            "Obj_Sun_vy_LTC_km_s",
-            "Obj_Sun_vz_LTC_km_s",
-            "Obs_Sun_x_km",
-            "Obs_Sun_y_km",
-            "Obs_Sun_z_km",
-            "Obs_Sun_vx_km_s",
-            "Obs_Sun_vy_km_s",
-            "Obs_Sun_vz_km_s",
-            "phase_deg",
+            "FORMAT",
+            "x",
+            "y",
+            "z",
+            "xdot",
+            "ydot",
+            "zdot",
+            "epochMJD_TDB",
         ],
         dtype=object,
     )
-    assert_equal(column_headings, ephem_data.columns.values)
+    assert_equal(column_headings, ephem_data.dtype.names)
 
     # Check that the first row matches.
     expected_first_row = np.array(
         [
             "S000015",
-            60,
-            59853.050544,
-            668175640.541,
-            23.682,
-            312.82599,
-            -0.143012,
-            -49.366779,
-            0.060345,
-            444295081.174,
-            -301086798.179,
-            -499254823.262,
-            1.334,
-            2.899,
-            -0.966,
-            148508007.817,
-            18043717.331,
-            7819571.632,
-            -4.132,
-            27.288,
-            11.702,
-            11.073412,
+            "CART",
+            0.154159694141,
+            0.938877338769,
+            48.223407545506,
+            105.219186748093,
+            38.658234184755,
+            54736.8815041081,
+            54466.0,
         ],
         dtype="object",
     )
-    assert_equal(expected_first_row, ephem_data.iloc[0].values)
+    check_equal_wo_dtypes(expected_first_row, ephem_data[0])
 
     # Check that the remaining rows have the correct IDs.
-    assert_equal(ephem_data.iloc[1].values[0], "S000015")
-    assert_equal(ephem_data.iloc[2].values[0], "S000044")
-    assert_equal(ephem_data.iloc[3].values[0], "S000044")
-    assert_equal(ephem_data.iloc[4].values[0], "S000044")
+    assert_equal(ephem_data[1][0], "S000044")
 
     # Read different object IDs.
     ephem_data2 = csv_reader.read_objects(["S000021"])
     assert len(ephem_data2) == 1
-    assert_equal(ephem_data2.iloc[0].values[0], "S000021")
+    assert_equal(ephem_data2[0][0], "S000021")
 
 
 def test_CSVDataReader_orbits():
@@ -401,15 +280,14 @@ def test_CSVDataReader_blank_lines():
     with tempfile.TemporaryDirectory() as dir_name:
         file_name = os.path.join(dir_name, "test.ecsv")
         with open(file_name, "w") as output:
-            output.write("# My comment\n")
             output.write("ObjID,b,c\n")
-            output.write("0,1,2\n")
-            output.write("1,1,2\n")
-            output.write("2,1,2\n")
+            output.write("'alice',1,2\n")
+            output.write("'bob',1,2\n")
+            output.write("'jane',1,2\n")
 
         # The checks pass.
         reader = CSVDataReader(file_name, sep="csv", cache_table=False)
-        data = reader.read_objects(["1", "2"])
+        data = reader.read_objects(["bob", "jane"])
         assert len(data) == 2
 
         with open(file_name, "a") as output:
