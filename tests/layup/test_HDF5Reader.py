@@ -15,7 +15,7 @@ def test_HDF5DataReader_read_rows(use_cache):
     assert reader.get_reader_info() == "HDF5DataReader:" + get_test_filepath("ephemtestoutput.h5")
 
     expected_first_row = np.array(
-        [
+        [(
             "S00000t",
             379,
             59853.205174,
@@ -38,10 +38,34 @@ def test_HDF5DataReader_read_rows(use_cache):
             27.377,
             11.699,
             2.030016,
+    )],
+        dtype=
+        [
+            ('ObjID', 'O'),
+            ('FieldID', '<i8'),
+            ('fieldMJD_TAI', '<f8'),
+            ('Range_LTC_km', '<f8'),
+            ('RangeRate_LTC_km_s', '<f8'),
+            ('RA_deg', '<f8'),
+            ('RARateCosDec_deg_day', '<f8'),
+            ('Dec_deg', '<f8'),
+            ('DecRate_deg_day', '<f8'),
+            ('Obj_Sun_x_LTC_km', '<f8'),
+            ('Obj_Sun_y_LTC_km', '<f8'),
+            ('Obj_Sun_z_LTC_km', '<f8'),
+            ('Obj_Sun_vx_LTC_km_s', '<f8'),
+            ('Obj_Sun_vy_LTC_km_s', '<f8'),
+            ('Obj_Sun_vz_LTC_km_s', '<f8'),
+            ('Obs_Sun_x_km', '<f8'),
+            ('Obs_Sun_y_km', '<f8'),
+            ('Obs_Sun_z_km', '<f8'),
+            ('Obs_Sun_vx_km_s', '<f8'),
+            ('Obs_Sun_vy_km_s', '<f8'),
+            ('Obs_Sun_vz_km_s', '<f8'),
+            ('phase_deg', '<f8')
         ],
-        dtype="object",
     )
-    assert_equal(expected_first_row, ephem_data.iloc[0].values)
+    assert_equal(expected_first_row, ephem_data[0])
 
     column_headings = np.array(
         [
@@ -70,13 +94,13 @@ def test_HDF5DataReader_read_rows(use_cache):
         ],
         dtype=object,
     )
-    assert_equal(column_headings, ephem_data.columns.values)
+    assert_equal(column_headings, ephem_data.dtype.names)
 
     # Read in rows 3, 4, 5, 6 + the header
     ephem_data = reader.read_rows(3, 4)
     assert len(ephem_data) == 4
-    assert_equal(column_headings, ephem_data.columns.values)
-    assert_equal("S000021", ephem_data.iloc[0].values[0])
+    assert_equal(column_headings, ephem_data.dtype.names)
+    assert_equal("S000021", ephem_data[0][0])
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
@@ -114,11 +138,11 @@ def test_HDF5DataReader_read_objects(use_cache):
         ],
         dtype=object,
     )
-    assert_equal(column_headings, ephem_data.columns.values)
+    assert_equal(column_headings, ephem_data.dtype.names)
 
     # Check that the first row matches.
     expected_first_row = np.array(
-        [
+        [(
             "S000015",
             60,
             59853.050544,
@@ -141,21 +165,45 @@ def test_HDF5DataReader_read_objects(use_cache):
             27.288,
             11.702,
             11.073412,
+    )],
+         dtype=
+        [
+            ('ObjID', 'O'),
+            ('FieldID', '<i8'),
+            ('fieldMJD_TAI', '<f8'),
+            ('Range_LTC_km', '<f8'),
+            ('RangeRate_LTC_km_s', '<f8'),
+            ('RA_deg', '<f8'),
+            ('RARateCosDec_deg_day', '<f8'),
+            ('Dec_deg', '<f8'),
+            ('DecRate_deg_day', '<f8'),
+            ('Obj_Sun_x_LTC_km', '<f8'),
+            ('Obj_Sun_y_LTC_km', '<f8'),
+            ('Obj_Sun_z_LTC_km', '<f8'),
+            ('Obj_Sun_vx_LTC_km_s', '<f8'),
+            ('Obj_Sun_vy_LTC_km_s', '<f8'),
+            ('Obj_Sun_vz_LTC_km_s', '<f8'),
+            ('Obs_Sun_x_km', '<f8'),
+            ('Obs_Sun_y_km', '<f8'),
+            ('Obs_Sun_z_km', '<f8'),
+            ('Obs_Sun_vx_km_s', '<f8'),
+            ('Obs_Sun_vy_km_s', '<f8'),
+            ('Obs_Sun_vz_km_s', '<f8'),
+            ('phase_deg', '<f8')
         ],
-        dtype="object",
     )
-    assert_equal(expected_first_row, ephem_data.iloc[0].values)
+    assert_equal(expected_first_row, ephem_data[0])
 
     # Check that the remaining rows have the correct IDs.
-    assert_equal(ephem_data.iloc[1].values[0], "S000015")
-    assert_equal(ephem_data.iloc[2].values[0], "S000044")
-    assert_equal(ephem_data.iloc[3].values[0], "S000044")
-    assert_equal(ephem_data.iloc[4].values[0], "S000044")
+    assert_equal(ephem_data[1][0], "S000015")
+    assert_equal(ephem_data[2][0], "S000044")
+    assert_equal(ephem_data[3][0], "S000044")
+    assert_equal(ephem_data[4][0], "S000044")
 
     # Read different object IDs.
     ephem_data2 = reader.read_objects(["S000021"])
     assert len(ephem_data2) == 1
-    assert_equal(ephem_data2.iloc[0].values[0], "S000021")
+    assert_equal(ephem_data2[0][0], "S000021")
 
 
 def test_bad_format():

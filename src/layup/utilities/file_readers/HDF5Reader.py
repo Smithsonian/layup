@@ -67,7 +67,7 @@ class HDF5DataReader(ObjectDataReader):
                 start=block_start,
                 stop=block_start + block_size,
             )
-        return res_df
+        return res_df.to_records(index=False)
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
@@ -96,7 +96,7 @@ class HDF5DataReader(ObjectDataReader):
         row_match = self.obj_id_table["ObjID"].isin(obj_ids)
         match_inds = self.obj_id_table[row_match].index
         res_df = pd.read_hdf(self.filename, where="index=match_inds")  # noqa: F841
-        return res_df
+        return res_df.to_records(index=False)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.

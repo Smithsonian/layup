@@ -40,7 +40,7 @@ def get_test_filepath(filename):
 
     # This file's path: `<base_directory>/src/layup/utilities/test_data_utilities.py`
     # THIS_DIR = `<base_directory>/`
-    THIS_DIR = Path(__file__).parent.parent.parent
+    THIS_DIR = Path(__file__).parent.parent.parent.parent
 
     # Returned path: `<base_directory>/tests/data/filename`
     return os.path.join(THIS_DIR, "tests/data", filename)
