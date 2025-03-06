@@ -1,21 +1,23 @@
 """Base class for reading object-related data from a variety of sources
-and returning a pandas data frame.
+and returning a numpy structured array.
 
 Each subclass of ObjectDataReader must implement at least the functions
 _read_rows_internal and _read_objects_internal, both of which return a
-pandas data frame. Each data source needs to have a column ObjID that
+numpy structured array. Each data source needs to have a column ObjID that
 identifies the object and can be used for joining and filtering.
 
 Caching is implemented in the base class. This will lazy load the full
 table into memory from the chosen data source, so it should only be
 used with smaller data sets. Both ``read_rows`` and ``read_objects``
 will check for a cached table before reading the files, allowing them
-to perform direct pandas operations if the data is already in memory.
+to perform direct numpy operations if the data is already in memory.
 """
 
 import abc
 import logging
 import sys
+
+import numpy as np
 
 
 class ObjectDataReader(abc.ABC):
@@ -50,7 +52,7 @@ class ObjectDataReader(abc.ABC):
 
     def read_rows(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input, performs
-        post-processing and validation, and returns a data frame.
+        post-processing and validation, and returns a numpy structured array.
 
         Parameters
         -----------
@@ -70,8 +72,8 @@ class ObjectDataReader(abc.ABC):
 
         Returns
         -----------
-        res_df : Pandas dataframe
-            dataframe of the object data.
+        res : numpy structured array
+            The data read in from the file.
 
         """
         if self._cache_table:
@@ -85,12 +87,12 @@ class ObjectDataReader(abc.ABC):
                 block_end = len(self._table)
             else:
                 block_end = block_start + block_size
-            return self._table.iloc[block_start:block_end]
+            return self._table[block_start:block_end]
 
         # Load the table using the subclass and perform any needed validation.
-        res_df = self._read_rows_internal(block_start, block_size, **kwargs)
-        res_df = self._process_and_validate_input_table(res_df, **kwargs)
-        return res_df
+        res = self._read_rows_internal(block_start, block_size, **kwargs)
+        res = self._process_and_validate_input_table(res, **kwargs)
+        return res
 
     @abc.abstractmethod
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
@@ -111,20 +113,20 @@ class ObjectDataReader(abc.ABC):
 
         Returns
         -----------
-        res_df : Pandas dataframe
-            The dataframe for the object data.
+        res : Numpy structured array
+            The data read in from the file.
         """
         if self._cache_table:
             # Load the entire table the first time.
             if self._table is None:
                 self._table = self._read_rows_internal()
                 self._table = self._process_and_validate_input_table(self._table, **kwargs)
-            return self._table[self._table["ObjID"].isin(obj_ids)]
+            return self._table[np.isin(self._table["ObjID"], obj_ids)]
 
         # Load the table using the subclass and perform any needed validation.
-        res_df = self._read_objects_internal(obj_ids, **kwargs)
-        res_df = self._process_and_validate_input_table(res_df, **kwargs)
-        return res_df
+        res = self._read_objects_internal(obj_ids, **kwargs)
+        res = self._process_and_validate_input_table(res, **kwargs)
+        return res
 
     @abc.abstractmethod
     def _read_objects_internal(self, obj_ids, **kwargs):
@@ -170,8 +172,8 @@ class ObjectDataReader(abc.ABC):
 
         Returns
         -----------
-        input_table :Pandas dataframe
-            Returns the input dataframe modified in-place.
+        input_table : Numpy structured array
+            Returns the input table modified in-place.
 
         Notes
         --------
@@ -188,7 +190,7 @@ class ObjectDataReader(abc.ABC):
         pplogger = logging.getLogger(__name__)
 
         # Check that the table has more than one column.
-        if len(input_table.columns) <= 1:
+        if len(input_table.dtype.names) <= 1:
             outstr = (
                 f"ERROR: While reading table {self.filename}. Only one column found. "
                 "Check that you specified the correct format."
@@ -199,11 +201,12 @@ class ObjectDataReader(abc.ABC):
         # Check that "ObjID" is a column and is a string.
         input_table = self._validate_object_id_column(input_table)
 
+        # TODO check that format is the same across all rows?
+
         # Check for NaNs or nulls.
         if kwargs.get("disallow_nan", False):  # pragma: no cover
-            if input_table.isnull().values.any():
-                pdt = input_table[input_table.isna().any(axis=1)]
-                inds = str(pdt["ObjID"].values)
+            if np.isnan(input_table).any():
+                inds = input_table["ObjID"][np.isnan(input_table).any(axis=1)]
                 outstr = f"ERROR: While reading table {self.filename} found uninitialised values ObjID: {str(inds)}."
                 pplogger.error(outstr)
                 sys.exit(outstr)

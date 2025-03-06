@@ -1,4 +1,4 @@
-import pandas as pd
+import numpy as np
 import logging
 import sys
 
@@ -9,10 +9,10 @@ class CSVDataReader(ObjectDataReader):
     """A class to read in object data files stored as CSV or whitespace
     separated values.
 
-    Requires that the file's first column is ObjID.
+    Note that we require the header line to be the first line of the file
     """
 
-    def __init__(self, filename, sep="csv", header=-1, **kwargs):
+    def __init__(self, filename, sep="csv", **kwargs):
         """A class for reading the object data from a CSV file.
 
         Parameters
@@ -23,10 +23,6 @@ class CSVDataReader(ObjectDataReader):
         sep : string, optional
             Format of input file ("whitespace"/"comma"/"csv").
             Default = csv
-
-        header : integer, optional
-            The row number of the header. If not provided, does an automatic search.
-            Default = -1
 
         **kwargs: dictionary, optional
             Extra arguments
@@ -40,8 +36,9 @@ class CSVDataReader(ObjectDataReader):
             sys.exit(f"ERROR: Unrecognized delimiter ({sep})")
         self.sep = sep
 
+        # TODO this should now always be 0
         # To pre-validation and collect the header information.
-        self.header_row = self._find_and_validate_header_line(header)
+        self.header_row = self._find_and_validate_header_line()
 
         # A table holding just the object ID for each row. Only populated
         # if we try to read data for specific object IDs.
@@ -58,16 +55,9 @@ class CSVDataReader(ObjectDataReader):
         """
         return f"CSVDataReader:{self.filename}"
 
-    def _find_and_validate_header_line(self, header=-1):
-        """Read and validate the header line. If no line number is provided, use
-        a heuristic match to find the header line. This is used in cases
-        where the header is not the first line and we want to skip down.
-
-        Parameters
-        ----------
-        header : integer, optional
-            The row number of the header. If not provided, does an automatic search.
-            Default = -1
+    # TODO now that we no longer allow header lines greater than 0, can probably remove this.
+    def _find_and_validate_header_line(self):
+        """Read and validate the header line (first line of the file)
 
         Returns
         --------
@@ -81,13 +71,13 @@ class CSVDataReader(ObjectDataReader):
             for i, line in enumerate(fh):
                 # Check we have either found the specified line or no line is specified and
                 # our heuristic matches.
-                if (header >= 0 and header == i) or (header < 0 and line.startswith("ObjID")):
+                if line.startswith("ObjID"):
                     pplogger.info(f"Reading line {i} of {self.filename} as header:\n{line}")
                     self._check_header_line(line)
                     return i
 
-                # Give up after 100 lines.
-                if i > 100:  # pragma: no cover
+                # Give up after first line
+                if i > 0:  # pragma: no cover
                     break
 
         error_str = (
@@ -113,8 +103,8 @@ class CSVDataReader(ObjectDataReader):
         elif self.sep == "whitespace":
             column_names = header_line.split()
         else:
-            pplogger.error(f"ERROR: Unrecognized delimiter ({sep})")
-            sys.exit(f"ERROR: Unrecognized delimiter ({sep})")
+            pplogger.error(f"ERROR: Unrecognized delimiter ({self.sep})")
+            sys.exit(f"ERROR: Unrecognized delimiter ({self.sep})")
 
         if len(column_names) < 2:
             error_str = (
@@ -184,53 +174,56 @@ class CSVDataReader(ObjectDataReader):
 
         Returns
         -----------
-        res_df : pandas dataframe
-            Dataframe of the object data.
+        res : numpy structured array
+            The data read in from the file.
         """
         # Skip the rows before the header and then begin_loc rows after the header.
         skip_rows = []
-        if self.header_row > 0:
-            skip_rows = [i for i in range(0, self.header_row)]
         if block_start > 0:
             skip_rows.extend([i for i in range(self.header_row + 1, self.header_row + 1 + block_start)])
 
-        # Read the rows.
-        if self.sep == "whitespace":
-            res_df = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                skiprows=skip_rows,
-                nrows=block_size,
-            )
-        else:
-            res_df = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                skiprows=skip_rows,
-                nrows=block_size,
-            )
+        # TODO if block start is 0, do we want to call np.genfromtxt immediately?
 
-        return res_df
+        # Read in the data from self.filename, extracting the header row, and skipping in all of
+        # block_size rows, skipping all of the skip_rows.
+        chunk_rows = []
+        with open(self.filename) as f:
+            for i, line in enumerate(f):
+                if i < self.header_row:
+                    continue
+                if i in skip_rows:
+                    continue
+                if block_size is not None and i >= block_start + block_size:
+                    break
+                chunk_rows.append(line)
+
+        # Read the rows.
+        res = np.genfromtxt(
+            chunk_rows,
+            delimiter="," if self.sep != "whitespace" else None,
+            names=True,
+            dtype=None,
+            encoding="utf8",
+            ndmin=1,  # Ensure we always get a structured array even with a single result
+            max_rows=block_size,
+        )
+
+        return res
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
         if self.obj_id_table is not None:
             return
 
-        if self.sep == "whitespace":
-            self.obj_id_table = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                usecols=["ObjID"],
-                header=self.header_row,
-            )
-        else:
-            self.obj_id_table = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                usecols=["ObjID"],
-                header=self.header_row,
-            )
+        self.obj_id_table = np.genfromtxt(
+            self.filename,
+            delimiter="," if self.sep != "whitespace" else None,
+            names=True,
+            dtype=None,
+            encoding="utf8",
+            ndmin=1,  # Ensure we always get a structured array even with a single result
+            usecols=(0,),  # Only read in the first column, ObjID
+        )
 
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
@@ -247,41 +240,48 @@ class CSVDataReader(ObjectDataReader):
 
         Returns
         -----------
-        res_df : pandas dataframe
-            The dataframe for the object data.
+        res : numpy structured array
+            The data read in from the file.
         """
         self._build_id_map()
 
         # Create list of only the matching rows for these object IDs and the header row.
         skipped_row = [True] * self.header_row  # skip the pre-header
         skipped_row.extend([False])  # Keep the the column header
-        skipped_row.extend(~self.obj_id_table["ObjID"].isin(obj_ids).values)
+        skipped_row.extend(~np.isin(self.obj_id_table["ObjID"], obj_ids))
+
+        # Read in the data from self.filename, extracting the header row, and skipping in all of
+        # block_size rows, skipping all of the skip_rows.
+        chunk_rows = []
+        with open(self.filename) as f:
+            for i, line in enumerate(f):
+                if skipped_row[i]:
+                    continue
+                chunk_rows.append(line)
 
         # Read the rows.
         try:
-            if self.sep == "whitespace":
-                res_df = pd.read_csv(
-                    self.filename,
-                    sep="\\s+",
-                    skiprows=(lambda x: skipped_row[x]),
-                )
-            else:
-                res_df = pd.read_csv(
-                    self.filename,
-                    delimiter=",",
-                    skiprows=(lambda x: skipped_row[x]),
-                )
-        except IndexError as current_exc:
+            # Read the rows.
+            res = np.genfromtxt(
+                chunk_rows,
+                delimiter="," if self.sep != "whitespace" else None,
+                names=True,
+                dtype=None,
+                encoding="utf8",
+                ndmin=1,  # Ensure we always get a structured array even with a single result
+            )
+        except Exception as current_exc:
             # Check if there is a more understandable error we can raise.
             self._validate_csv(self.header_row)
 
             # If we do not detect a problem with _validate_csv, reraise the error.
             raise current_exc
-        return res_df
+
+        return res
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.
-        Modifies the input dataframe in place.
+        Modifies the input table in place.
 
         Notes
         -----
@@ -291,7 +291,7 @@ class CSVDataReader(ObjectDataReader):
 
         Parameters
         -----------
-        input_table : Pandas dataframe
+        input_table : numpy structured array
             A loaded table.
 
         **kwargs : dictionary, optional
@@ -299,13 +299,13 @@ class CSVDataReader(ObjectDataReader):
 
         Returns
         -----------
-        input_table: pandas dataframe
-            Returns the input dataframe modified in-place.
+        input_table: numpy structured array
+            Returns the input table modified in-place.
         """
         # Perform the parent class's validation (checking object ID column).
         input_table = super()._process_and_validate_input_table(input_table, **kwargs)
 
         # Strip out the whitespace from the column names.
-        input_table = input_table.rename(columns=lambda x: x.strip())
+        input_table.dtype.names = [name.strip() for name in input_table.dtype.names]
 
         return input_table
