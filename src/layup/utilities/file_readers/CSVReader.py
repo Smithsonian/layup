@@ -4,6 +4,9 @@ import sys
 
 from layup.utilities.file_readers.ObjectDataReader import ObjectDataReader
 
+# Characters we remove from column names.
+INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
+
 
 class CSVDataReader(ObjectDataReader):
     """A class to read in object data files stored as CSV or whitespace
@@ -193,7 +196,7 @@ class CSVDataReader(ObjectDataReader):
                     continue
                 if i in skip_rows:
                     continue
-                if block_size is not None and i >= block_start + block_size:
+                if block_size is not None and i > block_start + block_size:
                     break
                 chunk_rows.append(line)
 
@@ -204,6 +207,7 @@ class CSVDataReader(ObjectDataReader):
             names=True,
             dtype=None,
             encoding="utf8",
+            deletechars=INVALID_COL_CHARS,
             ndmin=1,  # Ensure we always get a structured array even with a single result
             max_rows=block_size,
         )
@@ -221,6 +225,7 @@ class CSVDataReader(ObjectDataReader):
             names=True,
             dtype=None,
             encoding="utf8",
+            deletechars=INVALID_COL_CHARS,
             ndmin=1,  # Ensure we always get a structured array even with a single result
             usecols=(0,),  # Only read in the first column, ObjID
         )
@@ -255,7 +260,7 @@ class CSVDataReader(ObjectDataReader):
         chunk_rows = []
         with open(self.filename) as f:
             for i, line in enumerate(f):
-                if skipped_row[i]:
+                if i < len(skipped_row) and skipped_row[i]:
                     continue
                 chunk_rows.append(line)
 
@@ -268,6 +273,7 @@ class CSVDataReader(ObjectDataReader):
                 names=True,
                 dtype=None,
                 encoding="utf8",
+                deletechars=INVALID_COL_CHARS,
                 ndmin=1,  # Ensure we always get a structured array even with a single result
             )
         except Exception as current_exc:
