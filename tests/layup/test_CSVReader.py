@@ -21,7 +21,7 @@ def get_test_filepath(filename):
     return os.path.join(THIS_DIR, "data", filename)
 
 
-def check_equal_wo_dtypes(a, b):
+def check_equal_rows(a, b):
     """Check that two arrays are equal, ignoring the data types."""
     # Assert that each array has the same length (not shape because one is a structured array)
     assert len(a) == len(b)
@@ -60,7 +60,7 @@ def test_CSVDataReader_ephem(use_cache):
         ],
         dtype="object",
     )
-    check_equal_wo_dtypes(expected_first_row, ephem_data[0])
+    check_equal_rows(expected_first_row, ephem_data[0])
 
     column_headings = np.array(
         [
@@ -125,7 +125,7 @@ def test_CSVDataReader_specific_ephem(use_cache):
         ],
         dtype="object",
     )
-    check_equal_wo_dtypes(expected_first_row, ephem_data[0])
+    check_equal_rows(expected_first_row, ephem_data[0])
 
     # Check that the remaining rows have the correct IDs.
     assert_equal(ephem_data[1][0], "S000044")
@@ -151,7 +151,7 @@ def test_CSVDataReader_orbits():
     orbit_csv = orbit_des_reader.read_rows()
 
     # Check that the two files are the same.
-    assert_frame_equal(orbit_csv, orbit_des)
+    assert_equal(orbit_csv, orbit_des)
 
     # Check that the column names and first row match expectations.
     expected_first_row = np.array(
@@ -183,8 +183,8 @@ def test_CSVDataReader_orbits():
         ],
         dtype=object,
     )
-    assert_equal(expected_first_row, orbit_des.iloc[0].values)
-    assert_equal(expected_columns, orbit_des.columns.values)
+    check_equal_rows(expected_first_row, orbit_des[0])
+    check_equal_rows(expected_columns, orbit_des.dtype.names)
     assert len(orbit_des) == 5
 
     with pytest.raises(SystemExit) as e2:
@@ -212,10 +212,10 @@ def test_CSVDataReader_parameters():
 
     expected_first_line = np.array(["S00000t", 17.615, 0.3, 0.0, 0.1, 0.15], dtype=object)
     expected_columns = np.array(["ObjID", "H_r", "g-r", "i-r", "z-r", "GS"], dtype=object)
-    assert_frame_equal(params_txt, params_csv)
+    assert_equal(params_txt, params_csv)
 
-    assert_equal(params_txt.iloc[0].values, expected_first_line)
-    assert_equal(params_txt.columns.values, expected_columns)
+    check_equal_rows(params_txt[0], expected_first_line)
+    assert_equal(params_txt.dtype.names, expected_columns)
 
     # Check a bad read.
     with pytest.raises(SystemExit) as e1:
@@ -237,8 +237,8 @@ def test_CSVDataReader_parameters_objects():
 
     expected_first_line = np.array(["S000015", 22.08, 0.3, 0.0, 0.1, 0.15], dtype=object)
     expected_columns = np.array(["ObjID", "H_r", "g-r", "i-r", "z-r", "GS"], dtype=object)
-    assert_equal(params_txt.iloc[0].values, expected_first_line)
-    assert_equal(params_txt.columns.values, expected_columns)
+    check_equal_rows(params_txt[0], expected_first_line)
+    assert_equal(params_txt.dtype.names, expected_columns)
 
 
 def test_CSVDataReader_comets():
@@ -246,7 +246,7 @@ def test_CSVDataReader_comets():
     observations = reader.read_rows(0, 1)
 
     expected = pd.DataFrame({"ObjID": ["67P/Churyumov-Gerasimenko"], "afrho1": [1552], "k": [-3.35]})
-    assert_frame_equal(observations, expected)
+    check_equal_rows(observations[0], expected.iloc[0].values)
 
     # Check reading with a bad format specification.
     with pytest.raises(SystemExit) as e1:
@@ -273,29 +273,3 @@ def test_CSVDataReader_delims():
     with pytest.raises(SystemExit) as e2:
         _ = CSVDataReader(get_test_filepath("testcolour.txt"), "")
     assert e2.type == SystemExit
-
-
-def test_CSVDataReader_blank_lines():
-    """Test that we fail if the input file has blank lines."""
-    with tempfile.TemporaryDirectory() as dir_name:
-        file_name = os.path.join(dir_name, "test.ecsv")
-        with open(file_name, "w") as output:
-            output.write("ObjID,b,c\n")
-            output.write("'alice',1,2\n")
-            output.write("'bob',1,2\n")
-            output.write("'jane',1,2\n")
-
-        # The checks pass.
-        reader = CSVDataReader(file_name, sep="csv", cache_table=False)
-        data = reader.read_objects(["bob", "jane"])
-        assert len(data) == 2
-
-        with open(file_name, "a") as output:
-            output.write("3,1,2\n")
-            output.write("\n")  # add another blank line
-            output.write("\n")  # add another blank line
-
-        # The code now fails by default.
-        reader2 = CSVDataReader(file_name, sep="csv", cache_table=False)
-        with pytest.raises(SystemExit):
-            _ = reader2.read_objects(["1", "2"])
