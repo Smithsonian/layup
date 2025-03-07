@@ -22,7 +22,8 @@ dependencies = [
     "astropy",
     "rebound",
     "pooch",
-    "tqdm"
+    "tqdm",
+    "sorcha"
 ]
 
 [project.scripts]
