@@ -1,34 +1,9 @@
 import numpy as np
-import os
-import pandas as pd
 import pytest
 from numpy.testing import assert_equal
-from pandas.testing import assert_frame_equal
-import tempfile
-from pathlib import Path
 
 from layup.utilities.file_readers.CSVReader import CSVDataReader
-
-
-# TODO fix to actually use the import
-# from layup.utilities.data_utilities_for_tests import get_test_filepath
-def get_test_filepath(filename):
-    # This file's path: `<base_directory>/src/layup/utilities/dataUtilitiesForTests.py
-    # THIS_DIR = `<base_directory>/`
-    THIS_DIR = Path(__file__).parent.parent
-
-    # Returned path: `<base_directory>/src/layup/config_setups
-    return os.path.join(THIS_DIR, "data", filename)
-
-
-def check_equal_rows(a, b):
-    """Check that two arrays are equal, ignoring the data types."""
-    # Assert that each array has the same length (not shape because one is a structured array)
-    assert len(a) == len(b)
-
-    # Assert that each element is the same
-    for i in range(len(a)):
-        assert a[i] == b[i]
+from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
@@ -48,19 +23,31 @@ def test_CSVDataReader_ephem(use_cache):
 
     expected_first_row = np.array(
         [
-            "S00000t",
-            "CART",
-            0.952105479028,
-            0.504888475701,
-            4.899098347472,
-            148.881068605772,
-            39.949789586436,
-            54486.32292808,
-            54466.0,
+            (
+                "S00000t",
+                "CART",
+                0.952105479028,
+                0.504888475701,
+                4.899098347472,
+                148.881068605772,
+                39.949789586436,
+                54486.32292808,
+                54466.0,
+            )
         ],
-        dtype="object",
+        dtype=[
+            ("ObjID", "<U7"),
+            ("FORMAT", "<U4"),
+            ("x", "<f8"),
+            ("y", "<f8"),
+            ("z", "<f8"),
+            ("xdot", "<f8"),
+            ("ydot", "<f8"),
+            ("zdot", "<f8"),
+            ("epochMJD_TDB", "<f8"),
+        ],
     )
-    check_equal_rows(expected_first_row, ephem_data[0])
+    assert_equal(expected_first_row, ephem_data[0])
 
     column_headings = np.array(
         [
@@ -106,26 +93,38 @@ def test_CSVDataReader_specific_ephem(use_cache):
             "zdot",
             "epochMJD_TDB",
         ],
-        dtype=object,
+        dtype="object",
     )
     assert_equal(column_headings, ephem_data.dtype.names)
 
     # Check that the first row matches.
     expected_first_row = np.array(
         [
-            "S000015",
-            "CART",
-            0.154159694141,
-            0.938877338769,
-            48.223407545506,
-            105.219186748093,
-            38.658234184755,
-            54736.8815041081,
-            54466.0,
+            (
+                "S000015",
+                "CART",
+                0.154159694141,
+                0.938877338769,
+                48.223407545506,
+                105.219186748093,
+                38.658234184755,
+                54736.8815041081,
+                54466.0,
+            )
         ],
-        dtype="object",
+        dtype=[
+            ("ObjID", "<U7"),
+            ("FORMAT", "<U4"),
+            ("x", "<f8"),
+            ("y", "<f8"),
+            ("z", "<f8"),
+            ("xdot", "<f8"),
+            ("ydot", "<f8"),
+            ("zdot", "<f8"),
+            ("epochMJD_TDB", "<f8"),
+        ],
     )
-    check_equal_rows(expected_first_row, ephem_data[0])
+    assert_equal(expected_first_row, ephem_data[0])
 
     # Check that the remaining rows have the correct IDs.
     assert_equal(ephem_data[1][0], "S000044")
@@ -156,17 +155,29 @@ def test_CSVDataReader_orbits():
     # Check that the column names and first row match expectations.
     expected_first_row = np.array(
         [
-            "S00000t",
-            "COM",
-            0.952105479028,
-            0.504888475701,
-            4.899098347472,
-            148.881068605772,
-            39.949789586436,
-            54486.32292808,
-            54466.0,
+            (
+                "S00000t",
+                "COM",
+                0.952105479028,
+                0.504888475701,
+                4.899098347472,
+                148.881068605772,
+                39.949789586436,
+                54486.32292808,
+                54466.0,
+            )
         ],
-        dtype=object,
+        dtype=[
+            ("ObjID", "<U7"),
+            ("FORMAT", "<U3"),
+            ("q", "<f8"),
+            ("e", "<f8"),
+            ("inc", "<f8"),
+            ("node", "<f8"),
+            ("argPeri", "<f8"),
+            ("t_p_MJD_TDB", "<f8"),
+            ("epochMJD_TDB", "<f8"),
+        ],
     )
 
     expected_columns = np.array(
@@ -183,8 +194,8 @@ def test_CSVDataReader_orbits():
         ],
         dtype=object,
     )
-    check_equal_rows(expected_first_row, orbit_des[0])
-    check_equal_rows(expected_columns, orbit_des.dtype.names)
+    assert_equal(expected_first_row, orbit_des[0])
+    assert_equal(expected_columns, orbit_des.dtype.names)
     assert len(orbit_des) == 5
 
     with pytest.raises(SystemExit) as e2:
@@ -210,11 +221,21 @@ def test_CSVDataReader_parameters():
     params_csv = csv_reader.read_rows(0, 2)
     assert len(params_txt) == 2
 
-    expected_first_line = np.array(["S00000t", 17.615, 0.3, 0.0, 0.1, 0.15], dtype=object)
+    expected_first_line = np.array(
+        [("S00000t", 17.615, 0.3, 0.0, 0.1, 0.15)],
+        dtype=[
+            ("ObjID", "<U7"),
+            ("H_r", "<f8"),
+            ("g-r", "<f8"),
+            ("i-r", "<f8"),
+            ("z-r", "<f8"),
+            ("GS", "<f8"),
+        ],
+    )
     expected_columns = np.array(["ObjID", "H_r", "g-r", "i-r", "z-r", "GS"], dtype=object)
     assert_equal(params_txt, params_csv)
 
-    check_equal_rows(params_txt[0], expected_first_line)
+    assert_equal(params_txt[0], expected_first_line)
     assert_equal(params_txt.dtype.names, expected_columns)
 
     # Check a bad read.
@@ -235,9 +256,19 @@ def test_CSVDataReader_parameters_objects():
     params_txt = txt_reader.read_objects(["S000015", "NonsenseID"])
     assert len(params_txt) == 1
 
-    expected_first_line = np.array(["S000015", 22.08, 0.3, 0.0, 0.1, 0.15], dtype=object)
+    expected_first_line = np.array(
+        [("S000015", 22.08, 0.3, 0.0, 0.1, 0.15)],
+        dtype=[
+            ("ObjID", "<U7"),
+            ("H_r", "<f8"),
+            ("g-r", "<f8"),
+            ("i-r", "<f8"),
+            ("z-r", "<f8"),
+            ("GS", "<f8"),
+        ],
+    )
     expected_columns = np.array(["ObjID", "H_r", "g-r", "i-r", "z-r", "GS"], dtype=object)
-    check_equal_rows(params_txt[0], expected_first_line)
+    assert_equal(params_txt[0], expected_first_line)
     assert_equal(params_txt.dtype.names, expected_columns)
 
 
@@ -245,8 +276,9 @@ def test_CSVDataReader_comets():
     reader = CSVDataReader(get_test_filepath("testcomet.txt"), "whitespace")
     observations = reader.read_rows(0, 1)
 
-    expected = pd.DataFrame({"ObjID": ["67P/Churyumov-Gerasimenko"], "afrho1": [1552], "k": [-3.35]})
-    check_equal_rows(observations[0], expected.iloc[0].values)
+    expected = {"ObjID": "67P/Churyumov-Gerasimenko", "afrho1": 1552, "k": -3.35}
+    for col in expected.keys():
+        assert_equal(observations[col][0], expected[col])
 
     # Check reading with a bad format specification.
     with pytest.raises(SystemExit) as e1:
