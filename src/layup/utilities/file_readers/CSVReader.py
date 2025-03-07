@@ -39,9 +39,9 @@ class CSVDataReader(ObjectDataReader):
             sys.exit(f"ERROR: Unrecognized delimiter ({sep})")
         self.sep = sep
 
-        # TODO this should now always be 0
-        # To pre-validation and collect the header information.
-        self.header_row = self._find_and_validate_header_line()
+        # To pre-validation the header information.
+        self._validate_header_line()
+        self.header_row = 0  # The header row is always the first row
 
         # A table holding just the object ID for each row. Only populated
         # if we try to read data for specific object IDs.
@@ -58,38 +58,22 @@ class CSVDataReader(ObjectDataReader):
         """
         return f"CSVDataReader:{self.filename}"
 
-    # TODO now that we no longer allow header lines greater than 0, can probably remove this.
-    def _find_and_validate_header_line(self):
-        """Read and validate the header line (first line of the file)
-
-        Returns
-        --------
-        : integer
-            The line index of the header.
-
-        """
+    def _validate_header_line(self):
+        """Read and validate the header line (first line of the file)"""
         pplogger = logging.getLogger(__name__)
-
         with open(self.filename) as fh:
-            for i, line in enumerate(fh):
-                # Check we have either found the specified line or no line is specified and
-                # our heuristic matches.
-                if line.startswith("ObjID"):
-                    pplogger.info(f"Reading line {i} of {self.filename} as header:\n{line}")
-                    self._check_header_line(line)
-                    return i
+            line = fh.readline()
+            pplogger.info(f"Reading the first line of {self.filename} as header:\n{line}")
+            self._check_header_line(line)
+            return
 
-                # Give up after first line
-                if i > 0:  # pragma: no cover
-                    break
-
+        # If we reach here, we did not find a valid header line.
         error_str = (
-            f"ERROR: CSVReader: column headings not found in the first 100 lines of {self.filename}. "
+            f"ERROR: CSVReader: column headings not found in the first lines of {self.filename}. "
             "Ensure column headings exist in input files and first column is ObjID."
         )
         pplogger.error(error_str)
         sys.exit(error_str)
-        return 0
 
     def _check_header_line(self, header_line):
         """Check that a given header line is valid and exit if it is invalid.
@@ -125,37 +109,6 @@ class CSVDataReader(ObjectDataReader):
             pplogger.error(error_str)
             sys.exit(error_str)
 
-    def _validate_csv(self, header):
-        """Perform a validation of the CSV file, such as checking for blank lines.
-
-        This is an expensive test and should only be performed when something
-        has gone wrong.  This is needed because panda's read_csv() function can
-        given vague errors (such as failing with an index error if the file
-        has blank lines at the end).
-
-        Parameters
-        ----------
-        header : integer
-            The row number of the header.
-
-        Returns
-        -------
-        : bool
-            True indicating success.
-        """
-        pplogger = logging.getLogger(__name__)
-
-        with open(self.filename) as fh:
-            for i, line in enumerate(fh):
-                if i >= header:
-                    # Check for blank lines. We do this explicitly because pandas read_csv()
-                    # has problems when skipping lines and finding blank lines at the end.
-                    if len(line) == 0 or line.isspace():
-                        error_str = f"ERROR: CSVReader: found a blank line on line {i} of {self.filename}."
-                        pplogger.error(error_str)
-                        sys.exit(error_str)
-        return True
-
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input.
 
@@ -184,8 +137,6 @@ class CSVDataReader(ObjectDataReader):
         skip_rows = []
         if block_start > 0:
             skip_rows.extend([i for i in range(self.header_row + 1, self.header_row + 1 + block_start)])
-
-        # TODO if block start is 0, do we want to call np.genfromtxt immediately?
 
         # Read in the data from self.filename, extracting the header row, and skipping in all of
         # block_size rows, skipping all of the skip_rows.
@@ -265,23 +216,15 @@ class CSVDataReader(ObjectDataReader):
                 chunk_rows.append(line)
 
         # Read the rows.
-        try:
-            # Read the rows.
-            res = np.genfromtxt(
-                chunk_rows,
-                delimiter="," if self.sep != "whitespace" else None,
-                names=True,
-                dtype=None,
-                encoding="utf8",
-                deletechars=INVALID_COL_CHARS,
-                ndmin=1,  # Ensure we always get a structured array even with a single result
-            )
-        except Exception as current_exc:
-            # Check if there is a more understandable error we can raise.
-            self._validate_csv(self.header_row)
-
-            # If we do not detect a problem with _validate_csv, reraise the error.
-            raise current_exc
+        res = np.genfromtxt(
+            chunk_rows,
+            delimiter="," if self.sep != "whitespace" else None,
+            names=True,
+            dtype=None,
+            encoding="utf8",
+            deletechars=INVALID_COL_CHARS,
+            ndmin=1,  # Ensure we always get a structured array even with a single result
+        )
 
         return res
 
