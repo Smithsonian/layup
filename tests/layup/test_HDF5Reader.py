@@ -8,7 +8,10 @@ from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 def test_bad_format():
     """Test that we fail if we try to read a non-HDF5 file."""
-    reader = HDF5DataReader(get_test_filepath("testcolour.txt"))
+    reader = HDF5DataReader(get_test_filepath("CART.txt"))
+    with pytest.raises(RuntimeError):
+        _ = reader.read_rows()
+    reader = HDF5DataReader(get_test_filepath("CART.csv"))
     with pytest.raises(RuntimeError):
         _ = reader.read_rows()
 
