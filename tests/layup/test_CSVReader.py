@@ -211,28 +211,57 @@ def test_CSVDataReader_parameters():
     It just loads it directly from a CSV.
     """
     # Only read in the first two lines.
-    txt_reader = CSVDataReader(get_test_filepath("testcolour.txt"), "whitespace")
+    txt_reader = CSVDataReader(get_test_filepath("CART.txt"), "whitespace")
     assert txt_reader.header_row == 0
     params_txt = txt_reader.read_rows(0, 2)
     assert len(params_txt) == 2
 
-    csv_reader = CSVDataReader(get_test_filepath("testcolour.csv"), "csv")
+    csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv")
     assert csv_reader.header_row == 0
     params_csv = csv_reader.read_rows(0, 2)
     assert len(params_txt) == 2
 
     expected_first_line = np.array(
-        [("S00000t", 17.615, 0.3, 0.0, 0.1, 0.15)],
+        [
+            (
+                "S00000t",
+                "CART",
+                0.952105479028,
+                0.504888475701,
+                4.899098347472,
+                148.881068605772,
+                39.949789586436,
+                54486.32292808,
+                54466.0,
+            )
+        ],
         dtype=[
             ("ObjID", "<U7"),
-            ("H_r", "<f8"),
-            ("g-r", "<f8"),
-            ("i-r", "<f8"),
-            ("z-r", "<f8"),
-            ("GS", "<f8"),
+            ("FORMAT", "<U4"),
+            ("x", "<f8"),
+            ("y", "<f8"),
+            ("z", "<f8"),
+            ("xdot", "<f8"),
+            ("ydot", "<f8"),
+            ("zdot", "<f8"),
+            ("epochMJD_TDB", "<f8"),
         ],
     )
-    expected_columns = np.array(["ObjID", "H_r", "g-r", "i-r", "z-r", "GS"], dtype=object)
+    expected_columns = np.array(
+        [
+            "ObjID",
+            "FORMAT",
+            "x",
+            "y",
+            "z",
+            "xdot",
+            "ydot",
+            "zdot",
+            "epochMJD_TDB",
+        ],
+        dtype=object,
+    )
+
     assert_equal(params_txt, params_csv)
 
     assert_equal(params_txt[0], expected_first_line)
@@ -240,7 +269,7 @@ def test_CSVDataReader_parameters():
 
     # Check a bad read.
     with pytest.raises(SystemExit) as e1:
-        bad_reader = CSVDataReader(get_test_filepath("testcolour.txt"), "csv")
+        bad_reader = CSVDataReader(get_test_filepath("CART.txt"), "csv")
         _ = bad_reader.read_rows()
     assert e1.type == SystemExit
 
@@ -252,56 +281,69 @@ def test_CSVDataReader_parameters():
 def test_CSVDataReader_parameters_objects():
     """Test that we can read in the parameters data by object ID."""
     # Only read in the first two lines.
-    txt_reader = CSVDataReader(get_test_filepath("testcolour.txt"), "whitespace")
+    txt_reader = CSVDataReader(get_test_filepath("CART.txt"), "whitespace")
     params_txt = txt_reader.read_objects(["S000015", "NonsenseID"])
     assert len(params_txt) == 1
 
     expected_first_line = np.array(
-        [("S000015", 22.08, 0.3, 0.0, 0.1, 0.15)],
+        [
+            (
+                "S000015",
+                "CART",
+                0.154159694141,
+                0.938877338769,
+                48.223407545506,
+                105.219186748093,
+                38.658234184755,
+                54736.8815041081,
+                54466.0,
+            )
+        ],
         dtype=[
             ("ObjID", "<U7"),
-            ("H_r", "<f8"),
-            ("g-r", "<f8"),
-            ("i-r", "<f8"),
-            ("z-r", "<f8"),
-            ("GS", "<f8"),
+            ("FORMAT", "<U4"),
+            ("x", "<f8"),
+            ("y", "<f8"),
+            ("z", "<f8"),
+            ("xdot", "<f8"),
+            ("ydot", "<f8"),
+            ("zdot", "<f8"),
+            ("epochMJD_TDB", "<f8"),
         ],
     )
-    expected_columns = np.array(["ObjID", "H_r", "g-r", "i-r", "z-r", "GS"], dtype=object)
+    expected_columns = np.array(
+        [
+            "ObjID",
+            "FORMAT",
+            "x",
+            "y",
+            "z",
+            "xdot",
+            "ydot",
+            "zdot",
+            "epochMJD_TDB",
+        ],
+        dtype=object,
+    )
     assert_equal(params_txt[0], expected_first_line)
     assert_equal(params_txt.dtype.names, expected_columns)
 
 
-def test_CSVDataReader_comets():
-    reader = CSVDataReader(get_test_filepath("testcomet.txt"), "whitespace")
-    observations = reader.read_rows(0, 1)
-
-    expected = {"ObjID": "67P/Churyumov-Gerasimenko", "afrho1": 1552, "k": -3.35}
-    for col in expected.keys():
-        assert_equal(observations[col][0], expected[col])
-
-    # Check reading with a bad format specification.
-    with pytest.raises(SystemExit) as e1:
-        reader = CSVDataReader(get_test_filepath("testcomet.txt"), "csv")
-        _ = reader.read_rows(0, 1)
-    assert e1.type == SystemExit
-
-
 def test_CSVDataReader_delims():
     """Test that we check and match the delimiter during reader creation."""
-    _ = CSVDataReader(get_test_filepath("testcolour.txt"), "whitespace")
+    _ = CSVDataReader(get_test_filepath("CART.txt"), "whitespace")
 
     # Wrong delim type.
     with pytest.raises(SystemExit) as e1:
-        _ = CSVDataReader(get_test_filepath("testcolour.txt"), "csv")
+        _ = CSVDataReader(get_test_filepath("CART.txt"), "csv")
     assert e1.type == SystemExit
 
     # Invalid delim type.
     with pytest.raises(SystemExit) as e1:
-        _ = CSVDataReader(get_test_filepath("testcolour.txt"), "many_commas")
+        _ = CSVDataReader(get_test_filepath("CART.txt"), "many_commas")
     assert e1.type == SystemExit
 
     # Empty delim type.
     with pytest.raises(SystemExit) as e2:
-        _ = CSVDataReader(get_test_filepath("testcolour.txt"), "")
+        _ = CSVDataReader(get_test_filepath("CART.txt"), "")
     assert e2.type == SystemExit

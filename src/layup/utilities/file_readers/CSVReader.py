@@ -5,7 +5,7 @@ import sys
 from layup.utilities.file_readers.ObjectDataReader import ObjectDataReader
 
 # Characters we remove from column names.
-INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
+_INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
 
 
 class CSVDataReader(ObjectDataReader):
@@ -158,7 +158,7 @@ class CSVDataReader(ObjectDataReader):
             names=True,
             dtype=None,
             encoding="utf8",
-            deletechars=INVALID_COL_CHARS,
+            deletechars=_INVALID_COL_CHARS,
             ndmin=1,  # Ensure we always get a structured array even with a single result
             max_rows=block_size,
         )
@@ -176,7 +176,7 @@ class CSVDataReader(ObjectDataReader):
             names=True,
             dtype=None,
             encoding="utf8",
-            deletechars=INVALID_COL_CHARS,
+            deletechars=_INVALID_COL_CHARS,
             ndmin=1,  # Ensure we always get a structured array even with a single result
             usecols=(0,),  # Only read in the first column, ObjID
         )
@@ -222,7 +222,7 @@ class CSVDataReader(ObjectDataReader):
             names=True,
             dtype=None,
             encoding="utf8",
-            deletechars=INVALID_COL_CHARS,
+            deletechars=_INVALID_COL_CHARS,
             ndmin=1,  # Ensure we always get a structured array even with a single result
         )
 
