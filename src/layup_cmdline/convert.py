@@ -20,7 +20,7 @@ def main():
     )
 
     positionals.add_argument(
-        help="orbit type to convert to",
+        help="orbit type to convert to [COM, BCOM, KEP, BKEP, CART, BCART]",
         dest="type",
         type=str,
     )
@@ -51,7 +51,7 @@ def main():
         help="output file name. default path is current working directory",
         dest="o",
         type=str,
-        default="converted_output.csv",
+        default="converted_output",
         required=False,
     )
 
