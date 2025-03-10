@@ -12,13 +12,46 @@ def main():
         description="This would convert orbits",
     )
 
+    positionals = parser.add_argument_group("Positional arguments")
+    positionals.add_argument(
+        help="input orbit file",
+        dest="input",
+        type=str,
+    )
+
+    positionals.add_argument(
+        help="orbit type to convert to [COM, BCOM, KEP, BKEP, CART, BCART]",
+        dest="type",
+        type=str,
+    )
+
     optional = parser.add_argument_group("Optional arguments")
     optional.add_argument(
-        "-p",
-        "--print",
-        help="Prints statement to terminal.",
-        dest="p",
-        action="store_true",
+        "-c",
+        "--chunksize",
+        help="number of orbits to be processed at once",
+        dest="c",
+        type=int,
+        default=10000,
+        required=False,
+    )
+
+    optional.add_argument(
+        "-f",
+        "--format",
+        help="format of input file",
+        dest="f",
+        type=str,
+        default="csv",
+        required=False,
+    )
+    optional.add_argument(
+        "-o",
+        "--output",
+        help="output file name. default path is current working directory",
+        dest="o",
+        type=str,
+        default="converted_output",
         required=False,
     )
 
@@ -28,10 +61,7 @@ def main():
 
 
 def execute(args):
-    if args.p:
-        print("print statement used for convert")
-    else:
-        print("Hello world this would start convert")
+    print("Hello world this would start convert")
 
 
 if __name__ == "__main__":
