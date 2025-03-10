@@ -51,7 +51,17 @@ def test_write_csv():
         assert_equal(data, data2)
 
 
-# def test_write_empty_hdf5():
+def test_write_empty_hdf5():
+    # Write an empty numpy structured array to a temporary HDF5 file.
+    data = np.array([], dtype=[("ObjID", "<U7"), ("FORMAT", "<U4")])
+    with tempfile.NamedTemporaryFile(suffix=".h5") as temp_file:
+        temp_filepath = temp_file.name
+        write_hdf5(data, temp_filepath)
+
+        # Read the data back in and check that it's empty.
+        hdf5_reader = HDF5DataReader(temp_filepath)
+        data2 = hdf5_reader.read_rows()
+        assert_equal(data, data2)
 
 
 def test_write_hdf5():
