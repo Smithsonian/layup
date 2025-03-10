@@ -56,25 +56,14 @@ def main():
         required=False,
     )
 
-    optional.add_argument(
-        "-p",
-        "--print",
-        help="Prints statement to terminal.",
-        dest="p",
-        action="store_true",
-        required=False,
-    )
-
     args = parser.parse_args()
 
     return execute(args)
 
 
 def execute(args):
-    if args.p:
-        print("print statement used for convert")
-    else:
-        print("Hello world this would start convert")
+
+    print("Hello world this would start convert")
 
 
 if __name__ == "__main__":
