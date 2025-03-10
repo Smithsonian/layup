@@ -33,5 +33,5 @@ def write_hdf5(data, filepath, key="data"):
         The key to use in the HDF5 file.
     """
     df = pd.DataFrame(data)
-    df.to_hdf(filepath, key, mode="w")
+    df.to_hdf(filepath, key, mode="w", format="table")
     logging.info(f"Data written to {filepath}")
