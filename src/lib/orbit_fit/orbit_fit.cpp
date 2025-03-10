@@ -339,6 +339,7 @@ void compute_residuals_sequence(struct assist_ephem* ephem,
 				std::vector<size_t>& out_seq
 				){
 
+    // Pass in this simulation stuff to keep it flexible
     struct reb_simulation* r = reb_simulation_create();
     struct assist_extras* ax = assist_attach(r, ephem);    
 
