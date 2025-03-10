@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from layup.utilities.file_readers.ObjectDataReader import ObjectDataReader
+from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 
 class HDF5DataReader(ObjectDataReader):

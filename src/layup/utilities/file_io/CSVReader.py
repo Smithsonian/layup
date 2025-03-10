@@ -2,7 +2,7 @@ import numpy as np
 import logging
 import sys
 
-from layup.utilities.file_readers.ObjectDataReader import ObjectDataReader
+from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
