@@ -16,7 +16,7 @@ def main():
     required.add_argument(
         "-i",
         "--input",
-        help= "input orbit file",
+        help="input orbit file",
         dest="i",
         type=str,
         required=True,
@@ -24,7 +24,7 @@ def main():
     required.add_argument(
         "-f",
         "--format",
-        help= "format of input file",
+        help="format of input file",
         dest="f",
         type=str,
         required=True,
@@ -40,8 +40,8 @@ def main():
     required.add_argument(
         "-o",
         "--output",
-        help= "output file name. default path is current working directory",
-        dest='o',
+        help="output file name. default path is current working directory",
+        dest="o",
         type=str,
         required=True,
     )
@@ -52,10 +52,10 @@ def main():
         help="number of orbits to be processed at once",
         dest="c",
         type=int,
-        default= 10000,
+        default=10000,
         required=False,
     )
-    
+
     optional.add_argument(
         "-p",
         "--print",
