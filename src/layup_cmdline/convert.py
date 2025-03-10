@@ -11,40 +11,20 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="This would convert orbits",
     )
-    required = parser.add_argument_group("Required arguments")
 
-    required.add_argument(
-        "-i",
-        "--input",
+    positionals = parser.add_argument_group("Positional arguments")
+    positionals.add_argument(
         help="input orbit file",
-        dest="i",
+        dest="input",
         type=str,
-        required=True,
     )
-    required.add_argument(
-        "-f",
-        "--format",
-        help="format of input file",
-        dest="f",
-        type=str,
-        required=True,
-    )
-    required.add_argument(
-        "-t",
-        "--type",
+
+    positionals.add_argument(
         help="orbit type to convert to",
-        dest="t",
+        dest="type",
         type=str,
-        required=True,
     )
-    required.add_argument(
-        "-o",
-        "--output",
-        help="output file name. default path is current working directory",
-        dest="o",
-        type=str,
-        required=True,
-    )
+
     optional = parser.add_argument_group("Optional arguments")
     optional.add_argument(
         "-c",
@@ -56,13 +36,31 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-f",
+        "--format",
+        help="format of input file",
+        dest="f",
+        type=str,
+        default="csv",
+        required=False,
+    )
+    optional.add_argument(
+        "-o",
+        "--output",
+        help="output file name. default path is current working directory",
+        dest="o",
+        type=str,
+        default="converted_output.csv",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
 
 
 def execute(args):
-
     print("Hello world this would start convert")
 
 
