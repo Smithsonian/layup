@@ -139,21 +139,21 @@ class ObjectDataReader(abc.ABC):
 
         Parameters
         -----------
-        input_table : Pandas dataframe
+        input_table : structured array
             A loaded table.
 
         Returns
         -----------
-        input_table : Pandas dataframe
+        input_table : structured array
             Returns the input dataframe modified in-place.
         """
         # Check that the ObjID column exists and convert it to a string.
         try:
             input_table["ObjID"] = input_table["ObjID"].astype(str)
         except KeyError:
-            pplogger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)
             err_str = f"ERROR: Unable to find ObjID column headings ({self.get_reader_info()})."
-            pplogger.error(err_str)
+            logger.error(err_str)
             sys.exit(err_str)
 
         return input_table
@@ -187,7 +187,7 @@ class ObjectDataReader(abc.ABC):
             if True then checks the data for  NaNs or nulls.
 
         """
-        pplogger = logging.getLogger(__name__)
+        logger = logging.getLogger(__name__)
 
         # Check that the table has more than one column.
         if len(input_table.dtype.names) <= 1:
@@ -195,19 +195,35 @@ class ObjectDataReader(abc.ABC):
                 f"ERROR: While reading table {self.filename}. Only one column found. "
                 "Check that you specified the correct format."
             )
-            pplogger.error(outstr)
+            logger.error(outstr)
             sys.exit(outstr)
 
         # Check that "ObjID" is a column and is a string.
         input_table = self._validate_object_id_column(input_table)
 
-        # TODO check that format is the same across all rows?
+        # Check that the table has a "FORMAT" column
+        if "FORMAT" not in input_table.dtype.names:
+            outstr = (
+                f"ERROR: While reading table {self.filename}. FORMAT column not found."
+                "Check that you specified the correct format."
+            )
+            logger.error(outstr)
+            sys.exit(outstr)
+        
+        # Check that the table has a single "FORMAT" value.
+        if len(np.unique(input_table["FORMAT"])) > 1:
+            outstr = (
+                f"ERROR: While reading table {self.filename}. FORMAT column has multiple values. "
+                "Check that you specified the correct format."
+            )
+            logger.error(outstr)
+            sys.exit(outstr)
 
         # Check for NaNs or nulls.
         if kwargs.get("disallow_nan", False):  # pragma: no cover
             if np.isnan(input_table).any():
                 inds = input_table["ObjID"][np.isnan(input_table).any(axis=1)]
                 outstr = f"ERROR: While reading table {self.filename} found uninitialised values ObjID: {str(inds)}."
-                pplogger.error(outstr)
+                logger.error(outstr)
                 sys.exit(outstr)
         return input_table

@@ -347,3 +347,19 @@ def test_CSVDataReader_delims():
     with pytest.raises(SystemExit) as e2:
         _ = CSVDataReader(get_test_filepath("CART.txt"), "")
     assert e2.type == SystemExit
+
+def test_CSVDataReader_missing_format():
+    """Test that we fail if the format column is missing."""
+    with pytest.raises(SystemExit) as e1:
+        csv_reader = CSVDataReader(get_test_filepath("CART_missing_format.csv"), "csv")
+        csv_reader.read_rows()
+    assert e1.type == SystemExit
+    assert "FORMAT column not found" in str(e1.value)
+
+def test_CSVDataReader_mixed_formats():
+    """Test that we fail if the format column has mixed formats."""
+    with pytest.raises(SystemExit) as e1:
+        csv_reader = CSVDataReader(get_test_filepath("CART_mixed_format.csv"), "csv")
+        csv_reader.read_rows()
+    assert e1.type == SystemExit
+    assert "FORMAT column has multiple values" in str(e1.value)
