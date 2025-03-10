@@ -209,7 +209,7 @@ class ObjectDataReader(abc.ABC):
             )
             logger.error(outstr)
             sys.exit(outstr)
-        
+
         # Check that the table has a single "FORMAT" value.
         if len(np.unique(input_table["FORMAT"])) > 1:
             outstr = (
