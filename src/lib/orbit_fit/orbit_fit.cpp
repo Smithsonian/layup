@@ -560,6 +560,58 @@ int orbit_fit(struct assist_ephem* ephem,
 
 }
 
+// Go through the detections in reverse order, looking for
+// a set of three detections such that each adjacent pair is
+// separated by more than interval_min and less than interval_max.
+std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
+					     double interval_min,
+					     double interval_max,
+					     size_t max_count){
+
+    size_t cnt = 0;
+    std::vector<std::vector<size_t>> res;
+    for(int i=detections.size()-1; i>=2; i--){
+
+	size_t idx_i = (size_t) i;
+	detection d2 = detections[idx_i];
+	double t2 = d2.jd_tdb;
+
+	for(int j=i-1; j>=1; j--){
+
+	    size_t idx_j = (size_t) j;	    
+	    detection d1 = detections[j];
+	    double t1 = d1.jd_tdb;
+
+	    if(fabs(t2-t1)<interval_min || fabs(t2-t1)>=interval_max)
+		continue;
+
+	    for(int k=j-1; k>=0; k--){
+
+		size_t idx_k = (size_t) k;
+		detection d0 = detections[idx_k];
+		double t0 = d0.jd_tdb;
+
+		if(fabs(t1-t0)<interval_min || fabs(t1-t0)>=interval_max)
+		    continue;
+
+		if(cnt>max_count)
+		    return res;
+
+		cnt++;
+
+		res.push_back({idx_k, idx_j, idx_i});
+		//printf("%lu %lu %lu %lf %lf %lf\n", idx_k, idx_j, idx_i, t0, t1, t2);
+
+	    }
+
+	}
+
+    }
+
+    return res;
+
+}
+
 // Initial orbit and covariance matrix
 // Table of times, observations and uncertainties:
 // x, y, z unit vectors; dRA, dDec (and possibly covariance)
@@ -587,28 +639,47 @@ int main(int argc, char *argv[]) {
     std::vector<detection> detections;
     std::vector<double> times;
 
+    /*
     if(argc != 6){
 	printf("./orbit_fit detection_filename ic_filename id0 id1 id2\n");
 	exit(1);
     }
+    */
+
+    if(argc != 3){
+	printf("./orbit_fit detection_filename ic_filename\n");
+	exit(1);
+    }
+    
     
     // Read the observations
     char detections_filename[128]; 
     sscanf(argv[1], "%s", detections_filename);
     read_detections(detections_filename, detections, times);
 
+    std::vector<std::vector<size_t>> idx = IOD_indices(detections, 25.0, 30.0, 5);
+
     // Read the initial conditions
     char ic_filename[128]; 
     sscanf(argv[2], "%s", ic_filename);
 
     
-    double epoch;
-    struct reb_particle p0 = read_initial_conditions(ic_filename, &epoch);
+    ///double epoch;
+    //struct reb_particle p0 = read_initial_conditions(ic_filename, &epoch);
 
     size_t id0, id1, id2;
+    /*
     sscanf(argv[3], "%lu", &id0);
     sscanf(argv[4], "%lu", &id1);
     sscanf(argv[5], "%lu", &id2);
+    */
+
+    size_t i = 1;
+    id0 = idx[i][0];
+    id1 = idx[i][1];
+    id2 = idx[i][2];
+
+    printf("%lu %lu %lu\n", id0, id1, id2);
 
     // Probably want to turn these into more
     // general vector types, to make calling from
@@ -625,7 +696,7 @@ int main(int argc, char *argv[]) {
 
     // Put this in a better place
     double GMtotal = 0.00029630927487993194;
-    std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 1.0, SPEED_OF_LIGHT);
+    std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
     if (res.has_value()) {
 	for(size_t i=0; i<res.value().size(); i++){
 	    printf("%lu %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
@@ -636,7 +707,7 @@ int main(int argc, char *argv[]) {
 	exit(1);
     }
 
-    print_initial_condition(p0, epoch);
+    //print_initial_condition(p0, epoch);
 
     struct reb_particle p1;
 
@@ -647,7 +718,7 @@ int main(int argc, char *argv[]) {
     p1.vy = res.value()[0].vy;
     p1.vz = res.value()[0].vz;
 
-    print_initial_condition(p1, res.value()[0].epoch);    
+    //print_initial_condition(p1, res.value()[0].epoch);    
 
     int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
 			 times, 
