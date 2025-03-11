@@ -20,10 +20,20 @@ import sys
 import numpy as np
 
 
+REQUIRED_COLUMN_NAMES = {
+    "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+    "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
+    "BKEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
+    "CART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+    "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
+    "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
+}
+
+
 class ObjectDataReader(abc.ABC):
     """The base class for reading in the object data."""
 
-    def __init__(self, cache_table=False, **kwargs):
+    def __init__(self, cache_table=False, format_column_name: str = None, **kwargs):
         """Set up the reader.
 
         Note
@@ -37,6 +47,7 @@ class ObjectDataReader(abc.ABC):
         """
         self._cache_table = cache_table
         self._table = None
+        self._format_column_name = format_column_name
 
     @abc.abstractmethod
     def get_reader_info(self):
@@ -139,21 +150,21 @@ class ObjectDataReader(abc.ABC):
 
         Parameters
         -----------
-        input_table : Pandas dataframe
+        input_table : structured array
             A loaded table.
 
         Returns
         -----------
-        input_table : Pandas dataframe
+        input_table : structured array
             Returns the input dataframe modified in-place.
         """
         # Check that the ObjID column exists and convert it to a string.
         try:
             input_table["ObjID"] = input_table["ObjID"].astype(str)
         except KeyError:
-            pplogger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)
             err_str = f"ERROR: Unable to find ObjID column headings ({self.get_reader_info()})."
-            pplogger.error(err_str)
+            logger.error(err_str)
             sys.exit(err_str)
 
         return input_table
@@ -164,7 +175,7 @@ class ObjectDataReader(abc.ABC):
 
         Parameters
         -----------
-        input_table : Pandas dataframe
+        input_table : structured array
             A loaded table.
 
         **kwargs : dictionary, optional
@@ -187,7 +198,7 @@ class ObjectDataReader(abc.ABC):
             if True then checks the data for  NaNs or nulls.
 
         """
-        pplogger = logging.getLogger(__name__)
+        logger = logging.getLogger(__name__)
 
         # Check that the table has more than one column.
         if len(input_table.dtype.names) <= 1:
@@ -195,19 +206,35 @@ class ObjectDataReader(abc.ABC):
                 f"ERROR: While reading table {self.filename}. Only one column found. "
                 "Check that you specified the correct format."
             )
-            pplogger.error(outstr)
+            logger.error(outstr)
             sys.exit(outstr)
 
         # Check that "ObjID" is a column and is a string.
         input_table = self._validate_object_id_column(input_table)
 
-        # TODO check that format is the same across all rows?
+        # Check that the format column is present, and that all formats are the same.
+        if self._format_column_name:
+            if self._format_column_name not in input_table.dtype.names:
+                outstr = f"ERROR: While reading table {self.filename}. Format column {self._format_column_name} not found."
+                logger.error(outstr)
+                sys.exit(outstr)
+            if len(np.unique(input_table[self._format_column_name])) != 1:
+                outstr = f"ERROR: While reading table {self.filename}. Multiple formats found."
+                logger.error(outstr)
+                sys.exit(outstr)
+
+            # Check that the expected columns are present in this chunk
+            for col in REQUIRED_COLUMN_NAMES[self._format_column_name]:
+                if col not in input_table.dtype.names:
+                    outstr = f"ERROR: While reading table {self.filename}. Required column {col} not found."
+                    logger.error(outstr)
+                    sys.exit(outstr)
 
         # Check for NaNs or nulls.
         if kwargs.get("disallow_nan", False):  # pragma: no cover
             if np.isnan(input_table).any():
                 inds = input_table["ObjID"][np.isnan(input_table).any(axis=1)]
                 outstr = f"ERROR: While reading table {self.filename} found uninitialised values ObjID: {str(inds)}."
-                pplogger.error(outstr)
+                logger.error(outstr)
                 sys.exit(outstr)
         return input_table
