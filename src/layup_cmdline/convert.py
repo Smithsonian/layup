@@ -35,12 +35,17 @@ def main():
         default=10000,
         required=False,
     )
-
     optional.add_argument(
         "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite output file",
+    )
+    optional.add_argument(
+        "--fo",
         "--format",
         help="format of input file",
-        dest="f",
+        dest="fo",
         type=str,
         default="csv",
         required=False,
