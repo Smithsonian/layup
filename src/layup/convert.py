@@ -1,3 +1,4 @@
+import logging
 import os
 import math
 from pathlib import Path
@@ -12,6 +13,9 @@ from layup.file_io.file_output import write_csv, write_hdf5
 
 def process_chunk(data):
     pass
+
+
+logger = logging.getLogger(__name__)
 
 
 def convert(
@@ -31,23 +35,23 @@ def convert(
 
     # Check that input file exists
     if not input_file.exists():
-        raise FileNotFoundError(f"Input file {input_file} does not exist")
+        logger.error(f"Input file {input_file} does not exist")
 
     # Check that output directory exists
     if not output_directory.exists():
-        raise FileNotFoundError(f"Output directory {output_directory} does not exist")
+        logger.error(f"Output directory {output_directory} does not exist")
 
     # Check that chunk size is a positive integer
     if not isinstance(chunk_size, int) or chunk_size <= 0:
-        raise ValueError("Chunk size must be a positive integer")
+        logger.error("Chunk size must be a positive integer")
 
     # Check that the file format is valid
     if file_format.lower() not in ["csv", "hdf5"]:
-        raise ValueError("File format must be 'csv' or 'hdf5'")
+        logger.error("File format must be 'csv' or 'hdf5'")
 
     # Check that the conversion type is valid
     if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        raise ValueError("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
+        logger.error("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
 
     # Open the input file and read the first line
     if file_format is "hdf5":
@@ -62,11 +66,11 @@ def convert(
     if "FORMAT" in sample_data[0]:
         input_format = sample_data[0]["FORMAT"]
     else:
-        raise ValueError("Input file does not contain 'FORMAT' column")
+        logger.error("Input file does not contain 'FORMAT' column")
 
     # Check that the input format is not already the desired format
     if convert_to == input_format:
-        raise ValueError("Input file is already in the desired format")
+        logger.error("Input file is already in the desired format")
 
     # TODO Need to implement a get_row_count function in the readers
     total_rows = reader.get_row_count()

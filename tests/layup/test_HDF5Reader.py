@@ -131,3 +131,9 @@ def test_CSVDataReader_mixed_formats():
         hdf_reader.read_rows()
     assert e1.type == SystemExit
     assert "Multiple formats found." in str(e1.value)
+
+
+def test_file_count():
+    reader = HDF5DataReader(get_test_filepath("BCOM.h5"))
+    row_count = reader.get_row_count()
+    assert row_count == 814

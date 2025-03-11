@@ -61,6 +61,17 @@ class ObjectDataReader(abc.ABC):
         """
         pass  # pragma: no cover
 
+    @abc.abstractmethod
+    def get_row_count(self):
+        """Return the total number of rows in the input file.
+
+        Returns
+        --------
+        row_count : int
+            The number of rows in the input file.
+        """
+        pass
+
     def read_rows(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input, performs
         post-processing and validation, and returns a numpy structured array.

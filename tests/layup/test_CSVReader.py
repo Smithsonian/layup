@@ -369,3 +369,9 @@ def test_CSVDataReader_mixed_formats():
         csv_reader.read_rows()
     assert e1.type == SystemExit
     assert "Multiple formats found." in str(e1.value)
+
+
+def test_file_count():
+    reader = CSVDataReader(get_test_filepath("BCOM.csv"), sep="csv")
+    row_count = reader.get_row_count()
+    assert row_count == 814
