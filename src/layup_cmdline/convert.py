@@ -20,8 +20,8 @@ def main():
     )
 
     positionals.add_argument(
-        help="orbit type to convert to [COM, BCOM, KEP, BKEP, CART, BCART]",
-        dest="type",
+        help="orbit reference frame to transform to [COM, BCOM, KEP, BKEP, CART, BCART]",
+        dest="orbit-type",
         type=str,
     )
 
@@ -35,12 +35,17 @@ def main():
         default=10000,
         required=False,
     )
-
     optional.add_argument(
         "-f",
-        "--format",
-        help="format of input file",
-        dest="f",
+        "--force",
+        action="store_true",
+        help="Overwrite output file",
+    )
+    optional.add_argument(
+        "-i",
+        "--input-type",
+        help="input format type of file",
+        dest="i",
         type=str,
         default="csv",
         required=False,
