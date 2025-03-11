@@ -64,8 +64,7 @@ def main():
     if args.version:
         import layup
 
-        # print(layup.__version__)
-        print("layup.__version__ has not be added yet")
+        print(layup.__version__)
         return
 
     # Ensure a verb is provided if not just checking the version
