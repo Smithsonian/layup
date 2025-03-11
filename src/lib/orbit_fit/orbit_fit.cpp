@@ -26,6 +26,9 @@
 #include <cmath>
 #include <complex>
 
+#include "orbit_fit.h"
+#include "gauss.h"
+
 extern "C"{
 #include "rebound.h"
 #include "assist.h"
@@ -35,200 +38,6 @@ using std::cout;
 
 double AU_M = 149597870700;
 double SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M;
-
-struct detection {
-
-    detection() : jd_tdb(), theta_x(), theta_y(), theta_z(),
-		  ra_unc(), dec_unc(), mag(), mag_unc() {
-    }
-
-    std::string objID; // user-supplied object ID.
-    std::string obsCode; // observatory code
-    
-    double jd_tdb;
-
-    double theta_x; // unit vector x 
-    double theta_y; // unit vector y
-    double theta_z; // unit vector z
-
-    double Ax; // unit vector along RA
-    double Ay;
-    double Az; 
-
-    double Dx; // unit vector along Dec
-    double Dy;
-    double Dz; 
-    
-    double xe; // observatory position x
-    double ye; // observatory position y
-    double ze; // observatory position z 
-    
-    double ra_unc; // astrometric uncertainty (radians)
-    double dec_unc; // astrometric uncertainty (radians)
-
-    double mag; // magnitude 
-    double mag_unc; // magnitude uncertainty
-
-};
-
-struct cart_orbit {
-
-    cart_orbit() : epoch(), x(), y(), z(), vx(), vy(), vz() {
-    }
-
-    double epoch;
-
-    double x; 
-    double y;
-    double z;
-
-    double vx; 
-    double vy;
-    double vz;
-
-    cart_orbit(double _epoch, double _x, double _y, double _z, double _vx, double _vy, double _vz) { 
-	epoch = _epoch;
-	x = _x;
-	y = _y;
-	z = _z;
-	vx = _vx;
-	vy = _vy;
-	vz = _vz;
-    }    
-
-};
-
-// template for gauss
-// pass in three detections
-std::optional<std::vector<cart_orbit>> gauss(double MU_BARY, detection &o1_in, detection &o2_in, detection &o3_in, double min_distance) {
-    // Create a vector of pointers to observations for sorting by epoch
-    std::vector<detection> triplet = { o1_in, o2_in, o3_in };
-    std::sort(triplet.begin(), triplet.end(), [](const detection a, const detection b) {
-        return a.jd_tdb < b.jd_tdb;
-    });
-
-    // Get the observer positions and pointing directions
-    Eigen::Vector3d o1 = {triplet[0].xe, triplet[0].ye, triplet[0].ze};
-    Eigen::Vector3d o2 = {triplet[1].xe, triplet[1].ye, triplet[1].ze};
-    Eigen::Vector3d o3 = {triplet[2].xe, triplet[2].ye, triplet[2].ze};        
-
-    Eigen::Vector3d rho1 = {triplet[0].theta_x, triplet[0].theta_y, triplet[0].theta_z};
-    Eigen::Vector3d rho2 = {triplet[1].theta_x, triplet[1].theta_y, triplet[1].theta_z};
-    Eigen::Vector3d rho3 = {triplet[2].theta_x, triplet[2].theta_y, triplet[2].theta_z};        
-
-    double t1 = triplet[0].jd_tdb;
-    double t2 = triplet[1].jd_tdb;
-    double t3 = triplet[2].jd_tdb;
-
-    double tau1 = t1 - t2;
-    double tau3 = t3 - t2;
-    double tau  = t3 - t1;
-
-    // Compute cross products
-    Eigen::Vector3d p1 = rho2.cross(rho3);
-    Eigen::Vector3d p2 = rho1.cross(rho3);
-    Eigen::Vector3d p3 = rho1.cross(rho2);
-
-    double d0 = rho1.dot(p1);
-
-    // Construct the 3x3 d matrix
-    Eigen::Matrix3d d;
-    d(0, 0) = o1.dot(p1); d(0, 1) = o1.dot(p2); d(0, 2) = o1.dot(p3);
-    d(1, 0) = o2.dot(p1); d(1, 1) = o2.dot(p2); d(1, 2) = o2.dot(p3);
-    d(2, 0) = o3.dot(p1); d(2, 1) = o3.dot(p2); d(2, 2) = o3.dot(p3);
-
-    double a = (1.0 / d0) * (-d(0, 1) * (tau3 / tau) + d(1, 1) + d(2, 1) * (tau1 / tau));
-    double b = (1.0 / (6.0 * d0)) * (d(0, 1) * ((tau3 * tau3) - (tau * tau)) * (tau3 / tau) +
-                                     d(2, 1) * ((tau * tau) - (tau1 * tau1)) * (tau1 / tau));
-    double e = o2.dot(rho2);
-    double o2sq = o2.dot(o2);
-
-    double aa = -((a * a) + 2.0 * a * e + o2sq);
-    double bb = -2.0 * MU_BARY * b * (a + e);
-    double cc = -std::pow(MU_BARY, 2) * (b * b);
-
-    // Construct the 8x8 companion matrix for the polynomial
-    Eigen::Matrix<double, 8, 8> mat = Eigen::Matrix<double, 8, 8>::Zero();
-    mat(0, 1) = 1.0;
-    mat(1, 2) = 1.0;
-    mat(2, 3) = 1.0;
-    mat(3, 4) = 1.0;
-    mat(4, 5) = 1.0;
-    mat(5, 6) = 1.0;
-    mat(6, 7) = 1.0;
-    mat(7, 0) = -cc;
-    mat(7, 3) = -bb;
-    mat(7, 6) = -aa;
-
-    // Compute the eigenvalues of the companion matrix
-    Eigen::ComplexEigenSolver<Eigen::Matrix<double, 8, 8>> ces(mat);
-    if (ces.info() != Eigen::Success) {
-        return std::nullopt;
-    }
-
-    // Filter eigenvalues: select those with (nearly) zero imaginary part and real part > min_distance
-    std::vector<double> roots;
-    for (int i = 0; i < ces.eigenvalues().size(); ++i) {
-        std::complex<double> eig = ces.eigenvalues()[i];
-        if (std::abs(eig.imag()) < 1e-10 && eig.real() > min_distance) {
-            roots.push_back(eig.real());
-        }
-    }
-    if (roots.empty()) {
-        return std::nullopt;
-    }
-
-    std::vector<cart_orbit> res;
-    for (double root : roots) {
-        double root3 = std::pow(root, 3);
-
-        // Compute a1
-        double num1 = 6.0 * (d(2, 0) * (tau1 / tau3) + d(1, 0) * (tau / tau3)) * root3 +
-                      MU_BARY * d(2, 0) * ((tau * tau) - (tau1 * tau1)) * (tau1 / tau3);
-        double den1 = 6.0 * root3 + MU_BARY * ((tau * tau) - (tau3 * tau3));
-        double a1 = (1.0 / d0) * ((num1 / den1) - d(0, 0));
-
-        // Compute a2 and a3
-        double a2 = a + (MU_BARY * b) / root3;
-        double num3 = 6.0 * (d(0, 2) * (tau3 / tau1) - d(1, 2) * (tau / tau1)) * root3 +
-                      MU_BARY * d(0, 2) * ((tau * tau) - (tau3 * tau3)) * (tau3 / tau1);
-        double den3 = 6.0 * root3 + MU_BARY * ((tau * tau) - (tau1 * tau1));
-        double a3 = (1.0 / d0) * ((num3 / den3) - d(2, 2));
-
-        // Compute position vectors
-        Eigen::Vector3d r1 = o1 + a1 * rho1;
-        Eigen::Vector3d r2 = o2 + a2 * rho2;
-        Eigen::Vector3d r3 = o3 + a3 * rho3;
-
-        // Calculate f and g functions
-        double f1 = 1.0 - 0.5 * (MU_BARY / root3) * (tau1 * tau1);
-        double f3 = 1.0 - 0.5 * (MU_BARY / root3) * (tau3 * tau3);
-        double g1 = tau1 - (1.0 / 6.0) * (MU_BARY / root3) * (tau1 * tau1 * tau1);
-        double g3 = tau3 - (1.0 / 6.0) * (MU_BARY / root3) * (tau3 * tau3 * tau3);
-
-        // Solve for the velocity at t2
-        Eigen::Vector3d v2 = (-f3 * r1 + f1 * r3) / (f1 * g3 - f3 * g1);
-
-        // Extract components for clarity
-        double x  = r2.x();
-        double y  = r2.y();
-        double z  = r2.z();
-        double vx = v2.x();
-        double vy = v2.y();
-        double vz = v2.z();
-
-        // Apply light-time correction
-        double ltt = r2.norm() / SPEED_OF_LIGHT;
-        double corrected_t = triplet[1].jd_tdb;
-        corrected_t -= ltt;
-
-	cart_orbit rock = cart_orbit(x, y, z, vx, vy, vz, corrected_t);
-	res.push_back(rock);
-
-    }
-
-    return res;
-}
 
 // Does this need to report possible failures?
 int integrate_light_time(struct assist_extras* ax, int np, double t, reb_vec3d r_obs, double lt0, size_t iter, double speed_of_light){
@@ -272,6 +81,15 @@ struct reb_particle read_initial_conditions(const char *ic_file_name, double *ep
     p0.vz = vz0;
 
     return p0;
+
+}
+
+
+void print_initial_condition(struct reb_particle p0, double epoch){
+
+    printf("%lf %lf %lf %lf %lf %lf %lf\n",  epoch, p0.x, p0.y, p0.z, p0.vx, p0.vy, p0.vz);
+
+    return;
 
 }
 
@@ -345,6 +163,7 @@ void read_detections(const char *data_file_name,
 
 }
 
+
 void add_variational_particles(struct reb_simulation* r, size_t np, int *var){
 
     int varx = reb_simulation_add_variation_1st_order(r, np);
@@ -368,24 +187,6 @@ void add_variational_particles(struct reb_simulation* r, size_t np, int *var){
     *var = varx;
     
 }
-
-struct residuals {
-
-    residuals() : x_resid(), y_resid() {
-    }
-    double x_resid;
-    double y_resid;
-};
-
-
-struct partials {
-
-    partials() : x_partials(), y_partials() {
-    }
-    
-    std::vector<double> x_partials;
-    std::vector<double> y_partials;
-};
 
 void compute_single_residuals(struct assist_ephem* ephem,
 			      struct assist_extras* ax,
@@ -739,7 +540,7 @@ int orbit_fit(struct assist_ephem* ephem,
 	//std::cout   << "chi2:\n" << chi2 << "\n";        
 	//std::cout   << "Cinv:\n" << C.inverse() << "\n";
 	
-	//std::cout << "matrix dX\n" << dX << std::endl;
+	std::cout << "matrix dX\n" << dX << std::endl;
 
 	if(converged(dX, eps)){
 	    flag = 0;
@@ -784,19 +585,30 @@ int main(int argc, char *argv[]) {
     }
 
     std::vector<detection> detections;
-    std::vector<double> times;    
+    std::vector<double> times;
+
+    if(argc != 6){
+	printf("./orbit_fit detection_filename ic_filename id0 id1 id2\n");
+	exit(1);
+    }
     
     // Read the observations
     char detections_filename[128]; 
     sscanf(argv[1], "%s", detections_filename);
     read_detections(detections_filename, detections, times);
-    
+
     // Read the initial conditions
     char ic_filename[128]; 
     sscanf(argv[2], "%s", ic_filename);
+
     
     double epoch;
     struct reb_particle p0 = read_initial_conditions(ic_filename, &epoch);
+
+    size_t id0, id1, id2;
+    sscanf(argv[3], "%lu", &id0);
+    sscanf(argv[4], "%lu", &id1);
+    sscanf(argv[5], "%lu", &id2);
 
     // Probably want to turn these into more
     // general vector types, to make calling from
@@ -806,12 +618,38 @@ int main(int argc, char *argv[]) {
     std::vector<partials> partials_vec(detections.size());
 
     // Make these parameters flexible.
-    size_t iter_max = 10;
+    size_t iter_max = 100;
     double eps = 1e-12;
 
     size_t iters;
 
-    int flag = orbit_fit(ephem, p0, epoch,
+    // Put this in a better place
+    double GMtotal = 0.00029630927487993194;
+    std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 1.0, SPEED_OF_LIGHT);
+    if (res.has_value()) {
+	for(size_t i=0; i<res.value().size(); i++){
+	    printf("%lu %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
+		   res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
+	}
+    } else {
+	printf("gauss failed\n");
+	exit(1);
+    }
+
+    print_initial_condition(p0, epoch);
+
+    struct reb_particle p1;
+
+    p1.x = res.value()[0].x;
+    p1.y = res.value()[0].y;
+    p1.z = res.value()[0].z;    
+    p1.vx = res.value()[0].vx;
+    p1.vy = res.value()[0].vy;
+    p1.vz = res.value()[0].vz;
+
+    print_initial_condition(p1, res.value()[0].epoch);    
+
+    int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
 			 times, 
 			 detections,
 			 resid_vec,
