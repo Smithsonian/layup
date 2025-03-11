@@ -11,7 +11,7 @@ if not os.path.isfile("./librebound.so"):
     os.symlink("./include/rebound/src/librebound.so", "./librebound.so")
 
 # make libraries discoverable for linux
-if platform is "linux" or platform is "linux2":
+if platform == "linux" or platform == "linux2":
     root_dir = os.path.dirname(os.path.abspath(__file__))
     if "LD_LIBRARY_PATH" in os.environ.keys():
         ld_lib_path = os.environ["LD_LIBRARY_PATH"]
