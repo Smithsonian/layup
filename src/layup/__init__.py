@@ -22,3 +22,9 @@ if not os.path.isfile(rebound_sym_path_linux):
     os.symlink(rebound_lib_path, rebound_sym_path_linux)
 if not os.path.isfile(rebound_sym_path_osx):
     os.symlink(rebound_lib_path, rebound_sym_path_osx)
+try:
+    from ._version import version as __version__
+    from ._version import version_tuple
+except ImportError:
+    __version__ = "unknown version"
+    version_tuple = (0, 0, "unknown version")
