@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "lib/orbit_fit/orbit_fit.cpp"
+
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
 

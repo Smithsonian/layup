@@ -2,12 +2,56 @@
 # policies up to CMake 3.27
 cmake_minimum_required(VERSION 3.15...3.27)
 
+# pybind and eigen require CXX >= 14
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+set(C_STANDARD 17)
+
 # Scikit-build-core sets these values for you, or you can just hard-code the
 # name and version.
 project(
   ${SKBUILD_PROJECT_NAME}
   VERSION ${SKBUILD_PROJECT_VERSION}
-  LANGUAGES CXX)
+  LANGUAGES CXX C)
+
+# This make will compile assist and rebound
+execute_process(
+  COMMAND make
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src
+)
+
+include_directories(
+  include/eigen
+  include/assist/src
+)
+
+link_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src
+  ${CMAKE_CURRENT_SOURCE_DIR}include/rebound/src
+)
+
+# Discover the assist library after building
+add_library(
+  assist
+  STATIC
+  IMPORTED
+)
+set_target_properties(
+  assist PROPERTIES
+  IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/libassist.so
+)
+
+# Discover the rebound library after building
+add_library(
+  rebound
+  STATIC
+  IMPORTED
+)
+set_target_properties(
+  rebound PROPERTIES
+  IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/librebound.so"
+)
 
 # Find the module development requirements (requires FindPython from 3.17 or
 # scikit-build-core's built-in backport)
@@ -17,10 +61,11 @@ find_package(pybind11 CONFIG REQUIRED)
 # Add a library using FindPython's tooling (pybind11 also provides a helper like
 # this)
 python_add_library(_core MODULE src/main.cpp WITH_SOABI)
-target_link_libraries(_core PRIVATE pybind11::headers)
+# link all the required libraries
+target_link_libraries(_core PRIVATE pybind11::headers assist rebound)
 
 # This is passing in the version as a define just as an example
 target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
 
 # The install directory is the output (wheel) directory
-install(TARGETS _core DESTINATION layup_cpp)
+install(TARGETS _core DESTINATION _layup_cpp)
