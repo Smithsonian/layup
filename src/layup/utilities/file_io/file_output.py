@@ -17,8 +17,7 @@ def write_csv(data, filepath):
     """
     df = pd.DataFrame(data)
     if os.path.exists(filepath):
-        with open(filepath, "a") as f:
-            df.to_csv(f, index=False)
+        df.to_csv(filepath, mode="a", header=False, index=False)
     else:
         df.to_csv(filepath, index=False)
 
