@@ -24,6 +24,7 @@ execute_process(
 include_directories(
   include/eigen
   include/assist/src
+  include/rebound/src
 )
 
 link_directories(
@@ -50,7 +51,7 @@ add_library(
 )
 set_target_properties(
   rebound PROPERTIES
-  IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/librebound.so"
+  IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/librebound.so
 )
 
 # Find the module development requirements (requires FindPython from 3.17 or
