@@ -18,7 +18,3 @@ if platform is "linux" or platform is "linux2":
         os.environ["LD_LIBRARY_PATH"] = ld_lib_path + ":" + root_dir
     else:
         os.environ["LD_LIBRARY_PATH"] = root_dir
-
-from .example_module import greetings, meaning
-
-__all__ = ["greetings", "meaning"]

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.utilities.file_readers.CSVReader import CSVDataReader
+from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 
