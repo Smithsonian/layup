@@ -1,67 +1,44 @@
+// This code requires the following:
+// 1. The rebound library
+// 2. The assist library
+// 3. The Eigen header-only library
+//
+// It will probably need either pybind11, eigenpy, or something like
+// that to connect it to python
+
+// To Do:
+// 1. Set up a make file, or something like that.
+// 2. Make sure that the physical constants are consistent
+//    with the rest of the code
+// 3. Work on getting better data weights.
+// 4. Work on outlier rejection.
+// 5. Write code to handle doppler and range observations
+// 6. Write code to handle shift+stack observations (RA/Dec + rates)
+
+// Compile with something like this
+// g++ -std=c++17 -I../..//src/ -I../../../rebound/src/ -I/Users/mholman/eigen-3.4.0 -Wl,-rpath,./ -Wpointer-arith -D_GNU_SOURCE -O3 -fPIC -I/usr/local/include -Wall -g  -Wno-unknown-pragmas -D_APPLE -DSERVER -DGITHASH=e99d8d73f0aa7fb7bf150c680a2d581f43d3a8be gauss.cpp -L. -lassist -lrebound -L/usr/local/lib -o gauss
+
+#include <iostream>
+#include <cstdio>
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <Eigen/Eigenvalues>
-#include <vector>
-#include <algorithm>
 #include <cmath>
 #include <complex>
 
-struct detection {
+#include <chrono>
 
-    detection() : jd_tdb(), theta_x(), theta_y(), theta_z(),
-		  ra_unc(), dec_unc(), mag(), mag_unc() {
-    }
+#include "orbit_fit.h"
+#include "gauss.h"
 
-    std::string objID; // user-supplied object ID.
-    std::string obsCode; // observatory code
-    
-    double jd_tdb;
-
-    double theta_x; // unit vector x 
-    double theta_y; // unit vector y
-    double theta_z; // unit vector z
-
-    double Ax; // unit vector along RA
-    double Ay;
-    double Az; 
-
-    double Dx; // unit vector along Dec
-    double Dy;
-    double Dz; 
-    
-    double xe; // observatory position x
-    double ye; // observatory position y
-    double ze; // observatory position z 
-    
-    double ra_unc; // astrometric uncertainty (radians)
-    double dec_unc; // astrometric uncertainty (radians)
-
-    double mag; // magnitude 
-    double mag_unc; // magnitude uncertainty
-
-};
-
-struct cart_orbit {
-
-    cart_orbit() : x(), y(), z(), vx(), vy(), vz(), epoch() {
-    }
-
-    double epoch;
-
-    double x; 
-    double y;
-    double z;
-
-    double vx; 
-    double vy;
-    double vz; 
-
-};
+using namespace Eigen;
+using std::cout;
 
 // template for gauss
 // pass in three detections
-std::vector<cart_orbit> gauss(const detection &o1_in, const detection &o2_in, const detection &o3_in, double min_distance) {
+std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, detection &o1_in, detection &o2_in, detection &o3_in, double min_distance, double SPEED_OF_LIGHT) {
     // Create a vector of pointers to observations for sorting by epoch
-    std::vector<const detection> triplet = { o1_in, o2_in, o3_in };
+    std::vector<detection> triplet = { o1_in, o2_in, o3_in };
     std::sort(triplet.begin(), triplet.end(), [](const detection a, const detection b) {
         return a.jd_tdb < b.jd_tdb;
     });
@@ -137,8 +114,14 @@ std::vector<cart_orbit> gauss(const detection &o1_in, const detection &o2_in, co
         return std::nullopt;
     }
 
-    std::vector<cart_orbit> res;
+    std::sort(roots.begin(), roots.end(), [](const double a, const double b) {
+        return a>b;
+    });
+    
+
+    std::vector<gauss_soln> res;
     for (double root : roots) {
+	std::cout << root << std::endl;
         double root3 = std::pow(root, 3);
 
         // Compute a1
@@ -178,13 +161,15 @@ std::vector<cart_orbit> gauss(const detection &o1_in, const detection &o2_in, co
 
         // Apply light-time correction
         double ltt = r2.norm() / SPEED_OF_LIGHT;
-        auto corrected_t = triplet[1]->epoch;
-        corrected_t.epoch -= ltt;
+        double corrected_t = triplet[1].jd_tdb;
+        corrected_t -= ltt;
 
-	cart_orbit rock = cart_orbit(x, y, z, vx, vy, vz, corrected_t);
-	res.push_back(rock);
+	gauss_soln soln = gauss_soln(root, corrected_t, x, y, z, vx, vy, vz);
+	res.push_back(soln);
 
     }
 
     return res;
 }
+
+
