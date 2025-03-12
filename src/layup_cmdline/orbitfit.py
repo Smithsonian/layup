@@ -63,7 +63,7 @@ def main():
     optional.add_argument(
         "-o",
         "--output",
-        help="output file name. default path is current working directory",
+        help="output file stem. default path is current working directory",
         dest="o",
         type=str,
         default="output",
