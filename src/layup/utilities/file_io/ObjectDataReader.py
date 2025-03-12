@@ -235,7 +235,7 @@ class ObjectDataReader(abc.ABC):
                 sys.exit(outstr)
 
             # Check that the expected columns are present in this chunk
-            for col in REQUIRED_COLUMN_NAMES[self._format_column_name]:
+            for col in REQUIRED_COLUMN_NAMES[input_table[0][self._format_column_name]]:
                 if col not in input_table.dtype.names:
                     outstr = f"ERROR: While reading table {self.filename}. Required column {col} not found."
                     logger.error(outstr)

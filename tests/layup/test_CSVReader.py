@@ -74,6 +74,28 @@ def test_CSVDataReader_ephem(use_cache):
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
+def test_CSVDataReader_read_by_row(use_cache):
+    """Test that reading in all rows produces the same row as reading in one row at a time."""
+    csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv", cache_table=use_cache)
+    assert csv_reader.header_row == 0
+    assert csv_reader.get_reader_info() == "CSVDataReader:" + get_test_filepath("CART.csv")
+
+    # Read in all 9 rows.
+    all_data = csv_reader.read_rows()
+    assert len(all_data) == 5
+
+    # Read in the rows one at a time.
+    row_data = []
+    for i in range(5):
+        single_row = csv_reader.read_rows(i, 1)
+        assert len(single_row) == 1
+        row_data.append(single_row)
+        assert np.all(single_row == all_data[i])
+
+    assert len(row_data) == len(all_data)
+
+
+@pytest.mark.parametrize("use_cache", [True, False])
 def test_CSVDataReader_specific_ephem(use_cache):
     # Test that we can read in the ephemeris data for specific object IDs only.
     csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv", cache_table=use_cache)
