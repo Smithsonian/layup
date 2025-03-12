@@ -27,7 +27,7 @@
 #include <complex>
 
 #include "orbit_fit.h"
-// #include "gauss.h"
+// #include "../gauss/gauss.h"
 
 extern "C"{
 #include "rebound.h"
