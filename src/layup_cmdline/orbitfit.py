@@ -90,7 +90,6 @@ def execute(args):
     if args.g and args.i == "gauss":
         args.i = None
     elif args.g and args.i != None:
-
         sys.exit("ERROR: IOD and initial guess file cannot be called together")
 
     find_file_or_exit(arg_fn=args.input, argname="positional input")
