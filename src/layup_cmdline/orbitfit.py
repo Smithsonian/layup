@@ -2,6 +2,7 @@
 # The `layup orbitfit` subcommand implementation
 #
 import argparse
+import sys
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 from layup.utilities.file_access_utils import find_file_or_exit
 
@@ -19,7 +20,7 @@ def main():
         type=str,
     )
     positionals.add_argument(
-        help = "input file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]",
+        help="input file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]",
         dest="type",
         type=str,
     )
@@ -50,13 +51,7 @@ def main():
         help="Overwrite output file",
         required=False,
     )
-    optional.add_argument(
-        "-g",
-        "--guess",
-        help="initial guess file",
-        dest="g",
-        required=False
-        )
+    optional.add_argument("-g", "--guess", help="initial guess file", dest="g", required=False)
     optional.add_argument(
         "-i",
         "--iod",
@@ -83,10 +78,8 @@ def main():
         default="csv",
         required=False,
     )
-    
+
     args = parser.parse_args()
-    if args.g:
-        args.i = None
 
     return execute(args)
 
@@ -94,9 +87,21 @@ def main():
 def execute(args):
     print("Hello world this would start orbitfit")
 
+    if args.g and args.i == "gauss":
+        args.i = None
+    elif args.g and args.i != None:
+
+        sys.exit("ERROR: IOD and initial guess file cannot be called together")
+
+    find_file_or_exit(arg_fn=args.input, argname="positional input")
+
+    if not ((args.type.lower()) in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]):
+        sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
     from layup.utilities.layup_configs import LayupConfigs
 
-    # Showing how Configs file is called and how parameters are used
+    if args.g is not None:
+        find_file_or_exit(args.g, "-g, --guess")
+
     if args.c:
         find_file_or_exit(args.c, "-c, --config")
         configs = LayupConfigs(args.c)
