@@ -27,7 +27,23 @@ def main():
 
     optional = parser.add_argument_group("Optional arguments")
     optional.add_argument(
+        "--ar",
+        "--ar-data-path",
+        help="Directory path where Assist+Rebound data files where stored when running bootstrap_sorcha_data_files from the command line.",
+        type=str,
+        dest="ar",
+        required=False,
+    )
+    optional.add_argument(
         "-c",
+        "--conf",
+        help="optional configuration file",
+        type=str,
+        dest="c",
+        required=False,
+    )
+    optional.add_argument(
+        "-ch",
         "--chunksize",
         help="number of orbits to be processed at once",
         dest="c",
