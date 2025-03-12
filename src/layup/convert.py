@@ -9,6 +9,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
+from sorcha.ephemeris.orbit_conversion_utilities import universal_keplerian
 
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
@@ -26,6 +27,9 @@ REQUIRED_COLUMN_NAMES = {
     "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
     "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
 }
+
+# Add this to MJD to convert to JD
+MJD_TO_JD_CONVERSTION = 2400000.5
 
 
 def process_data(data, n_workers, func, **kwargs):
@@ -82,13 +86,13 @@ def _apply_convert(data, convert_to):
     ephem, gm_sun, gm_total = create_assist_ephemeris(None, config.auxiliary)
 
     convert_from = data["FORMAT"][0]
+    results = []
 
     if convert_from == "BCOM" and convert_to == "BCART":
         #! "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-        results = []
         for d in data:
             # `out` is a tuple
-            out = parse_orbit_row(d, d["epochMJD_TDB"] + 2400000.5, ephem, {}, gm_sun, gm_total)
+            out = parse_orbit_row(d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total)
             # TODO Find a way to keep any extra columns
             # TODO Find a way to do this with list extension
 
@@ -103,6 +107,42 @@ def _apply_convert(data, convert_to):
                     ("xdot", "<f8"),
                     ("ydot", "<f8"),
                     ("zdot", "<f8"),
+                    ("epochMJD_TDB", "<f8"),
+                ],
+            )
+            results.append(result_struct_array)
+
+    if convert_from == "BCART" and convert_to == "BCOM":
+        #! "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
+        for d in data:
+            # `out` is a tuple
+            out = universal_keplerian(
+                gm_total, d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"], d["epochMJD_TDB"]
+            )
+
+            result_struct_array = np.array(
+                [
+                    (
+                        d["ObjID"],
+                        convert_to,
+                        out[0],
+                        out[1],
+                        out[2],
+                        out[3],
+                        out[4],
+                        out[5],
+                        d["epochMJD_TDB"],
+                    )
+                ],
+                dtype=[
+                    ("ObjID", "<U12"),
+                    ("FORMAT", "<U5"),
+                    ("q", "<f8"),
+                    ("e", "<f8"),
+                    ("inc", "<f8"),
+                    ("node", "<f8"),
+                    ("argPeri", "<f8"),
+                    ("t_p_MJD_TDB", "<f8"),
                     ("epochMJD_TDB", "<f8"),
                 ],
             )
