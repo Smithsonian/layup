@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import numpy as np
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
@@ -31,6 +32,22 @@ class HDF5DataReader(ObjectDataReader):
             The reader information.
         """
         return f"HDF5DataReader:{self.filename}"
+
+    def get_row_count(self):
+        """Return the total number of rows in the first key of the input HDF5 file.
+
+        Returns
+        -------
+        int
+            Total rows in the first key of the input HDF5 file.
+        """
+        with pd.HDFStore(self.filename, mode="r") as store:
+            keys = store.keys()
+            if len(keys) == 0:
+                logger = logging.getLogger(__name__)
+                logger.error(f"No data found in {self.filename}")
+            total_rows = store.get_storer(keys[0]).nrows
+        return total_rows
 
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input.
