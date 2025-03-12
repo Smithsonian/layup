@@ -21,6 +21,12 @@ execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src
 )
 
+add_custom_target(
+  symlink_libs
+  ALL COMMAND source ${CMAKE_CURRENT_SOURCE_DIR}/create_lib_links.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 include_directories(
   include/eigen
   include/assist/src
