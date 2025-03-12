@@ -23,7 +23,7 @@ execute_process(
 
 add_custom_target(
   symlink_libs
-  ALL COMMAND source ${CMAKE_CURRENT_SOURCE_DIR}/create_lib_links.sh
+  ALL COMMAND . ${CMAKE_CURRENT_SOURCE_DIR}/create_lib_links.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
