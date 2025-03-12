@@ -21,7 +21,7 @@ def main():
 
     positionals.add_argument(
         help="orbit reference frame to transform to [COM, BCOM, KEP, BKEP, CART, BCART]",
-        dest="orbit-type",
+        dest="orbit_type",
         type=str,
     )
 
@@ -73,8 +73,8 @@ def execute(args):
     convert_cli(
         input=args.input,
         output_file_stem=args.o,
-        convert_to=args.type,
-        file_format=args.f,
+        convert_to=args.orbit_type,
+        file_format=args.i,
         chunk_size=args.c,
     )
 

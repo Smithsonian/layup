@@ -1,6 +1,5 @@
 import logging
 import os
-import math
 from pathlib import Path
 from typing import Literal
 
@@ -8,11 +7,25 @@ import numpy as np
 
 from concurrent.futures import ProcessPoolExecutor
 
+from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
+from sorcha.ephemeris.simulation_parsing import parse_orbit_row
+
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
+from layup.utilities.layup_configs import LayupConfigs
 
 logger = logging.getLogger(__name__)
+
+
+REQUIRED_COLUMN_NAMES = {
+    "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+    "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
+    "BKEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
+    "CART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+    "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
+    "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
+}
 
 
 def process_data(data, n_workers, func, **kwargs):
@@ -50,7 +63,7 @@ def process_data(data, n_workers, func, **kwargs):
 
 def _apply_convert(data, convert_to):
     """
-    Apply the appropiate conversion function to the data
+    Apply the appropriate conversion function to the data
 
     Parameters
     ----------
@@ -64,8 +77,38 @@ def _apply_convert(data, convert_to):
     data : numpy structured array
         The converted data
     """
-    # TODO(wbeebe): Implement actual conversion logic
-    return data
+
+    config = LayupConfigs()
+    ephem, gm_sun, gm_total = create_assist_ephemeris(None, config.auxiliary)
+
+    convert_from = data["FORMAT"][0]
+
+    if convert_from == "BCOM" and convert_to == "BCART":
+        #! "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+        results = []
+        for d in data:
+            # `out` is a tuple
+            out = parse_orbit_row(d, d["epochMJD_TDB"] + 2400000.5, ephem, {}, gm_sun, gm_total)
+            # TODO Find a way to keep any extra columns
+            # TODO Find a way to do this with list extension
+
+            result_struct_array = np.array(
+                [(d["ObjID"], convert_to, out[0], out[1], out[2], out[3], out[4], out[5], d["epochMJD_TDB"])],
+                dtype=[
+                    ("ObjID", "<U12"),
+                    ("FORMAT", "<U5"),
+                    ("x", "<f8"),
+                    ("y", "<f8"),
+                    ("z", "<f8"),
+                    ("xdot", "<f8"),
+                    ("ydot", "<f8"),
+                    ("zdot", "<f8"),
+                    ("epochMJD_TDB", "<f8"),
+                ],
+            )
+            results.append(result_struct_array)
+
+    return np.squeeze(np.array(results))
 
 
 def convert(data, convert_to, num_workers=1):
@@ -86,6 +129,7 @@ def convert(data, convert_to, num_workers=1):
     data : numpy structured array
         The converted data
     """
+
     if num_workers == 1:
         return _apply_convert(data, convert_to)
     # Parallelize the conversion of the data across the requested number of workers
@@ -151,12 +195,15 @@ def convert_cli(
         logger.error("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
 
     # Open the input file and read the first line
-    if file_format is "hdf5":
-        reader = HDF5DataReader(input_file, format_column_name="FORMAT")
+    if file_format == "hdf5":
+        sample_reader = HDF5DataReader(
+            input_file,
+            format_column_name="FORMAT",
+        )
     else:
-        reader = CSVDataReader(input_file, format_column_name="FORMAT")
+        sample_reader = CSVDataReader(input_file, format_column_name="FORMAT")
 
-    sample_data = reader.read_rows(block_start=0, block_size=1)
+    sample_data = sample_reader.read_rows(block_start=0, block_size=1)
 
     # Check orbit format in the file
     input_format = None
@@ -170,6 +217,16 @@ def convert_cli(
     # Check that the input format is not already the desired format
     if convert_to == input_format:
         logger.error("Input file is already in the desired format")
+
+    # Reopen the file now that we know the input format and can validate the column names
+    if file_format == "hdf5":
+        reader = HDF5DataReader(
+            input_file, format_column_name="FORMAT", required_column_names=REQUIRED_COLUMN_NAMES[input_format]
+        )
+    else:
+        reader = CSVDataReader(
+            input_file, format_column_name="FORMAT", required_column_names=REQUIRED_COLUMN_NAMES[input_format]
+        )
 
     # Calculate the start and end indices for each chunk, as a list of tuples
     # of the form (start, end) where start is the starting index of the chunk
