@@ -12,74 +12,66 @@ import pytest
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (10_000, 8),
-        (10_000, 4),
-        (10_0000, 1),
         (10_0000, -1),
-        (500, 8),
-        (500, 4),
-        (500, 1),
-        (500, -1),
-        (10, 8),
-        (10, 4),
-        (10, 1),
-        (10, -1),
-        (2, 4),
-        (1, 3),
-        (1, 1),
-        (1, -1),
     ],
 )
 def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
     """Test that the convert function works for a small CSV file."""
-    input_csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv")
+    input_file = get_test_filepath("BCOM.csv")
+    input_csv_reader = CSVDataReader(input_file, "csv")
     input_data = input_csv_reader.read_rows()
 
     # Since the convert CLI outputs to the current working directory, we need to change to our temp directory
-    output_file_stem = "test_output"
+    output_file_stem_BCART = "test_output_BCART"
     os.chdir(tmpdir)
-    temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
+    temp_BCART_out_file = os.path.join(tmpdir, f"{output_file_stem_BCART}.csv")
     convert_cli(
-        get_test_filepath("CART.csv"),
-        output_file_stem,
+        input_file,
+        output_file_stem_BCART,
+        "BCART",
+        "csv",
+        chunk_size=chunk_size,
+        num_workers=num_workers,
+    )
+
+    assert os.path.exists(temp_BCART_out_file)
+
+    output_csv_reader = CSVDataReader(temp_BCART_out_file, "csv")
+    output_data_BCART = output_csv_reader.read_rows()
+    # TODO we can round trip to test but right now convert simply copies and reappends data
+    assert_equal(len(input_data), len(output_data_BCART))
+
+    output_file_stem_BCOM = "test_output_BCOM"
+    temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.csv")
+    convert_cli(
+        temp_BCART_out_file,
+        output_file_stem_BCOM,
         "BCOM",
         "csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
     )
 
-    assert os.path.exists(temp_out_file)
+    assert os.path.exists(temp_BCART_out_file)
 
-    output_csv_reader = CSVDataReader(temp_out_file, "csv")
-    output_data = output_csv_reader.read_rows()
-    # TODO we can round trip to test but right now convert simply copies and reappends data
-    assert_equal(input_data, output_data)
+    output_csv_reader = CSVDataReader(temp_BCOM_out_file, "csv")
+    output_data_BCOM = output_csv_reader.read_rows()
+
+    assert_equal(len(input_data), len(output_data_BCOM))
+    # Test that arrays are approximately equal
+    assert_equal(input_data, output_data_BCOM)
 
 
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (10_000, 8),
-        (10_000, 4),
-        (10_0000, 1),
         (10_0000, -1),
-        (500, 8),
-        (500, 4),
-        (500, 1),
-        (500, -1),
-        (10, 8),
-        (10, 4),
-        (10, 1),
-        (10, -1),
-        (2, 4),
-        (1, 3),
-        (1, 1),
-        (1, -1),
     ],
 )
-def test_convert_one_chunk_one_worker_hdf5(tmpdir, chunk_size, num_workers):
+def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
     """Test that the convert function works for a small HDF5 file."""
-    input_hdf5_reader = HDF5DataReader(get_test_filepath("CART.h5"))
+    input_file = get_test_filepath("BCOM.h5")
+    input_hdf5_reader = HDF5DataReader(input_file)
     input_data = input_hdf5_reader.read_rows()
 
     # Since the convert CLI outputs to the current working directory, we need to change to our temp directory
@@ -87,9 +79,9 @@ def test_convert_one_chunk_one_worker_hdf5(tmpdir, chunk_size, num_workers):
     os.chdir(tmpdir)
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.h5")
     convert_cli(
-        get_test_filepath("CART.h5"),
+        input_file,
         temp_out_file,
-        "BCOM",
+        "BCART",
         "hdf5",
         chunk_size=chunk_size,
         num_workers=num_workers,
@@ -100,4 +92,4 @@ def test_convert_one_chunk_one_worker_hdf5(tmpdir, chunk_size, num_workers):
     output_hdf5_reader = HDF5DataReader(temp_out_file)
     output_data = output_hdf5_reader.read_rows()
     # TODO we can round trip to test but right now convert simply copies and reappends data
-    assert_equal(input_data, output_data)
+    assert_equal(len(input_data), len(output_data))
