@@ -5,6 +5,7 @@ import argparse
 import sys
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 from layup.utilities.file_access_utils import find_file_or_exit
+from layup.utilities.file_access_utils import find_directory_or_exit
 
 
 def main():
@@ -26,6 +27,15 @@ def main():
     )
 
     optional = parser.add_argument_group("Optional arguments")
+    optional.add_argument(
+        "--ar",
+        "--ar-data-path",
+        help="Directory path where Assist+Rebound data files where stored when running bootstrap_layup_data_files from the command line.",
+        type=str,
+        dest="ar",
+        required=False,
+    )
+
     optional.add_argument(
         "-c",
         "--conf",
@@ -93,7 +103,8 @@ def execute(args):
         sys.exit("ERROR: IOD and initial guess file cannot be called together")
 
     find_file_or_exit(arg_fn=args.input, argname="positional input")
-
+    if args.ar:
+        find_directory_or_exit(args.ar, argname="--ar --ar-data-path")
     if not ((args.type.lower()) in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]):
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
     from layup.utilities.layup_configs import LayupConfigs
