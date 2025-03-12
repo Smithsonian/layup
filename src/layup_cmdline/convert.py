@@ -53,7 +53,7 @@ def main():
     optional.add_argument(
         "-o",
         "--output",
-        help="output file name. default path is current working directory",
+        help="output file stem. default path is current working directory",
         dest="o",
         type=str,
         default="converted_output",
@@ -67,6 +67,16 @@ def main():
 
 def execute(args):
     print("Hello world this would start convert")
+
+    from layup.convert import convert_cli
+
+    convert_cli(
+        input=args.input,
+        output_file_stem=args.o,
+        convert_to=args.type,
+        file_format=args.f,
+        chunk_size=args.c,
+    )
 
 
 if __name__ == "__main__":
