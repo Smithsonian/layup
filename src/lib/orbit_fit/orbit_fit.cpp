@@ -27,7 +27,7 @@
 #include <complex>
 
 #include "orbit_fit.h"
-// #include "../gauss/gauss.h"
+#include "../gauss/gauss.cpp"
 
 extern "C"{
 #include "rebound.h"
@@ -696,55 +696,55 @@ int main(int argc, char *argv[]) {
 
     // Put this in a better place
     double GMtotal = 0.00029630927487993194;
-    // std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
-    // if (res.has_value()) {
-	// for(size_t i=0; i<res.value().size(); i++){
-	//     printf("%lu %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
-	// 	   res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
-	// }
+    std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
+    if (res.has_value()) {
+	for(size_t i=0; i<res.value().size(); i++){
+	    printf("%lu %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
+		   res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
+	}
     // } else {
 	printf("gauss failed\n");
 	exit(1);
-    // }
+    }
 
-    // //print_initial_condition(p0, epoch);
+    //print_initial_condition(p0, epoch);
 
-    // struct reb_particle p1;
+    struct reb_particle p1;
 
-    // p1.x = res.value()[0].x;
-    // p1.y = res.value()[0].y;
-    // p1.z = res.value()[0].z;    
-    // p1.vx = res.value()[0].vx;
-    // p1.vy = res.value()[0].vy;
-    // p1.vz = res.value()[0].vz;
+    p1.x = res.value()[0].x;
+    p1.y = res.value()[0].y;
+    p1.z = res.value()[0].z;    
+    p1.vx = res.value()[0].vx;
+    p1.vy = res.value()[0].vy;
+    p1.vz = res.value()[0].vz;
 
-    // //print_initial_condition(p1, res.value()[0].epoch);    
+    //print_initial_condition(p1, res.value()[0].epoch);    
 
-    // int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
-	// 		 times, 
-	// 		 detections,
-	// 		 resid_vec,
-	// 		 partials_vec,
-	// 		 iters,
-	// 		 eps, iter_max);
+    int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
+			 times, 
+			 detections,
+			 resid_vec,
+			 partials_vec,
+			 iters,
+			 eps, iter_max);
 
-    // if(flag != 0){
-	// printf("flag: %d %lu\n", flag, iters);
-    // }
+    if(flag != 0){
+	printf("flag: %d %lu\n", flag, iters);
+    }
 
-    // // Write the header
-    // printf("jd_tdb obsCode dRA dDec rdx rdy rdz rdvx rdvy rdvz ddx ddy ddz ddvx ddvy ddvz ra_unc dec_unc\n");
-    // print_residuals(detections, resid_vec, partials_vec);    
+    // Write the header
+    printf("jd_tdb obsCode dRA dDec rdx rdy rdz rdvx rdvy rdvz ddx ddy ddz ddvx ddvy ddvz ra_unc dec_unc\n");
+    print_residuals(detections, resid_vec, partials_vec);    
 
-    // // Important issues:
-    // // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
-    // // 2. Making sure the weight matrix is as good as it can be
-    // // 3. Identifying and removing outliers
+    // Important issues:
+    // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
+    // 2. Making sure the weight matrix is as good as it can be
+    // 3. Identifying and removing outliers
 
-    // // Later issues:
-    // // 1. Deflection of light
+    // Later issues:
+    // 1. Deflection of light
     
-    // assist_ephem_free(ephem);
+    assist_ephem_free(ephem);
 
 }
 

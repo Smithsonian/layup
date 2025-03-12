@@ -28,7 +28,6 @@
 
 #include <chrono>
 
-#include "orbit_fit.h"
 #include "gauss.h"
 
 using namespace Eigen;
