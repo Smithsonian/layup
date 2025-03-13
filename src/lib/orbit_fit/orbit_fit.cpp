@@ -34,6 +34,7 @@
 #include <Eigen/Eigenvalues>
 #include <cmath>
 #include <complex>
+#include <pybind11/pybind11.h>
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
@@ -44,9 +45,12 @@ extern "C"{
 }
 using namespace Eigen;
 using std::cout;
+namespace py = pybind11;
 
 double AU_M = 149597870700;
 double SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M;
+
+namespace orbit_fit {
 
 // Does this need to report possible failures?
 int integrate_light_time(struct assist_extras* ax, int np, double t, reb_vec3d r_obs, double lt0, size_t iter, double speed_of_light){
@@ -683,12 +687,14 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 // radar: range and doppler
 // shift+stack
 
-int main(int argc, char *argv[]) {
+void main() {
 
     // ephemeris files should be passed in or put in a config
     // file
-    char ephemeris_filename[128] = "../../data/linux_p1550p2650.440";
-    char small_bodies_filename[128] = "../../data/sb441-n16.bsp";
+	// int argc = 2;
+    // these strings will eventually need to be passed down by the python layer.
+	char ephemeris_filename[128] = "/Users/maxwest/Library/Caches/layup/linux_p1550p2650.440";
+    char small_bodies_filename[128] = "/Users/maxwest/Library/Caches/layup/sb441-n16.bsp";
     struct assist_ephem* ephem = assist_ephem_create(
 	    ephemeris_filename, 
 	    small_bodies_filename); 
@@ -707,16 +713,20 @@ int main(int argc, char *argv[]) {
     }
     */
 
-    if(argc != 2){
-	printf("./orbit_fit detection_filename\n");
-	exit(1);
-    }
+    // if(argc != 2){
+	// printf("./orbit_fit detection_filename\n");
+	// exit(1);
+    // }
     
     
     // Read the observations
+	printf("here");
+	fflush(stdout);
     char detections_filename[128]; 
-    sscanf(argv[1], "%s", detections_filename);
+    sscanf("/Users/maxwest/layup/tests/data/03666_out.txt", "%s", detections_filename);
     read_detections(detections_filename, detections, times);
+	printf("here2");
+	fflush(stdout);
 
     std::vector<std::vector<size_t>> idx = IOD_indices(detections, 8.0, 10.0, 15.0, 25.0, 1000);
 
@@ -796,6 +806,7 @@ int main(int argc, char *argv[]) {
 	}else{
 	    printf("flag: %d iters: %lu\n", flag, iters);
 	}
+	// return flag; 
     }
     
     // Important issues:
@@ -805,8 +816,13 @@ int main(int argc, char *argv[]) {
 
     // Later issues:
     // 1. Deflection of light
-    
-    assist_ephem_free(ephem);
-
 }
+
+#ifdef Py_PYTHON_H
+static void orbit_fit_bindings(py::module& m) {
+    m.def("orbit_fit", &orbit_fit::main, R"pbdoc(Main function)pbdoc");
+}
+#endif /* Py_PYTHON_H */
+
+} // namespace: orbit_fit
 

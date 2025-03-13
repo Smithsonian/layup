@@ -95,6 +95,7 @@ PYBIND11_MODULE(_core, m) {
     // m.def("orbit_fit", &orbit_fit, R"pbdoc(
     //     Nonlinear orbit fit using levenberg-marquardt
     // )pbdoc");
+    orbit_fit::orbit_fit_bindings(m);
 
 
 #ifdef VERSION_INFO
