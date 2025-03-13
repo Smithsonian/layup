@@ -38,6 +38,7 @@ def main():
         "   convert        convert orbits to different formats\n"
         "   predict        predict on-sky positions\n"
         "   visualize      visualize orbits\n"
+        "   comet          determines original orbit for comets\n"
         "\n"
         "To get more information, run the verb with --help. For example:\n\n"
         "   layup orbitfit --help\n"
