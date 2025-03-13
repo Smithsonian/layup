@@ -9,7 +9,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
-from sorcha.ephemeris.orbit_conversion_utilities import universal_keplerian
+from sorcha.ephemeris.orbit_conversion_utilities import universal_cometary, universal_keplerian
 
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
@@ -27,6 +27,8 @@ REQUIRED_COLUMN_NAMES = {
     "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
     "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
 }
+
+DEFAULT_COLUMN_DTYPES = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
 
 # Add this to MJD to convert to JD
 MJD_TO_JD_CONVERSTION = 2400000.5
@@ -82,71 +84,57 @@ def _apply_convert(data, convert_to):
         The converted data
     """
 
+    #! TODO Must ensure that all input columns that are in [degs] are converted to [rads]
+
     config = LayupConfigs()
     ephem, gm_sun, gm_total = create_assist_ephemeris(None, config.auxiliary)
 
     convert_from = data["FORMAT"][0]
     results = []
 
-    if convert_from == "BCOM" and convert_to == "BCART":
-        #! "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-        for d in data:
-            # `out` is a tuple
-            out = parse_orbit_row(d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total)
-            # TODO Find a way to keep any extra columns
-            # TODO Find a way to do this with list extension
+    for d in data:
+        # `out` is a tuple
+        bcart_row = parse_orbit_row(d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total)
+        output_dtype = [
+            (col, dtype) for col, dtype in zip(REQUIRED_COLUMN_NAMES[convert_to], DEFAULT_COLUMN_DTYPES)
+        ]
 
-            result_struct_array = np.array(
-                [(d["ObjID"], convert_to, out[0], out[1], out[2], out[3], out[4], out[5], d["epochMJD_TDB"])],
-                dtype=[
-                    ("ObjID", "<U12"),
-                    ("FORMAT", "<U5"),
-                    ("x", "<f8"),
-                    ("y", "<f8"),
-                    ("z", "<f8"),
-                    ("xdot", "<f8"),
-                    ("ydot", "<f8"),
-                    ("zdot", "<f8"),
-                    ("epochMJD_TDB", "<f8"),
-                ],
-            )
-            results.append(result_struct_array)
+        # Unpack the tuple to make the code more readable
+        (
+            x,
+            y,
+            z,
+            xdot,
+            ydot,
+            zdot,
+        ) = bcart_row
 
-    if convert_from == "BCART" and convert_to == "BCOM":
-        #! "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-        for d in data:
-            # `out` is a tuple
-            out = universal_keplerian(
-                gm_total, d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"], d["epochMJD_TDB"]
-            )
+        if convert_to == "BCART":
+            # return without additional modifications
+            row = bcart_row
 
-            result_struct_array = np.array(
-                [
-                    (
-                        d["ObjID"],
-                        convert_to,
-                        out[0],
-                        out[1],
-                        out[2],
-                        out[3],
-                        out[4],
-                        out[5],
-                        d["epochMJD_TDB"],
-                    )
-                ],
-                dtype=[
-                    ("ObjID", "<U12"),
-                    ("FORMAT", "<U5"),
-                    ("q", "<f8"),
-                    ("e", "<f8"),
-                    ("inc", "<f8"),
-                    ("node", "<f8"),
-                    ("argPeri", "<f8"),
-                    ("t_p_MJD_TDB", "<f8"),
-                    ("epochMJD_TDB", "<f8"),
-                ],
-            )
-            results.append(result_struct_array)
+        elif convert_to == "CART":
+            sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
+            row = tuple(np.array(bcart_row) - np.array((sun.x, sun.y, sun.z, sun.vx, sun.vy, sun.vz)))
+
+        elif convert_to == "BCOM":
+            # Use universal_cometary to convert to BCOM with mu = gm_total
+            row = universal_cometary(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+        elif convert_to == "COM":
+            # Use universal_cometary to convert to COM with mu = gm_sun
+            row = universal_cometary(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+        elif convert_to == "BKEP":
+            # Use universal_keplerian to convert to BKEP with mu = gm_total
+            row = universal_keplerian(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+        elif convert_to == "KEP":
+            # Use universal_keplerian to convert to KEP with mu = gm_sun
+            row = universal_keplerian(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+
+        result_struct_array = np.array(
+            [(d["ObjID"], convert_to) + row + (d["epochMJD_TDB"],)],
+            dtype=output_dtype,
+        )
+        results.append(result_struct_array)
 
     return np.squeeze(np.array(results))
 
@@ -182,7 +170,7 @@ def convert_cli(
     convert_to: Literal["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"],
     file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
-    num_workers: int = -1,
+    num_workers: int = 1,
 ):
     """
     Convert an orbit file from one format to another with support for parallel processing.
@@ -201,8 +189,10 @@ def convert_cli(
         The format of the output file. Must be one of: "csv", "hdf5"
     chunk_size : int, optional (default=10_000)
         The number of rows to read in at a time.
-    num_workers : int, optional (default=-1)
-        The number of workers to use for parallel processing. If -1, the number of workers will be set to the number of CPUs on the system.
+    num_workers : int, optional (default=1)
+        The number of workers to use for parallel processing of the individual
+        chunk. If -1, the number of workers will be set to the number of CPUs on
+        the system. The default is 1 worker.
     """
     input_file = Path(input)
     if file_format == "csv":
@@ -263,13 +253,14 @@ def convert_cli(
         logger.error("Input file is already in the desired format")
 
     # Reopen the file now that we know the input format and can validate the column names
+    required_columns = REQUIRED_COLUMN_NAMES[input_format]
     if file_format == "hdf5":
         reader = HDF5DataReader(
-            input_file, format_column_name="FORMAT", required_column_names=REQUIRED_COLUMN_NAMES[input_format]
+            input_file, format_column_name="FORMAT", required_column_names=required_columns
         )
     else:
         reader = CSVDataReader(
-            input_file, format_column_name="FORMAT", required_column_names=REQUIRED_COLUMN_NAMES[input_format]
+            input_file, format_column_name="FORMAT", required_column_names=required_columns
         )
 
     # Calculate the start and end indices for each chunk, as a list of tuples

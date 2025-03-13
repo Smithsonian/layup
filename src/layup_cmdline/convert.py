@@ -46,7 +46,7 @@ def main():
         "-ch",
         "--chunksize",
         help="number of orbits to be processed at once",
-        dest="c",
+        dest="chunk",
         type=int,
         default=10000,
         required=False,
@@ -91,7 +91,7 @@ def execute(args):
         output_file_stem=args.o,
         convert_to=args.orbit_type,
         file_format=args.i,
-        chunk_size=args.c,
+        chunk_size=args.chunk,
     )
 
 
