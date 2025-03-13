@@ -208,7 +208,11 @@ def convert_cli(
     if file_format == "csv":
         output_file = Path(f"{output_file_stem}.{file_format.lower()}")
     else:
-        output_file = Path(f"{output_file_stem}")
+        output_file = (
+            Path(f"{output_file_stem}")
+            if output_file_stem.endswith(".h5")
+            else Path(f"{output_file_stem}.h5")
+        )
     output_directory = output_file.parent.resolve()
 
     if num_workers < 0:

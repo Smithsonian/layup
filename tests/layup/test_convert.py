@@ -103,7 +103,7 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
     temp_out_file_BCART = os.path.join(tmpdir, f"{output_file_stem_BCART}.h5")
     convert_cli(
         input_file_BCOM,
-        temp_out_file_BCART,
+        output_file_stem_BCART,
         "BCART",
         "hdf5",
         chunk_size=chunk_size,
@@ -119,8 +119,7 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
 
     # Convert back to BCOM
     output_file_stem_BCOM = "test_output_BCOM"
-    # TODO(wbeebe): For reasons unclear to me, we write the file out without the h5 extension?
-    temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}")
+    temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.h5")
     convert_cli(
         temp_out_file_BCART,
         output_file_stem_BCOM,
