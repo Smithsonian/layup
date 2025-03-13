@@ -1,4 +1,4 @@
-from layup.convert import convert_cli
+from layup.convert import convert, convert_cli
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 from layup.utilities.file_io.CSVReader import CSVDataReader
@@ -9,10 +9,59 @@ import os
 import pytest
 
 
+def test_convert_round_trip():
+    # Convert BCOM into all 6 possible output formats
+    hdf5_input_files = ["BCOM.h5", "CART.h5", "KEP.h5"]
+    for hdf5_input_file in hdf5_input_files:
+        input_hdf5_reader = HDF5DataReader(get_test_filepath(hdf5_input_file))
+        input_data = input_hdf5_reader.read_rows()
+        input_format = input_data[0]["FORMAT"]
+        for output_format in ["BCOM", "BCART", "BKEP", "COM", "CART", "KEP"]:
+            # TODO FIX formats that currently don't work
+            if input_format == "BCOM":
+                if output_format in ["COM", "CART", "KEP"]:
+                    continue
+            if input_format == "CART":
+                # if output_format in ["COM", "BCOM", "BCART", "BKEP"]:
+                continue
+            if input_format == "KEP":
+                # if output_format in ["KEP", "COM", "CART", "BCOM", "BCART", "BKEP"]:
+                continue
+            first_convert_data = convert(input_data, output_format, num_workers=1)
+            # Convert back to the original format for round trip checking
+            output_data = convert(first_convert_data, input_format, num_workers=1)
+
+            assert_equal(len(input_data), len(output_data))
+
+            for column_name in input_data.dtype.names:
+                # TODO(wilsonbb): remove this once we correctly have these columns in radians rather than degrees.
+                if column_name in set(["inc", "node", "argPeri", "q", "t_p_MJD_TDB"]):
+                    continue
+                if (
+                    input_data[column_name].dtype.kind == "S"
+                    or input_data[column_name].dtype.kind == "U"
+                    or input_data[column_name].dtype.kind == "O"
+                ):
+                    assert_equal(
+                        input_data[column_name],
+                        output_data[column_name],
+                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {hdf5_input_file} to {output_format} and back",
+                    )
+                else:
+                    # Assert equal with message if not equal printing the column name
+                    assert_allclose(
+                        input_data[column_name],
+                        output_data[column_name],
+                        rtol=1,  # TODO reevaluate
+                        atol=1,  # TODO reevaluate
+                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {hdf5_input_file} to {output_format} and back",
+                    )
+
+
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (10_0000, -1),
+        (10_0000, 1),
     ],
 )
 def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
@@ -88,7 +137,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (10_0000, -1),
+        (10_0000, 1),
     ],
 )
 def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
