@@ -18,15 +18,16 @@ def test_convert_round_trip():
         input_format = input_data[0]["FORMAT"]
         for output_format in ["BCOM", "BCART", "BKEP", "COM", "CART", "KEP"]:
             # TODO FIX formats that currently don't work
+            # Column `q` is the column with differences
             if input_format == "BCOM":
-                if output_format in ["COM", "CART", "KEP"]:
+                if output_format in ["KEP"]:
                     continue
+
+            # Column `x` is all nan
             if input_format == "CART":
-                # if output_format in ["COM", "BCOM", "BCART", "BKEP"]:
-                continue
-            if input_format == "KEP":
-                # if output_format in ["KEP", "COM", "CART", "BCOM", "BCART", "BKEP"]:
-                continue
+                if output_format in ["BKEP"]:
+                    continue
+
             first_convert_data = convert(input_data, output_format, num_workers=1)
             # Convert back to the original format for round trip checking
             output_data = convert(first_convert_data, input_format, num_workers=1)
@@ -34,9 +35,6 @@ def test_convert_round_trip():
             assert_equal(len(input_data), len(output_data))
 
             for column_name in input_data.dtype.names:
-                # TODO(wilsonbb): remove this once we correctly have these columns in radians rather than degrees.
-                if column_name in set(["inc", "node", "argPeri", "q", "t_p_MJD_TDB"]):
-                    continue
                 if (
                     input_data[column_name].dtype.kind == "S"
                     or input_data[column_name].dtype.kind == "U"
