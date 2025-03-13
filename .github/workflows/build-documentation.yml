@@ -28,6 +28,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
+        git submodule update --init
         python -m pip install --upgrade pip
         if [ -f docs/requirements.txt ]; then pip install -r docs/requirements.txt; fi
         pip install .
