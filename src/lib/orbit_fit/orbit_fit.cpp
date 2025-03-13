@@ -36,7 +36,7 @@
 #include <complex>
 
 #include "orbit_fit.h"
-#include "gauss.h"
+#include "../gauss/gauss.cpp"
 
 extern "C"{
 #include "rebound.h"
@@ -171,6 +171,7 @@ void read_detections(const char *data_file_name,
     }
 
 }
+
 
 void add_variational_particles(struct reb_simulation* r, size_t np, int *var){
 
@@ -514,8 +515,8 @@ void create_sequences(std::vector<double>& times,
 
 int orbit_fit(struct assist_ephem* ephem,
 	      struct reb_particle& p0, double epoch,
-	      std::vector<double>& times,	      
-	      std::vector<detection>& detections,
+	      std::vector<double>& times,	      // not modified
+	      std::vector<detection>& detections, // not modified
 	      std::vector<residuals>& resid_vec,
 	      std::vector<partials>& partials_vec,
 	      size_t& iters,

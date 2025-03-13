@@ -2,7 +2,7 @@ import numpy as np
 import logging
 import sys
 
-from layup.utilities.file_readers.ObjectDataReader import ObjectDataReader
+from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
@@ -57,6 +57,27 @@ class CSVDataReader(ObjectDataReader):
             The reader information.
         """
         return f"CSVDataReader:{self.filename}"
+
+    def get_row_count(self):
+        """Return the total number of rows in the first key of the input HDF5 file.
+
+        Returns
+        -------
+        int
+            Total rows in the first key of the input HDF5 file.
+        """
+        data = np.genfromtxt(
+            self.filename,
+            delimiter="," if self.sep != "whitespace" else None,
+            names=True,
+            dtype=None,
+            encoding="utf8",
+            deletechars=_INVALID_COL_CHARS,
+            ndmin=1,  # Ensure we always get a structured array even with a single result
+            usecols=(0,),  # Only read in the first column, ObjID
+        )
+
+        return len(data)
 
     def _validate_header_line(self):
         """Read and validate the header line (first line of the file)"""

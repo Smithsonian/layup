@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.utilities.file_readers.CSVReader import CSVDataReader
+from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 
@@ -71,6 +71,28 @@ def test_CSVDataReader_ephem(use_cache):
     assert_equal(column_headings, ephem_data.dtype.names)
     assert_equal("S00002b", ephem_data[0][0])
     assert_equal("S000044", ephem_data[1][0])
+
+
+@pytest.mark.parametrize("use_cache", [True, False])
+def test_CSVDataReader_read_by_row(use_cache):
+    """Test that reading in all rows produces the same row as reading in one row at a time."""
+    csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv", cache_table=use_cache)
+    assert csv_reader.header_row == 0
+    assert csv_reader.get_reader_info() == "CSVDataReader:" + get_test_filepath("CART.csv")
+
+    # Read in all 9 rows.
+    all_data = csv_reader.read_rows()
+    assert len(all_data) == 5
+
+    # Read in the rows one at a time.
+    row_data = []
+    for i in range(5):
+        single_row = csv_reader.read_rows(i, 1)
+        assert len(single_row) == 1
+        row_data.append(single_row)
+        assert np.all(single_row == all_data[i])
+
+    assert len(row_data) == len(all_data)
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
@@ -347,3 +369,31 @@ def test_CSVDataReader_delims():
     with pytest.raises(SystemExit) as e2:
         _ = CSVDataReader(get_test_filepath("CART.txt"), "")
     assert e2.type == SystemExit
+
+
+def test_CSVDataReader_missing_format():
+    """Test that we fail if the format column is missing."""
+    with pytest.raises(SystemExit) as e1:
+        csv_reader = CSVDataReader(
+            get_test_filepath("CART_missing_format.csv"), "csv", format_column_name="FORMAT"
+        )
+        csv_reader.read_rows()
+    assert e1.type == SystemExit
+    assert "Format column FORMAT not found" in str(e1.value)
+
+
+def test_CSVDataReader_mixed_formats():
+    """Test that we fail if the format column has mixed formats."""
+    with pytest.raises(SystemExit) as e1:
+        csv_reader = CSVDataReader(
+            get_test_filepath("CART_mixed_format.csv"), "csv", format_column_name="FORMAT"
+        )
+        csv_reader.read_rows()
+    assert e1.type == SystemExit
+    assert "Multiple formats found." in str(e1.value)
+
+
+def test_file_count():
+    reader = CSVDataReader(get_test_filepath("BCOM.csv"), sep="csv")
+    row_count = reader.get_row_count()
+    assert row_count == 814

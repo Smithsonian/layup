@@ -1,0 +1,9 @@
+[submodule "include/assist"]
+	path = include/assist
+	url = https://github.com/matthewholman/assist.git
+[submodule "include/rebound"]
+	path = include/rebound
+	url = https://github.com/hannorein/rebound.git
+[submodule "include/eigen"]
+	path = include/eigen
+	url = https://gitlab.com/libeigen/eigen.git

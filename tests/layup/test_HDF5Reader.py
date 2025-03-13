@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.utilities.file_readers.HDF5Reader import HDF5DataReader
+from layup.utilities.file_io.HDF5Reader import HDF5DataReader
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 
@@ -113,3 +113,27 @@ def test_HDF5DataReader_read_objects(use_cache):
     ephem_data2 = reader.read_objects(["2010 TJ"])
     assert len(ephem_data2) == 1
     assert_equal(ephem_data2[0][0], "2010 TJ")
+
+
+def test_HDFDataReader_missing_format():
+    """Test that we fail if the format column is missing."""
+    with pytest.raises(SystemExit) as e1:
+        hdf_reader = HDF5DataReader(get_test_filepath("CART_missing_format.h5"), format_column_name="FORMAT")
+        hdf_reader.read_rows()
+    assert e1.type == SystemExit
+    assert "Format column FORMAT not found" in str(e1.value)
+
+
+def test_CSVDataReader_mixed_formats():
+    """Test that we fail if the format column has mixed formats."""
+    with pytest.raises(SystemExit) as e1:
+        hdf_reader = HDF5DataReader(get_test_filepath("CART_mixed_format.h5"), format_column_name="FORMAT")
+        hdf_reader.read_rows()
+    assert e1.type == SystemExit
+    assert "Multiple formats found." in str(e1.value)
+
+
+def test_file_count():
+    reader = HDF5DataReader(get_test_filepath("BCOM.h5"))
+    row_count = reader.get_row_count()
+    assert row_count == 814
