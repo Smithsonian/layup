@@ -43,15 +43,15 @@ using ObservationType = std::variant<AstrometryObservation, StreakObservation>;
 struct Observation {
     double epoch; // e.g., seconds since epoch
     ObservationType observation_type;
-    Eigen::Vector3d observer_position;
-    Eigen::Vector3d observer_velocity;
+    std::array<double, 3> observer_position;
+    std::array<double, 3> observer_velocity;
     std::optional<Eigen::MatrixXd> inverse_covariance;
     std::optional<double> mag;
     std::optional<double> mag_err;
 
     // Constructor for an Astrometry observation.
     Observation(double ra, double dec, double epoch_val,
-                const Eigen::Vector3d &obs_position, const Eigen::Vector3d &obs_velocity)
+                const std::array<double, 3> &obs_position, const std::array<double, 3> &obs_velocity)
       : epoch(epoch_val),
         observer_position(obs_position),
         observer_velocity(obs_velocity)
@@ -61,7 +61,7 @@ struct Observation {
 
     // Constructor for a Streak observation (disambiguated with a StreakTag).
     Observation(double ra, double dec, double ra_rate, double dec_rate,
-                double epoch_val, const Eigen::Vector3d &obs_position, const Eigen::Vector3d &obs_velocity)
+                double epoch_val, const std::array<double, 3> &obs_position, const std::array<double, 3> &obs_velocity)
       : epoch(epoch_val),
         observer_position(obs_position),
         observer_velocity(obs_velocity)

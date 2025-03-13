@@ -1,5 +1,5 @@
 #include <pybind11/pybind11.h>
-
+#include <pybind11/stl.h>
 #include <string>
 
 // #include "lib/orbit_fit/orbit_fit.cpp"
@@ -58,6 +58,7 @@ PYBIND11_MODULE(_core, m) {
         .def_readonly("rho_hat", &AstrometryObservation::rho_hat,
                       "Computed unit direction vector (rho_hat)");
 
+
     // Bind StreakObservation type.
     py::class_<StreakObservation>(m, "StreakObservation")
         .def(py::init<double, double, double, double>(),
@@ -70,16 +71,19 @@ PYBIND11_MODULE(_core, m) {
     // Bind the main Observation type with multiple overloaded constructors.
     py::class_<Observation>(m, "Observation")
         // Constructor for an Astrometry observation.
-        .def(py::init<double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
+        // .def(py::init<double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
+        .def(py::init<double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
              py::arg("ra"), py::arg("dec"), py::arg("epoch"),
              py::arg("observer_position"), py::arg("observer_velocity"),
              "Construct an Astrometry observation")
         // Constructor for a Streak observation.
-        .def(py::init<double, double, double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
+        // .def(py::init<double, double, double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
+        .def(py::init<double, double, double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
              py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
              py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
              "Construct a Streak observation")
         // Expose common members.
+        // .def_readonly("rho_hat", &Observation::observation_type::rho_hat, "Computed unit direction vector (rho_hat)")
         .def_readonly("epoch", &Observation::epoch, "Observation epoch (as a double)")
         .def_readonly("observation_type", &Observation::observation_type, "Variant holding the observation data")
         .def_readonly("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
