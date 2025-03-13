@@ -702,7 +702,7 @@ int main(int argc, char *argv[]) {
 	    printf("%lu %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
 		   res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
 	}
-    // } else {
+    } else {
 	printf("gauss failed\n");
 	exit(1);
     }
