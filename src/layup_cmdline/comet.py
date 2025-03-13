@@ -19,7 +19,6 @@ def main():
         type=str,
     )
 
-
     optional = parser.add_argument_group("Optional arguments")
     optional.add_argument(
         "--ar",
@@ -78,8 +77,6 @@ def main():
 
 def execute(args):
     print("Hello world this would start comet")
-
-
 
 
 if __name__ == "__main__":
