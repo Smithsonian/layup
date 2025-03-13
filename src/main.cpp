@@ -30,6 +30,15 @@ PYBIND11_MODULE(_core, m) {
         Say 'Hello, World!'
     )pbdoc");
 
+    // m.def("gauss", &gauss, R"pbdoc(
+    //     Gauss' method of initial orbit determination
+    // )pbdoc");
+
+    // m.def("orbit_fit", &orbit_fit, R"pbdoc(
+    //     Nonlinear orbit fit using levenberg-marquardt
+    // )pbdoc");
+
+
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
 #else
