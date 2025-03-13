@@ -3,11 +3,6 @@
 #include <Eigen/Dense>
 #include <cmath>
 
-// Tag types for disambiguation.
-struct StreakTag {};
-struct RadarTag {};
-struct CompleteTag {};
-
 // --- Observation Variant Types ---
 // Instead of storing ra/dec, each variant computes a unit direction vector (rho_hat)
 // from the provided ra and dec.
@@ -40,44 +35,7 @@ struct StreakObservation {
     }
 };
 
-struct RadarObservation {
-    double range;
-    double range_rate;
-    Eigen::Vector3d rho_hat;
-
-    RadarObservation() = default;
-    RadarObservation(double ra, double dec, double range, double range_rate)
-      : range(range), range_rate(range_rate)
-    {
-        rho_hat.x() = std::cos(dec) * std::cos(ra);
-        rho_hat.y() = std::cos(dec) * std::sin(ra);
-        rho_hat.z() = std::sin(dec);
-    }
-};
-
-struct CompleteObservation {
-    double ra_rate;
-    double dec_rate;
-    double range;
-    double range_rate;
-    Eigen::Vector3d rho_hat;
-
-    CompleteObservation() = default;
-    CompleteObservation(double ra, double dec, double ra_rate, double dec_rate, double range, double range_rate)
-      : ra_rate(ra_rate), dec_rate(dec_rate), range(range), range_rate(range_rate)
-    {
-        rho_hat.x() = std::cos(dec) * std::cos(ra);
-        rho_hat.y() = std::cos(dec) * std::sin(ra);
-        rho_hat.z() = std::sin(dec);
-    }
-};
-
-using ObservationType = std::variant<
-    AstrometryObservation,
-    StreakObservation,
-    RadarObservation,
-    CompleteObservation
->;
+using ObservationType = std::variant<AstrometryObservation, StreakObservation>;
 
 // --- Main Observation Structure ---
 // The Observation class now holds an epoch as a double and observer_position/velocity as 3D vectors.
@@ -103,35 +61,11 @@ struct Observation {
 
     // Constructor for a Streak observation (disambiguated with a StreakTag).
     Observation(double ra, double dec, double ra_rate, double dec_rate,
-                double epoch_val, const Eigen::Vector3d &obs_position, const Eigen::Vector3d &obs_velocity,
-                StreakTag)
+                double epoch_val, const Eigen::Vector3d &obs_position, const Eigen::Vector3d &obs_velocity)
       : epoch(epoch_val),
         observer_position(obs_position),
         observer_velocity(obs_velocity)
     {
        observation_type = StreakObservation(ra, dec, ra_rate, dec_rate);
-    }
-
-    // Constructor for a Radar observation (disambiguated with a RadarTag).
-    Observation(double ra, double dec, double range, double range_rate,
-                double epoch_val, const Eigen::Vector3d &obs_position, const Eigen::Vector3d &obs_velocity,
-                RadarTag)
-      : epoch(epoch_val),
-        observer_position(obs_position),
-        observer_velocity(obs_velocity)
-    {
-       observation_type = RadarObservation(ra, dec, range, range_rate);
-    }
-
-    // Constructor for a Complete observation (disambiguated with a CompleteTag).
-    Observation(double ra, double dec, double ra_rate, double dec_rate,
-                double range, double range_rate,
-                double epoch_val, const Eigen::Vector3d &obs_position, const Eigen::Vector3d &obs_velocity,
-                CompleteTag)
-      : epoch(epoch_val),
-        observer_position(obs_position),
-        observer_velocity(obs_velocity)
-    {
-       observation_type = CompleteObservation(ra, dec, ra_rate, dec_rate, range, range_rate);
     }
 };

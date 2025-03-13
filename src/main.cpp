@@ -67,27 +67,6 @@ PYBIND11_MODULE(_core, m) {
         .def_readonly("rho_hat", &StreakObservation::rho_hat,
                       "Computed unit direction vector (rho_hat)");
 
-    // Bind RadarObservation type.
-    py::class_<RadarObservation>(m, "RadarObservation")
-        .def(py::init<double, double, double, double>(),
-             py::arg("ra"), py::arg("dec"), py::arg("range"), py::arg("range_rate"))
-        .def_readonly("range", &RadarObservation::range)
-        .def_readonly("range_rate", &RadarObservation::range_rate)
-        .def_readonly("rho_hat", &RadarObservation::rho_hat,
-                      "Computed unit direction vector (rho_hat)");
-
-    // Bind CompleteObservation type.
-    py::class_<CompleteObservation>(m, "CompleteObservation")
-        .def(py::init<double, double, double, double, double, double>(),
-             py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
-             py::arg("range"), py::arg("range_rate"))
-        .def_readonly("ra_rate", &CompleteObservation::ra_rate)
-        .def_readonly("dec_rate", &CompleteObservation::dec_rate)
-        .def_readonly("range", &CompleteObservation::range)
-        .def_readonly("range_rate", &CompleteObservation::range_rate)
-        .def_readonly("rho_hat", &CompleteObservation::rho_hat,
-                      "Computed unit direction vector (rho_hat)");
-
     // Bind the main Observation type with multiple overloaded constructors.
     py::class_<Observation>(m, "Observation")
         // Constructor for an Astrometry observation.
@@ -100,17 +79,6 @@ PYBIND11_MODULE(_core, m) {
              py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
              py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
              "Construct a Streak observation")
-        // Constructor for a Radar observation.
-        .def(py::init<double, double, double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
-             py::arg("ra"), py::arg("dec"), py::arg("range"), py::arg("range_rate"),
-             py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
-             "Construct a Radar observation")
-        // Constructor for a Complete observation.
-        .def(py::init<double, double, double, double, double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
-             py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
-             py::arg("range"), py::arg("range_rate"), py::arg("epoch"),
-             py::arg("observer_position"), py::arg("observer_velocity"),
-             "Construct a Complete observation")
         // Expose common members.
         .def_readonly("epoch", &Observation::epoch, "Observation epoch (as a double)")
         .def_readonly("observation_type", &Observation::observation_type, "Variant holding the observation data")
