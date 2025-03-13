@@ -2,12 +2,9 @@
 #include <pybind11/stl.h>
 #include <string>
 
-// #include "lib/orbit_fit/orbit_fit.cpp"
+#include "lib/orbit_fit/orbit_fit.cpp"
 #include "lib/orbit_fit/orbit_fit_result.cpp"
-#include "lib/orbit_fit/orbit_fit.h"
 #include "lib/detection.cpp"    
-
-#include "lib/gauss/gauss.h"
 
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
