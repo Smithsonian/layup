@@ -35,7 +35,7 @@ def main():
         help="random number of orbits to take from input file",
         dest="n",
         type=str,
-        default=50,
+        default=1000,
         required=False,
     )
     optional.add_argument(
