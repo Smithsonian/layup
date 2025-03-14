@@ -35,3 +35,13 @@ If you're running `layup` on a linux distribution, you should add the `layup` ro
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:</path/to/layup>
 ```
 so that python's dynamic linker can find the `assist` and `rebound` library objects at runtime.
+
+### Adding new submodule 
+Note that to get the new submodules added in an existing copy of the repo you want to run
+```
+git submodule update --init
+```
+And in subsequent clones of the repo you want to run
+```
+git clone --recursive https://github.com/Smithsonian/layup.git
+```
