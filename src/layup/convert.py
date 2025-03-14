@@ -227,7 +227,7 @@ def convert_cli(
     convert_to: Literal["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"],
     file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
-    num_workers: int = 1,
+    num_workers: int = -1,
     cli_args: dict = None,
 ):
     """

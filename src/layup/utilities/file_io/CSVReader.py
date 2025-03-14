@@ -1,7 +1,7 @@
 import numpy as np
 import logging
 import sys
-
+import pandas as pd
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 # Characters we remove from column names.
@@ -161,30 +161,22 @@ class CSVDataReader(ObjectDataReader):
 
         # Read in the data from self.filename, extracting the header row, and skipping in all of
         # block_size rows, skipping all of the skip_rows.
-        chunk_rows = []
-        with open(self.filename) as f:
-            for i, line in enumerate(f):
-                if i < self.header_row:
-                    continue
-                if i in skip_rows:
-                    continue
-                if block_size is not None and i > block_start + block_size:
-                    break
-                chunk_rows.append(line)
-
-        # Read the rows.
-        res = np.genfromtxt(
-            chunk_rows,
-            delimiter="," if self.sep != "whitespace" else None,
-            names=True,
-            dtype=None,
-            encoding="utf8",
-            deletechars=_INVALID_COL_CHARS,
-            ndmin=1,  # Ensure we always get a structured array even with a single result
-            max_rows=block_size,
-        )
-
-        return res
+        if self.sep == "whitespace":
+            res_df = pd.read_csv(
+                self.filename,
+                sep="\\s+",
+                skiprows=skip_rows,
+                nrows=block_size,
+            )
+        else:
+            res_df = pd.read_csv(
+                self.filename,
+                delimiter=",",
+                skiprows=skip_rows,
+                nrows=block_size,
+            )
+        records = res_df.to_records(index=False)
+        return np.array(records, dtype=records.dtype.descr)
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
@@ -229,25 +221,21 @@ class CSVDataReader(ObjectDataReader):
 
         # Read in the data from self.filename, extracting the header row, and skipping in all of
         # block_size rows, skipping all of the skip_rows.
-        chunk_rows = []
-        with open(self.filename) as f:
-            for i, line in enumerate(f):
-                if i < len(skipped_row) and skipped_row[i]:
-                    continue
-                chunk_rows.append(line)
+        if self.sep == "whitespace":
+            res_df = pd.read_csv(
+                self.filename,
+                sep="\\s+",
+                skiprows=(lambda x: skipped_row[x]),
+            )
+        else:
+            res_df = pd.read_csv(
+                self.filename,
+                delimiter=",",
+                skiprows=(lambda x: skipped_row[x]),
+            )
 
-        # Read the rows.
-        res = np.genfromtxt(
-            chunk_rows,
-            delimiter="," if self.sep != "whitespace" else None,
-            names=True,
-            dtype=None,
-            encoding="utf8",
-            deletechars=_INVALID_COL_CHARS,
-            ndmin=1,  # Ensure we always get a structured array even with a single result
-        )
-
-        return res
+        records = res_df.to_records(index=False)
+        return np.array(records, dtype=records.dtype.descr)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.
