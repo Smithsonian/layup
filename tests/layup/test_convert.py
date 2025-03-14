@@ -10,31 +10,30 @@ import pytest
 
 
 def test_convert_round_trip():
-    # Convert BCOM into all 6 possible output formats
-    hdf5_input_files = ["BCOM.h5", "CART.h5", "KEP.h5"]
-    for hdf5_input_file in hdf5_input_files:
-        input_hdf5_reader = HDF5DataReader(get_test_filepath(hdf5_input_file))
-        input_data = input_hdf5_reader.read_rows()
+    """Convert into all 6 possible output formats and then conver the output back into its original format."""
+    # TODO(wbeebe): Add additional test files to test more input formats.
+    csv_input_files = ["BCOM.csv", "KEP.csv"]
+    for csv_input_file in csv_input_files:
+        input_csv_reader = CSVDataReader(get_test_filepath(csv_input_file))
+        input_data = input_csv_reader.read_rows()
         input_format = input_data[0]["FORMAT"]
+        if input_format == "BCOM":
+            # TODO(wbeebe): The last row is a hyperbolic orbit in barycentric coordinates.
+            # It is removed here to avoid a conversion failure, but we should handle this
+            # case in the future, and add this row back into the test
+            input_data = input_data[0 : len(input_data) - 1]
+            assert len(input_data) == 813
         for output_format in ["BCOM", "BCART", "BKEP", "COM", "CART", "KEP"]:
-            # TODO FIX formats that currently don't work
-            # Column `q` is the column with differences
-            if input_format == "BCOM":
-                if output_format in ["KEP"]:
-                    continue
-
-            # Column `x` is all nan
-            if input_format == "CART":
-                if output_format in ["BKEP"]:
-                    continue
-
+            # Convert to the output format.
             first_convert_data = convert(input_data, output_format, num_workers=1)
-            # Convert back to the original format for round trip checking
+            # Convert back to the original format for round trip checking.
             output_data = convert(first_convert_data, input_format, num_workers=1)
 
             assert_equal(len(input_data), len(output_data))
 
+            # Test that the columns are the same. Note that column order may not be preserved.
             for column_name in input_data.dtype.names:
+                # For non-numeric columns, we can't use assert_allclose, so we use assert_equal.
                 if (
                     input_data[column_name].dtype.kind == "S"
                     or input_data[column_name].dtype.kind == "U"
@@ -43,16 +42,14 @@ def test_convert_round_trip():
                     assert_equal(
                         input_data[column_name],
                         output_data[column_name],
-                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {hdf5_input_file} to {output_format} and back",
+                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {csv_input_file} to {output_format} and back",
                     )
                 else:
-                    # Assert equal with message if not equal printing the column name
+                    # Test that we convert back to our original numeric values within a small tolerance of lost precision.
                     assert_allclose(
                         input_data[column_name],
                         output_data[column_name],
-                        rtol=1,  # TODO reevaluate
-                        atol=1,  # TODO reevaluate
-                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {hdf5_input_file} to {output_format} and back",
+                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {csv_input_file} to {output_format} and back",
                     )
 
 
@@ -72,6 +69,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
     output_file_stem_BCART = "test_output_BCART"
     os.chdir(tmpdir)
     temp_BCART_out_file = os.path.join(tmpdir, f"{output_file_stem_BCART}.csv")
+    # Convert our BCOM CV file to a BCART CSV file
     convert_cli(
         input_file,
         output_file_stem_BCART,
@@ -81,13 +79,16 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
         num_workers=num_workers,
     )
 
+    # Verify the conversion produced an output file
     assert os.path.exists(temp_BCART_out_file)
 
+    # Create a new CSV reader to read in our output BCART file
     output_csv_reader = CSVDataReader(temp_BCART_out_file, "csv")
     output_data_BCART = output_csv_reader.read_rows()
-    # TODO we can round trip to test but right now convert simply copies and reappends data
+    # Verify that the number of rows in the input and output files are the same
     assert_equal(len(input_data), len(output_data_BCART))
 
+    # Now convert back to BCOM so we can verify the round trip conversion.
     output_file_stem_BCOM = "test_output_BCOM"
     temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.csv")
     convert_cli(
@@ -99,20 +100,18 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
         num_workers=num_workers,
     )
 
+    # Verify the conversion produced an output file
     assert os.path.exists(temp_BCOM_out_file)
-
     output_csv_reader = CSVDataReader(temp_BCOM_out_file, "csv")
     output_data_BCOM = output_csv_reader.read_rows()
 
+    # Test that the file has the same number of rows and columns as our input file
     assert_equal(len(input_data), len(output_data_BCOM))
-    # Test that the sets of column names are the same
     assert_equal(set(input_data.dtype.names), set(output_data_BCOM.dtype.names))
 
+    # Test that the columns have equivalent values, note that column order may have changed.
     for column_name in input_data.dtype.names:
-        # TODO(wilsonbb): remove this once we correctly have these columns in radians rather than degrees.
-        if column_name in set(["inc", "node", "argPeri"]):
-            continue
-        # check if the column has string data
+        # For non-numeric columns, we can't use assert_allclose, so we use assert_equal.
         if (
             input_data[column_name].dtype.kind == "S"
             or input_data[column_name].dtype.kind == "U"
@@ -124,7 +123,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
                 err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype}",
             )
         else:
-            # Assert equal with message if not equal printing the column name
+            # Test that we convert back to our original numeric values within a small tolerance of lost precision.
             assert_allclose(
                 input_data[column_name],
                 output_data_BCOM[column_name],
@@ -148,6 +147,8 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
     output_file_stem_BCART = "test_output_BCART"
     os.chdir(tmpdir)
     temp_out_file_BCART = os.path.join(tmpdir, f"{output_file_stem_BCART}.h5")
+
+    # Convert our BCOM HDF5 file to a BCART HDF5 file
     convert_cli(
         input_file_BCOM,
         output_file_stem_BCART,
@@ -157,14 +158,13 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
         num_workers=num_workers,
     )
 
+    # Verify the conversion produced an output file
     assert os.path.exists(temp_out_file_BCART)
-
     output_hdf5_reader = HDF5DataReader(temp_out_file_BCART)
     output_data_BCART = output_hdf5_reader.read_rows()
-
     assert_equal(len(input_data_BCOM), len(output_data_BCART))
 
-    # Convert back to BCOM
+    # Convert our output BCART file back to BCOM so we can verify the round trip conversion.
     output_file_stem_BCOM = "test_output_BCOM"
     temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.h5")
     convert_cli(
@@ -176,18 +176,18 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
         num_workers=num_workers,
     )
 
+    # Verify the conversion produced an output file
     assert os.path.exists(temp_BCOM_out_file)
-
     output_hdf5_reader = HDF5DataReader(temp_BCOM_out_file)
     output_data_BCOM = output_hdf5_reader.read_rows()
 
+    # Test that the file has the same number of rows and columns as our input file
     assert_equal(len(input_data_BCOM), len(output_data_BCOM))
-    # Test that the sets of column names are the same
     assert_equal(set(input_data_BCOM.dtype.names), set(output_data_BCOM.dtype.names))
+
+    # Test that the columns have equivalent values, note that column order may have changed.
     for column_name in input_data_BCOM.dtype.names:
-        # TODO(wilsonbb): remove this once we correctly have these columns in radians rather than degrees.
-        if column_name in set(["inc", "node", "argPeri"]):
-            continue
+        # For non-numeric columns, we can't use assert_allclose, so we use assert_equal.
         if (
             input_data_BCOM[column_name].dtype.kind == "S"
             or input_data_BCOM[column_name].dtype.kind == "U"
@@ -199,7 +199,7 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
                 err_msg=f"Column {column_name} not equal with dtype {input_data_BCOM[column_name].dtype}",
             )
         else:
-            # Assert equal with message if not equal printing the column name
+            # Test that we convert back to our original numeric values within a small tolerance of lost precision.
             assert_allclose(
                 input_data_BCOM[column_name],
                 output_data_BCOM[column_name],
