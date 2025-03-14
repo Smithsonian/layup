@@ -20,20 +20,12 @@ import sys
 import numpy as np
 
 
-REQUIRED_COLUMN_NAMES = {
-    "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "BKEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-    "CART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-}
-
-
 class ObjectDataReader(abc.ABC):
     """The base class for reading in the object data."""
 
-    def __init__(self, cache_table=False, format_column_name: str = None, **kwargs):
+    def __init__(
+        self, cache_table=False, format_column_name: str = None, required_columns: list[str] = [], **kwargs
+    ):
         """Set up the reader.
 
         Note
@@ -48,6 +40,7 @@ class ObjectDataReader(abc.ABC):
         self._cache_table = cache_table
         self._table = None
         self._format_column_name = format_column_name
+        self._required_columns = required_columns
 
     @abc.abstractmethod
     def get_reader_info(self):
@@ -235,7 +228,7 @@ class ObjectDataReader(abc.ABC):
                 sys.exit(outstr)
 
             # Check that the expected columns are present in this chunk
-            for col in REQUIRED_COLUMN_NAMES[input_table[0][self._format_column_name]]:
+            for col in self._required_columns:
                 if col not in input_table.dtype.names:
                     outstr = f"ERROR: While reading table {self.filename}. Required column {col} not found."
                     logger.error(outstr)

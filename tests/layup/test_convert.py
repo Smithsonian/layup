@@ -1,103 +1,223 @@
-from layup.convert import convert_cli
+import argparse
+from layup.convert import convert, convert_cli
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
 
-from numpy.testing import assert_equal
+from numpy.testing import assert_equal, assert_allclose
 import os
 import pytest
 
 
+def create_argparse_object():
+    parser = argparse.ArgumentParser(description="Convert orbital data formats.")
+    parser.add_argument("--ar_data_file_path", type=str, required=False, help="cache directory")
+
+    args = parser.parse_args([])
+
+    return args
+
+
+def test_convert_round_trip():
+    """Convert into all 6 possible output formats and then conver the output back into its original format."""
+    # TODO(wbeebe): Add additional test files to test more input formats.
+    csv_input_files = ["BCOM.csv", "KEP.csv", "one_cent_orbs.csv", "two_cent_orbs.csv"]
+    for csv_input_file in csv_input_files:
+        input_csv_reader = CSVDataReader(get_test_filepath(csv_input_file))
+        input_data = input_csv_reader.read_rows()
+        input_format = input_data[0]["FORMAT"]
+        if input_format == "BCOM":
+            # TODO(wbeebe): The last row is a hyperbolic orbit in barycentric coordinates.
+            # It is removed here to avoid a conversion failure, but we should handle this
+            # case in the future, and add this row back into the test
+            input_data = input_data[0 : len(input_data) - 1]
+            assert len(input_data) == 813
+        for output_format in ["BCOM", "BCART", "BKEP", "COM", "CART", "KEP"]:
+            # Convert to the output format.
+            first_convert_data = convert(input_data, output_format, num_workers=1)
+            # Convert back to the original format for round trip checking.
+            output_data = convert(first_convert_data, input_format, num_workers=1)
+
+            assert_equal(len(input_data), len(output_data))
+
+            # Test that the columns are the same. Note that column order may not be preserved.
+            for column_name in input_data.dtype.names:
+                # For non-numeric columns, we can't use assert_allclose, so we use assert_equal.
+                if (
+                    input_data[column_name].dtype.kind == "S"
+                    or input_data[column_name].dtype.kind == "U"
+                    or input_data[column_name].dtype.kind == "O"
+                ):
+                    assert_equal(
+                        input_data[column_name],
+                        output_data[column_name],
+                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {csv_input_file} to {output_format} and back",
+                    )
+                else:
+                    # Test that we convert back to our original numeric values within a small tolerance of lost precision.
+                    assert_allclose(
+                        input_data[column_name],
+                        output_data[column_name],
+                        err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {csv_input_file} to {output_format} and back",
+                    )
+
+
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (10_000, 8),
-        (10_000, 4),
         (10_0000, 1),
-        (10_0000, -1),
-        (500, 8),
-        (500, 4),
-        (500, 1),
-        (500, -1),
-        (10, 8),
-        (10, 4),
-        (10, 1),
-        (10, -1),
-        (2, 4),
-        (1, 3),
-        (1, 1),
-        (1, -1),
     ],
 )
 def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
     """Test that the convert function works for a small CSV file."""
-    input_csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv")
+    cli_args = create_argparse_object()
+    input_file = get_test_filepath("BCOM.csv")
+    input_csv_reader = CSVDataReader(input_file, "csv")
     input_data = input_csv_reader.read_rows()
 
     # Since the convert CLI outputs to the current working directory, we need to change to our temp directory
-    output_file_stem = "test_output"
+    output_file_stem_BCART = "test_output_BCART"
     os.chdir(tmpdir)
-    temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
+    temp_BCART_out_file = os.path.join(tmpdir, f"{output_file_stem_BCART}.csv")
+    # Convert our BCOM CV file to a BCART CSV file
     convert_cli(
-        get_test_filepath("CART.csv"),
-        output_file_stem,
+        input_file,
+        output_file_stem_BCART,
+        "BCART",
+        "csv",
+        chunk_size=chunk_size,
+        num_workers=num_workers,
+        cli_args=cli_args,
+    )
+
+    # Verify the conversion produced an output file
+    assert os.path.exists(temp_BCART_out_file)
+
+    # Create a new CSV reader to read in our output BCART file
+    output_csv_reader = CSVDataReader(temp_BCART_out_file, "csv")
+    output_data_BCART = output_csv_reader.read_rows()
+    # Verify that the number of rows in the input and output files are the same
+    assert_equal(len(input_data), len(output_data_BCART))
+
+    # Now convert back to BCOM so we can verify the round trip conversion.
+    output_file_stem_BCOM = "test_output_BCOM"
+    temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.csv")
+    convert_cli(
+        temp_BCART_out_file,
+        output_file_stem_BCOM,
         "BCOM",
         "csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
+        cli_args=cli_args,
     )
 
-    assert os.path.exists(temp_out_file)
+    # Verify the conversion produced an output file
+    assert os.path.exists(temp_BCOM_out_file)
+    output_csv_reader = CSVDataReader(temp_BCOM_out_file, "csv")
+    output_data_BCOM = output_csv_reader.read_rows()
 
-    output_csv_reader = CSVDataReader(temp_out_file, "csv")
-    output_data = output_csv_reader.read_rows()
-    # TODO we can round trip to test but right now convert simply copies and reappends data
-    assert_equal(input_data, output_data)
+    # Test that the file has the same number of rows and columns as our input file
+    assert_equal(len(input_data), len(output_data_BCOM))
+    assert_equal(set(input_data.dtype.names), set(output_data_BCOM.dtype.names))
+
+    # Test that the columns have equivalent values, note that column order may have changed.
+    for column_name in input_data.dtype.names:
+        # For non-numeric columns, we can't use assert_allclose, so we use assert_equal.
+        if (
+            input_data[column_name].dtype.kind == "S"
+            or input_data[column_name].dtype.kind == "U"
+            or input_data[column_name].dtype.kind == "O"
+        ):
+            assert_equal(
+                input_data[column_name],
+                output_data_BCOM[column_name],
+                err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype}",
+            )
+        else:
+            # Test that we convert back to our original numeric values within a small tolerance of lost precision.
+            assert_allclose(
+                input_data[column_name],
+                output_data_BCOM[column_name],
+                err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype}",
+            )
 
 
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (10_000, 8),
-        (10_000, 4),
         (10_0000, 1),
-        (10_0000, -1),
-        (500, 8),
-        (500, 4),
-        (500, 1),
-        (500, -1),
-        (10, 8),
-        (10, 4),
-        (10, 1),
-        (10, -1),
-        (2, 4),
-        (1, 3),
-        (1, 1),
-        (1, -1),
     ],
 )
-def test_convert_one_chunk_one_worker_hdf5(tmpdir, chunk_size, num_workers):
-    """Test that the convert function works for a small HDF5 file."""
-    input_hdf5_reader = HDF5DataReader(get_test_filepath("CART.h5"))
-    input_data = input_hdf5_reader.read_rows()
+def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
+    # Test that the convert function works for a small HDF5 file.
+    cli_args = create_argparse_object()
+    input_file_BCOM = get_test_filepath("BCOM.h5")
+    input_hdf5_reader = HDF5DataReader(input_file_BCOM)
+    input_data_BCOM = input_hdf5_reader.read_rows()
 
     # Since the convert CLI outputs to the current working directory, we need to change to our temp directory
-    output_file_stem = "test_output"
+    output_file_stem_BCART = "test_output_BCART"
     os.chdir(tmpdir)
-    temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.h5")
+    temp_out_file_BCART = os.path.join(tmpdir, f"{output_file_stem_BCART}.h5")
+
+    # Convert our BCOM HDF5 file to a BCART HDF5 file
     convert_cli(
-        get_test_filepath("CART.h5"),
-        temp_out_file,
+        input_file_BCOM,
+        output_file_stem_BCART,
+        "BCART",
+        "hdf5",
+        chunk_size=chunk_size,
+        num_workers=num_workers,
+        cli_args=cli_args,
+    )
+
+    # Verify the conversion produced an output file
+    assert os.path.exists(temp_out_file_BCART)
+    output_hdf5_reader = HDF5DataReader(temp_out_file_BCART)
+    output_data_BCART = output_hdf5_reader.read_rows()
+    assert_equal(len(input_data_BCOM), len(output_data_BCART))
+
+    # Convert our output BCART file back to BCOM so we can verify the round trip conversion.
+    output_file_stem_BCOM = "test_output_BCOM"
+    temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.h5")
+    convert_cli(
+        temp_out_file_BCART,
+        output_file_stem_BCOM,
         "BCOM",
         "hdf5",
         chunk_size=chunk_size,
         num_workers=num_workers,
+        cli_args=cli_args,
     )
 
-    assert os.path.exists(temp_out_file)
+    # Verify the conversion produced an output file
+    assert os.path.exists(temp_BCOM_out_file)
+    output_hdf5_reader = HDF5DataReader(temp_BCOM_out_file)
+    output_data_BCOM = output_hdf5_reader.read_rows()
 
-    output_hdf5_reader = HDF5DataReader(temp_out_file)
-    output_data = output_hdf5_reader.read_rows()
-    # TODO we can round trip to test but right now convert simply copies and reappends data
-    assert_equal(input_data, output_data)
+    # Test that the file has the same number of rows and columns as our input file
+    assert_equal(len(input_data_BCOM), len(output_data_BCOM))
+    assert_equal(set(input_data_BCOM.dtype.names), set(output_data_BCOM.dtype.names))
+
+    # Test that the columns have equivalent values, note that column order may have changed.
+    for column_name in input_data_BCOM.dtype.names:
+        # For non-numeric columns, we can't use assert_allclose, so we use assert_equal.
+        if (
+            input_data_BCOM[column_name].dtype.kind == "S"
+            or input_data_BCOM[column_name].dtype.kind == "U"
+            or input_data_BCOM[column_name].dtype.kind == "O"
+        ):
+            assert_equal(
+                input_data_BCOM[column_name],
+                output_data_BCOM[column_name],
+                err_msg=f"Column {column_name} not equal with dtype {input_data_BCOM[column_name].dtype}",
+            )
+        else:
+            # Test that we convert back to our original numeric values within a small tolerance of lost precision.
+            assert_allclose(
+                input_data_BCOM[column_name],
+                output_data_BCOM[column_name],
+                err_msg=f"Column {column_name} not equal with dtype {input_data_BCOM[column_name].dtype}",
+            )

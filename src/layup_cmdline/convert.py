@@ -21,7 +21,7 @@ def main():
 
     positionals.add_argument(
         help="orbit reference frame to transform to [COM, BCOM, KEP, BKEP, CART, BCART]",
-        dest="orbit-type",
+        dest="orbit_type",
         type=str,
     )
 
@@ -31,7 +31,7 @@ def main():
         "--ar-data-path",
         help="Directory path where Assist+Rebound data files where stored when running bootstrap_sorcha_data_files from the command line.",
         type=str,
-        dest="ar",
+        dest="ar_data_file_path",
         required=False,
     )
     optional.add_argument(
@@ -46,7 +46,7 @@ def main():
         "-ch",
         "--chunksize",
         help="number of orbits to be processed at once",
-        dest="c",
+        dest="chunk",
         type=int,
         default=10000,
         required=False,
@@ -89,9 +89,10 @@ def execute(args):
     convert_cli(
         input=args.input,
         output_file_stem=args.o,
-        convert_to=args.type,
-        file_format=args.f,
-        chunk_size=args.c,
+        convert_to=args.orbit_type,
+        file_format=args.i,
+        chunk_size=args.chunk,
+        cli_args=args,
     )
 
 
