@@ -12,13 +12,39 @@ def main():
         description="This would start visualize",
     )
 
+    positionals = parser.add_argument_group("Positional arguments")
+    positionals.add_argument(
+        help="input orbit file",
+        dest="input",
+        type=str,
+    )
+
     optional = parser.add_argument_group("Optional arguments")
     optional.add_argument(
-        "-p",
-        "--print",
-        help="Prints statement to terminal.",
-        dest="p",
-        action="store_true",
+        "-i",
+        "--input-type",
+        help="input format type of file",
+        dest="i",
+        type=str,
+        default="csv",
+        required=False,
+    )
+    optional.add_argument(
+        "-n",
+        "--num",
+        help="random number of orbits to take from input file",
+        dest="n",
+        type=str,
+        default=1000,
+        required=False,
+    )
+    optional.add_argument(
+        "-o",
+        "--output",
+        help="output file stem. default path is current working directory",
+        dest="o",
+        type=str,
+        default="output",
         required=False,
     )
 
@@ -28,10 +54,7 @@ def main():
 
 
 def execute(args):
-    if args.p:
-        print("print statement used for visualize")
-    else:
-        print("Hello world this would start visualize")
+    print("Hello world this would start visualise")
 
 
 if __name__ == "__main__":
