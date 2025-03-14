@@ -19,7 +19,7 @@ from layup.utilities.layup_configs import LayupConfigs
 
 logger = logging.getLogger(__name__)
 
-
+# Required column names for each orbit format
 REQUIRED_COLUMN_NAMES = {
     "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
     "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
@@ -29,6 +29,15 @@ REQUIRED_COLUMN_NAMES = {
     "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
 }
 
+# Columns which use degrees as units in each orbit format
+degree_columns = {
+    "BCOM": ["inc", "node", "argPeri"],
+    "COM": ["inc", "node", "argPeri"],
+    "BKEP": ["inc", "node", "argPeri", "ma"],
+    "KEP": ["inc", "node", "argPeri", "ma"],
+}
+
+# Default column dtypes across all orbit formats
 DEFAULT_COLUMN_DTYPES = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
 
 # Add this to MJD to convert to JD
@@ -84,106 +93,105 @@ def _apply_convert(data, convert_to):
     data : numpy structured array
         The converted data
     """
+    if len(data) == 0:
+        return data
 
+    if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        raise ValueError("Invalid conversion type")
+
+    # Fetch layup configs to get the necessary auxiliary data
     config = LayupConfigs()
     ephem, gm_sun, gm_total = create_assist_ephemeris(None, config.auxiliary)
 
-    convert_from = data["FORMAT"][0]
+    # Construct the output dtype for the converted data
+    output_dtype = [
+        (col, dtype) for col, dtype in zip(REQUIRED_COLUMN_NAMES[convert_to], DEFAULT_COLUMN_DTYPES)
+    ]
+
+    # For each row in the data, convert the orbit to the desired format
     results = []
-
-    columns_to_convert = {
-        "BCOM": ["inc", "node", "argPeri"],
-        "COM": ["inc", "node", "argPeri"],
-        "BKEP": ["inc", "node", "argPeri", "ma"],
-        "KEP": ["inc", "node", "argPeri", "ma"],
-    }
-
     for d in data:
-        # `out` is a tuple
-        bcart_row = parse_orbit_row(d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total)
-        output_dtype = [
-            (col, dtype) for col, dtype in zip(REQUIRED_COLUMN_NAMES[convert_to], DEFAULT_COLUMN_DTYPES)
-        ]
-
-        # Unpack the tuple to make the code more readable
-        (
-            x,
-            y,
-            z,
-            xdot,
-            ydot,
-            zdot,
-        ) = bcart_row
+        # Regardless of the input format, parse_orbit row will always return the Barycentric Cartesian coordinates
+        x, y, z, xdot, ydot, zdot = parse_orbit_row(
+            d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total
+        )
 
         if convert_to == "BCART":
-            # return without additional modifications
+            # Convert back to ecliptic from parse_orbit_row's equatorial output.
             ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
             ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
 
+            # Since parse_orbit_row returns BCART, we can just use the output directly.
             row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
         elif convert_to == "CART":
+            # Convert to CART by subtracting the Sun's position and velocity from the Barycentric Cartesian coordinates
             sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-            equitorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
-            equitorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
-            ecliptic_coords = np.array(equatorial_to_ecliptic(equitorial_coords))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic(equitorial_velocities))
+            equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
+            equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
+
+            # Convert back to ecliptic from parse_orbit_row's equatorial output.
+            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
 
             row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
         elif convert_to == "BCOM":
-            # Use universal_cometary to convert to BCOM with mu = gm_total
+            # Convert back to ecliptic from parse_orbit_row's equatorial output.
             ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
             ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
-
             x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
+            # Use universal_cometary to convert to BCOM with mu = gm_total (used for barycentric)
             row = universal_cometary(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
         elif convert_to == "COM":
-            # Use universal_cometary to convert to COM with mu = gm_sun
+            # Convert out of barycentric by subtracting the Sun's position and velocity from the Barycentric Cartesian coordinates
             sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-
-            equitorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
-            equitorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
-            ecliptic_coords = np.array(equatorial_to_ecliptic(equitorial_coords))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic(equitorial_velocities))
-
+            equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
+            equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
+            # Convert back to ecliptic from parse_orbit_row's equatorial output.
+            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
             x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+
+            # Use universal_cometary to convert to COM with mu = gm_sun
             row = universal_cometary(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
         elif convert_to == "BKEP":
-            # Use universal_keplerian to convert to BKEP with mu = gm_total
+            # Convert back to ecliptic from parse_orbit_row's equatorial output.
             ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
             ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
-
             x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+
+            # Use universal_keplerian to convert to BKEP with mu = gm_total
             row = universal_keplerian(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
         elif convert_to == "KEP":
-            # Use universal_keplerian to convert to KEP with mu = gm_sun
+            # Convert out of barycentric by subtracting the Sun's position and velocity from the Barycentric Cartesian coordinates
             sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
+            equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
+            equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
 
-            equitorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
-            equitorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
-            ecliptic_coords = np.array(equatorial_to_ecliptic(equitorial_coords))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic(equitorial_velocities))
+            # Convert back to ecliptic from parse_orbit_row's equatorial output.
+            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
 
+            # Use universal_keplerian to convert to KEP with mu = gm_sun
             x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
             row = universal_keplerian(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
 
+        # Turn our converted row into a structured array
         result_struct_array = np.array(
             [(d["ObjID"], convert_to) + row + (d["epochMJD_TDB"],)],
             dtype=output_dtype,
         )
-
         results.append(result_struct_array)
 
+    # Convert the list of results to a numpy structured array
     output = np.squeeze(np.array(results))
-    cols = columns_to_convert.get(convert_to, [])
 
-    for col in cols:
-        output[col] = output[col] * 180 / np.pi
-        for i in range(len(output[col])):
-            if output[col][i] < 0:
-                output[col][i] += 360
+    # The outputs of the sorcha orbit conversion utilities are always in radians, so convert to degrees for any such columns.
+    for col in degree_columns.get(convert_to, []):
+        # Convert from radians to degrees and wrap to [0, 360)
+        output[col] = (output[col] * 180 / np.pi) % 360
 
     return output
 
