@@ -1,3 +1,4 @@
+import argparse
 from layup.convert import convert, convert_cli
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
@@ -9,10 +10,19 @@ import os
 import pytest
 
 
+def create_argparse_object():
+    parser = argparse.ArgumentParser(description="Convert orbital data formats.")
+    parser.add_argument("--ar_data_file_path", type=str, required=False, help="cache directory")
+
+    args = parser.parse_args([])
+
+    return args
+
+
 def test_convert_round_trip():
     """Convert into all 6 possible output formats and then conver the output back into its original format."""
     # TODO(wbeebe): Add additional test files to test more input formats.
-    csv_input_files = ["BCOM.csv", "KEP.csv"]
+    csv_input_files = ["BCOM.csv", "KEP.csv", "one_cent_orbs.csv", "two_cent_orbs.csv"]
     for csv_input_file in csv_input_files:
         input_csv_reader = CSVDataReader(get_test_filepath(csv_input_file))
         input_data = input_csv_reader.read_rows()
@@ -61,6 +71,7 @@ def test_convert_round_trip():
 )
 def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
     """Test that the convert function works for a small CSV file."""
+    cli_args = create_argparse_object()
     input_file = get_test_filepath("BCOM.csv")
     input_csv_reader = CSVDataReader(input_file, "csv")
     input_data = input_csv_reader.read_rows()
@@ -77,6 +88,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
         "csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
+        cli_args=cli_args,
     )
 
     # Verify the conversion produced an output file
@@ -98,6 +110,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
         "csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
+        cli_args=cli_args,
     )
 
     # Verify the conversion produced an output file
@@ -139,6 +152,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
 )
 def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
     # Test that the convert function works for a small HDF5 file.
+    cli_args = create_argparse_object()
     input_file_BCOM = get_test_filepath("BCOM.h5")
     input_hdf5_reader = HDF5DataReader(input_file_BCOM)
     input_data_BCOM = input_hdf5_reader.read_rows()
@@ -156,6 +170,7 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
         "hdf5",
         chunk_size=chunk_size,
         num_workers=num_workers,
+        cli_args=cli_args,
     )
 
     # Verify the conversion produced an output file
@@ -174,6 +189,7 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
         "hdf5",
         chunk_size=chunk_size,
         num_workers=num_workers,
+        cli_args=cli_args,
     )
 
     # Verify the conversion produced an output file

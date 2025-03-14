@@ -8,7 +8,7 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 
 from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
-from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
+from sorcha.ephemeris.simulation_setup import _create_assist_ephemeris
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.orbit_conversion_utilities import universal_cometary, universal_keplerian
 
@@ -77,7 +77,7 @@ def process_data(data, n_workers, func, **kwargs):
         return np.concatenate([future.result() for future in futures])
 
 
-def _apply_convert(data, convert_to):
+def _apply_convert(data, convert_to, cache_dir=None):
     """
     Apply the appropriate conversion function to the data
 
@@ -101,7 +101,7 @@ def _apply_convert(data, convert_to):
 
     # Fetch layup configs to get the necessary auxiliary data
     config = LayupConfigs()
-    ephem, gm_sun, gm_total = create_assist_ephemeris(None, config.auxiliary)
+    ephem, gm_sun, gm_total = _create_assist_ephemeris(config.auxiliary, cache_dir)
 
     # Construct the output dtype for the converted data
     output_dtype = [
@@ -186,7 +186,7 @@ def _apply_convert(data, convert_to):
         results.append(result_struct_array)
 
     # Convert the list of results to a numpy structured array
-    output = np.squeeze(np.array(results))
+    output = np.squeeze(np.array(results)) if len(results) > 1 else results[0]
 
     # The outputs of the sorcha orbit conversion utilities are always in radians, so convert to degrees for any such columns.
     for col in degree_columns.get(convert_to, []):
@@ -196,7 +196,7 @@ def _apply_convert(data, convert_to):
     return output
 
 
-def convert(data, convert_to, num_workers=1):
+def convert(data, convert_to, num_workers=1, cache_dir=None):
     """
     Convert a structured numpy array to a different orbital format with support for parallel processing
 
@@ -216,9 +216,9 @@ def convert(data, convert_to, num_workers=1):
     """
 
     if num_workers == 1:
-        return _apply_convert(data, convert_to)
+        return _apply_convert(data, convert_to, cache_dir=cache_dir)
     # Parallelize the conversion of the data across the requested number of workers
-    return process_data(data, num_workers, _apply_convert, convert_to=convert_to)
+    return process_data(data, num_workers, _apply_convert, convert_to=convert_to, cache_dir=cache_dir)
 
 
 def convert_cli(
@@ -228,6 +228,7 @@ def convert_cli(
     file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
     num_workers: int = 1,
+    cli_args: dict = None,
 ):
     """
     Convert an orbit file from one format to another with support for parallel processing.
@@ -250,6 +251,8 @@ def convert_cli(
         The number of workers to use for parallel processing of the individual
         chunk. If -1, the number of workers will be set to the number of CPUs on
         the system. The default is 1 worker.
+    cli_args : argparse, optional (default=None)
+        The argparse object that was created when running from the CLI.
     """
     input_file = Path(input)
     if file_format == "csv":
@@ -326,11 +329,13 @@ def convert_cli(
     total_rows = reader.get_row_count()
     chunks = [(i, min(i + chunk_size, total_rows)) for i in range(0, total_rows, chunk_size)]
 
+    cache_dir = cli_args.ar_data_file_path if cli_args else None
+
     for chunk_start, chunk_end in chunks:
         # Read the chunk of data
         chunk_data = reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
         # Parallelize conversion of this chunk of data.
-        converted_data = convert(chunk_data, convert_to, num_workers=num_workers)
+        converted_data = convert(chunk_data, convert_to, num_workers=num_workers, cache_dir=cache_dir)
         # Write out the converted data in in the requested file format.
         if file_format == "hdf5":
             write_hdf5(converted_data, output_file, key="data")

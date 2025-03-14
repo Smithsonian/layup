@@ -31,7 +31,7 @@ def main():
         "--ar-data-path",
         help="Directory path where Assist+Rebound data files where stored when running bootstrap_sorcha_data_files from the command line.",
         type=str,
-        dest="ar",
+        dest="ar_data_file_path",
         required=False,
     )
     optional.add_argument(
@@ -92,6 +92,7 @@ def execute(args):
         convert_to=args.orbit_type,
         file_format=args.i,
         chunk_size=args.chunk,
+        cli_args=args,
     )
 
 
