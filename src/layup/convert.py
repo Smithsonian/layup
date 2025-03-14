@@ -28,6 +28,9 @@ REQUIRED_COLUMN_NAMES = {
     "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
     "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
 }
+# Default column dtypes across all orbit formats. Note that the ordering of the dtypes matches
+# the ordering of the column names in REQUIRED_COLUMN_NAMES.
+DEFAULT_COLUMN_DTYPES = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
 
 # Columns which use degrees as units in each orbit format
 degree_columns = {
@@ -36,9 +39,6 @@ degree_columns = {
     "BKEP": ["inc", "node", "argPeri", "ma"],
     "KEP": ["inc", "node", "argPeri", "ma"],
 }
-
-# Default column dtypes across all orbit formats
-DEFAULT_COLUMN_DTYPES = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
 
 # Add this to MJD to convert to JD
 MJD_TO_JD_CONVERSTION = 2400000.5
