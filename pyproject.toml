@@ -23,7 +23,7 @@ dependencies = [
     "rebound",
     "pooch",
     "tqdm",
-    "sorcha"
+    "sorcha @ git+https://github.com/dirac-institute/sorcha.git"
 ]
 
 [project.scripts]
