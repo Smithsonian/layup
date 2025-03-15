@@ -48,7 +48,7 @@ def main():
         "-ch",
         "--chunksize",
         help="number of orbits to be processed at once",
-        dest="cs", # Change dest to cs to avoid conflict with --conf
+        dest="cs",  # Change dest to cs to avoid conflict with --conf
         type=int,
         default=10000,
         required=False,
@@ -122,10 +122,10 @@ def execute(args):
         print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
     import os
+
     output_file = f"{args.o}.{args.of}"
     if os.path.exists(output_file) and not args.force:
         sys.exit(f"ERROR: Output file {output_file} already exists. Use -f/--force to overwrite.")
-
 
     # Not handling chunk size for now
     print(f"Loading observations from {args.input} as {args.type}")
@@ -135,11 +135,13 @@ def execute(args):
 
         elif args.type.lower() == "ades_csv":
             from layup.utilities.file_io.CSVReader import CSVDataReader
+
             reader = CSVDataReader(args.input, sep="csv")
             observations = reader._read_rows_internal()
 
         elif args.type.lower() == "ades_psv":
             from layup.utilities.file_io.CSVReader import CSVDataReader
+
             reader = CSVDataReader(args.input, sep="|")
             observations = reader._read_rows_internal()
 
@@ -148,19 +150,17 @@ def execute(args):
 
         elif args.type.lower() == "ades_hdf5":
             from layup.utilities.file_io.HDF5Reader import HDF5DataReader
+
             reader = HDF5DataReader(args.input)
             observations = reader._read_rows_internal()
 
         row_count = len(observations)
         print(f"Successfully loaded {row_count} observation records")
-    
+
     except ImportError as ie:
         sys.exit(f"ERROR: Failed to import required modules for reading observations: {ie}")
     except Exception as e:
         sys.exit(f"ERROR: Failed to load observations: {e}")
-
-    
-
 
 
 if __name__ == "__main__":
