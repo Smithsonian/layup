@@ -76,14 +76,22 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-n",
+        "--num-workers",
+        help="Number of CPU workers to use for parallel processing each chunk. -1 uses all available CPUs.",
+        dest="n",
+        type=int,
+        default=-1,
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
 
 
 def execute(args):
-    print("Hello world this would start convert")
-
     from layup.convert import convert_cli
 
     convert_cli(
@@ -92,6 +100,7 @@ def execute(args):
         convert_to=args.orbit_type,
         file_format=args.i,
         chunk_size=args.chunk,
+        num_workers=args.n,
         cli_args=args,
     )
 
