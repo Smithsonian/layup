@@ -5,13 +5,12 @@ from typing import Literal
 
 import numpy as np
 
-from concurrent.futures import ProcessPoolExecutor
-
 from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_setup import _create_assist_ephemeris
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.orbit_conversion_utilities import universal_cometary, universal_keplerian
 
+from layup.utilities.data_processing_utilities import process_data
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -42,39 +41,6 @@ degree_columns = {
 
 # Add this to MJD to convert to JD
 MJD_TO_JD_CONVERSTION = 2400000.5
-
-
-def process_data(data, n_workers, func, **kwargs):
-    """
-    Process a structured numpy array in parallel for a given function and keyword arguments
-
-    Parameters
-    ----------
-    data : numpy structured array
-        The data to process.
-    n_workers : int
-        The number of workers to use for parallel processing.
-    func : function
-        The function to apply to each block of data within parallel.
-    **kwargs : dictionary
-        Extra arguments to pass to the function.
-
-    Returns
-    -------
-    res : numpy structured array
-        The processed data concatenated from each function result
-    """
-    # Divide our data into blocks to be processed by each worker
-    block_size = max(1, int(len(data) / n_workers))
-    # Create a list of tuples of the form (start, end) where start is the starting index of the block
-    # and end is the last index of the block + 1.
-    blocks = [(i, min(i + block_size, len(data))) for i in range(0, len(data), block_size)]
-
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        # Create a future applying the function to each block of data
-        futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
-        # Concatenate all processed blocks together as our final result
-        return np.concatenate([future.result() for future in futures])
 
 
 def _apply_convert(data, convert_to, cache_dir=None):
