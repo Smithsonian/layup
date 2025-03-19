@@ -99,16 +99,6 @@ def test_parallelization(n_rows, n_workers):
     data["ObjID"] = np.random.choice(["red", "fox", "hype"], n_rows)
     data["q"] = np.random.rand(n_rows)
 
-    # Apply the slightly_modify function to the data
-    """
-    processed_data = process_data(data, n_workers, slightly_modify)
-    assert len(processed_data) == n_rows
-    assert_equal(processed_data.dtype, data.dtype)
-    for i in range(n_rows):
-        assert processed_data["q"][i] == data["q"][i] + 1
-        assert processed_data["ObjID"][i] == data["ObjID"][i] + "_modified"
-    """
-
     # Apply the count function to the data, since this only returns a
     # single row, we can use the length of the returned result to test how
     # the data was sharded across n_workers
