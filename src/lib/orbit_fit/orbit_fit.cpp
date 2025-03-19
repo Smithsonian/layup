@@ -38,6 +38,7 @@
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
+#include "../detection.cpp"
 
 extern "C"{
 #include "rebound.h"
@@ -687,6 +688,88 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 // radar: range and doppler
 // shift+stack
 
+void run_from_files(char *ephem_kernel, char *small_bodies_kernel, char *ephemeris_filename) {
+	struct assist_ephem* ephem = assist_ephem_create(
+	    ephem_kernel, 
+	    small_bodies_kernel); 
+    if (!ephem){
+        printf("Cannot create ephemeris structure.\n");
+        exit(-1);
+    }
+
+	std::vector<detection> detections;
+    std::vector<double> times;
+
+	// Read the observations
+    char detections_filename[128]; 
+    sscanf(ephemeris_filename, "%s", detections_filename);
+    read_detections(detections_filename, detections, times);
+
+    std::vector<std::vector<size_t>> idx = IOD_indices(detections, 8.0, 10.0, 15.0, 25.0, 1000);
+
+    for(auto it=idx.begin(); it != idx.end(); it++){
+	std::vector<size_t> indices = *it;
+	size_t id0 = indices[0];
+	size_t id1 = indices[1];
+	size_t id2 = indices[2];
+
+	printf("%lu %lu %lu\n", id0, id1, id2);
+
+	// Probably want to turn these into more
+	// general vector types, to make calling from
+	// python easier.
+	// declare and preallocate the result vectors    
+	std::vector<residuals> resid_vec(detections.size());
+	std::vector<partials> partials_vec(detections.size());
+
+	// Make these parameters flexible.
+	size_t iter_max = 100;
+	double eps = 1e-12;
+
+	size_t iters;
+
+	// Put this in a better place
+	double GMtotal = 0.00029630927487993194;
+	std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
+	if (res.has_value()) {
+	    for(size_t i=0; i<res.value().size(); i++){
+		printf("guess: %lu %lf %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].root, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
+		       res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
+	    }
+	} else {
+	    printf("gauss failed\n");
+	    exit(1);
+	}
+
+	struct reb_particle p1;
+
+	p1.x = res.value()[0].x;
+	p1.y = res.value()[0].y;
+	p1.z = res.value()[0].z;    
+	p1.vx = res.value()[0].vx;
+	p1.vy = res.value()[0].vy;
+	p1.vz = res.value()[0].vz;
+
+		//print_initial_condition(p1, res.value()[0].epoch);
+	double chi2_final;
+
+	int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
+			     times, 
+			     detections,
+			     resid_vec,
+			     partials_vec,
+			     iters,
+			     chi2_final,
+			     eps, iter_max);
+
+	if(flag == 0){
+	    printf("flag: %d iters: %lu chi2: %lf\n", flag, iters, chi2_final);
+	}else{
+	    printf("flag: %d iters: %lu\n", flag, iters);
+	}
+    }
+}
+
 void main() {
 
     // ephemeris files should be passed in or put in a config
@@ -820,7 +903,8 @@ void main() {
 
 #ifdef Py_PYTHON_H
 static void orbit_fit_bindings(py::module& m) {
-    m.def("orbit_fit", &orbit_fit::main, R"pbdoc(Main function)pbdoc");
+	m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Main function)pbdoc"); 
+	m.def("run_from_files", &orbit_fit::run_from_files, R"pbdoc(Runner function)pbdoc"); 
 }
 #endif /* Py_PYTHON_H */
 

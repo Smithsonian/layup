@@ -4,7 +4,6 @@
 
 #include "lib/orbit_fit/orbit_fit.cpp"
 #include "lib/orbit_fit/orbit_fit_result.cpp"
-#include "lib/detection.cpp"    
 
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
