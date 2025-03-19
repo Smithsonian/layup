@@ -39,6 +39,7 @@
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
 #include "../detection.cpp"
+#include "orbit_fit_result.cpp"
 
 extern "C"{
 #include "rebound.h"

@@ -3,7 +3,6 @@
 #include <string>
 
 #include "lib/orbit_fit/orbit_fit.cpp"
-#include "lib/orbit_fit/orbit_fit_result.cpp"
 
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
@@ -35,17 +34,6 @@ PYBIND11_MODULE(_core, m) {
     // m.def("gauss", &gauss, R"pbdoc(
     //     Gauss' method of initial orbit determination
     // )pbdoc");
-
-    // Bind the OrbfitResult struct as a Python class
-    py::class_<OrbfitResult>(m, "OrbfitResult")
-        .def(py::init<>())  // Expose the default constructor
-        .def_readwrite("csq", &OrbfitResult::csq, "Chi-square value")
-        .def_readwrite("ndof", &OrbfitResult::ndof, "Number of degrees of freedom")
-        .def_readwrite("state", &OrbfitResult::state, "State vector")
-        .def_readwrite("epoch", &OrbfitResult::epoch, "Epoch")
-        .def_readwrite("cov", &OrbfitResult::cov, "Covariance matrix")
-        .def_readwrite("niter", &OrbfitResult::niter, "Number of iterations");
-
 
     // Bind AstrometryObservation type.
     py::class_<AstrometryObservation>(m, "AstrometryObservation")
@@ -88,10 +76,8 @@ PYBIND11_MODULE(_core, m) {
         .def_readonly("mag", &Observation::mag, "Optional magnitude")
         .def_readonly("mag_err", &Observation::mag_err, "Optional magnitude error");
 
-    // m.def("orbit_fit", &orbit_fit, R"pbdoc(
-    //     Nonlinear orbit fit using levenberg-marquardt
-    // )pbdoc");
     orbit_fit::orbit_fit_bindings(m);
+    orbit_fit::orbit_fit_result_bindings(m);
 
 
 #ifdef VERSION_INFO
