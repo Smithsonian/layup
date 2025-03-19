@@ -55,17 +55,29 @@ PYBIND11_MODULE(_core, m) {
     // Bind the main Observation type with multiple overloaded constructors.
     py::class_<Observation>(m, "Observation")
         // Constructor for an Astrometry observation.
+        // bind the ::from_astrometry factory method
+        .def_static("from_astrometry", &Observation::from_astrometry,
+                  py::arg("ra"), py::arg("dec"), py::arg("epoch"),
+                  py::arg("observer_position"), py::arg("observer_velocity"),
+                  "Construct an Astrometry observation")
+        // Constructor for a Streak observation.
+        // bind the ::from_streak factory method
+        .def_static("from_streak", &Observation::from_streak,
+                  py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
+                  py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+                  "Construct a Streak observation")
+
         // .def(py::init<double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
-        .def(py::init<double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
-             py::arg("ra"), py::arg("dec"), py::arg("epoch"),
-             py::arg("observer_position"), py::arg("observer_velocity"),
-             "Construct an Astrometry observation")
+        // .def(py::init<double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
+        //      py::arg("ra"), py::arg("dec"), py::arg("epoch"),
+        //      py::arg("observer_position"), py::arg("observer_velocity"),
+        //      "Construct an Astrometry observation")
         // Constructor for a Streak observation.
         // .def(py::init<double, double, double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
-        .def(py::init<double, double, double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
-             py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
-             py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
-             "Construct a Streak observation")
+        // .def(py::init<double, double, double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
+        //      py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
+        //      py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+        //      "Construct a Streak observation")
         // Expose common members.
         // .def_readonly("rho_hat", &Observation::observation_type::rho_hat, "Computed unit direction vector (rho_hat)")
         .def_readonly("epoch", &Observation::epoch, "Observation epoch (as a double)")
