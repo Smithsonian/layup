@@ -1,3 +1,7 @@
+<h1 align="center">
+<img src="https://raw.githubusercontent.com/Smithsonian/layup/main/docs/images/layup_logo.png" width="500">
+</h1><br>
+
 # layup
 Orbit fitting at LSST scale
 

@@ -3,7 +3,11 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to layup's documentation!
+.. image:: images/layup_logo.png
+  :width: 410
+  :alt: Layup logo
+  :align: center
+
 ========================================================================================
 
 Dev Guide - Getting Started
