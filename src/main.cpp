@@ -31,63 +31,7 @@ PYBIND11_MODULE(_core, m) {
         Say 'Hello, World!'
     )pbdoc");
 
-    // m.def("gauss", &gauss, R"pbdoc(
-    //     Gauss' method of initial orbit determination
-    // )pbdoc");
-
-    // Bind AstrometryObservation type.
-    py::class_<AstrometryObservation>(m, "AstrometryObservation")
-        .def(py::init<double, double>(),
-             py::arg("ra"), py::arg("dec"))
-        .def_readonly("rho_hat", &AstrometryObservation::rho_hat,
-                      "Computed unit direction vector (rho_hat)");
-
-
-    // Bind StreakObservation type.
-    py::class_<StreakObservation>(m, "StreakObservation")
-        .def(py::init<double, double, double, double>(),
-             py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"))
-        .def_readonly("ra_rate", &StreakObservation::ra_rate)
-        .def_readonly("dec_rate", &StreakObservation::dec_rate)
-        .def_readonly("rho_hat", &StreakObservation::rho_hat,
-                      "Computed unit direction vector (rho_hat)");
-
-    // Bind the main Observation type with multiple overloaded constructors.
-    py::class_<Observation>(m, "Observation")
-        // Constructor for an Astrometry observation.
-        // bind the ::from_astrometry factory method
-        .def_static("from_astrometry", &Observation::from_astrometry,
-                  py::arg("ra"), py::arg("dec"), py::arg("epoch"),
-                  py::arg("observer_position"), py::arg("observer_velocity"),
-                  "Construct an Astrometry observation")
-        // Constructor for a Streak observation.
-        // bind the ::from_streak factory method
-        .def_static("from_streak", &Observation::from_streak,
-                  py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
-                  py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
-                  "Construct a Streak observation")
-
-        // .def(py::init<double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
-        // .def(py::init<double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
-        //      py::arg("ra"), py::arg("dec"), py::arg("epoch"),
-        //      py::arg("observer_position"), py::arg("observer_velocity"),
-        //      "Construct an Astrometry observation")
-        // Constructor for a Streak observation.
-        // .def(py::init<double, double, double, double, double, const Eigen::Vector3d &, const Eigen::Vector3d &>(),
-        // .def(py::init<double, double, double, double, double, const std::array<double, 3> &, const std::array<double, 3> &>(),
-        //      py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
-        //      py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
-        //      "Construct a Streak observation")
-        // Expose common members.
-        // .def_readonly("rho_hat", &Observation::observation_type::rho_hat, "Computed unit direction vector (rho_hat)")
-        .def_readonly("epoch", &Observation::epoch, "Observation epoch (as a double)")
-        .def_readonly("observation_type", &Observation::observation_type, "Variant holding the observation data")
-        .def_readonly("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
-        .def_readonly("observer_velocity", &Observation::observer_velocity, "Observer velocity as a 3D vector")
-        .def_readonly("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")
-        .def_readonly("mag", &Observation::mag, "Optional magnitude")
-        .def_readonly("mag_err", &Observation::mag_err, "Optional magnitude error");
-
+    orbit_fit::detection_bindings(m);
     orbit_fit::orbit_fit_bindings(m);
     orbit_fit::orbit_fit_result_bindings(m);
 
