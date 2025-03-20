@@ -117,19 +117,16 @@ def orbitfit_cli(
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
-    #! Don't know if this is the correct way to instantiate the reader
+    #! Out input data won't have a "FORMAT" column!!!
     reader = reader_class(input_file, format_column_name="FORMAT")
 
-    # Force the reader to build the id table, and then use the internal `obj_id_table`
-    # to get the unique object ids and chunk along those
-    reader._build_id_map()
-    total_unique_ids = np.unique(reader.obj_id_table).size
-    chunks = [(i, min(i + chunk_size, total_unique_ids)) for i in range(0, total_unique_ids, chunk_size)]
+    chunks = _create_chunks(reader, chunk_size)
 
     cache_dir = cli_args.ar_data_file_path if cli_args else None
 
-    for chunk_start, chunk_end in chunks:
-        data = reader.read_objects(reader.obj_id_table[chunk_start:chunk_end])
+    for chunk in chunks:
+        data = reader.read_objects(chunk)
+        #! Do we need to sort by object id here so that all object ids are grouped together?
         fit_orbits = orbitfit(data, cache_dir=cache_dir, num_workers=num_workers)
 
         if output_file_format == "hdf5":
@@ -138,3 +135,51 @@ def orbitfit_cli(
             write_csv(fit_orbits, output_file)
 
     print(f"Data has been written to {output_file}")
+
+
+def _create_chunks(reader, chunk_size):
+    """For a given reader create a list of lists of object ids such that the total
+    number of entries in the file for all object ids in a given list, will be
+    less than the chunk size.
+
+    Parameters
+    ----------
+    reader : ObjectDataReader
+        The file reader object for the input file
+    chunk_size : int
+        The maximum number of rows to be included in a single list of ids
+
+    Returns
+    -------
+    chunks : list[list[ObjIds]]
+        A list of lists of object ids that can be passed to the reader's read_objects
+        method.
+    """
+    # Force the reader to build the id table and id count dictionary
+    reader._build_id_map()
+
+    # Log an error if the any of the objects have more rows than the chunk size
+    if np.max(reader.obj_id_counts.values()) > chunk_size:
+        logger.error("The maximum number of rows for a single object id exceeds the chunk size.")
+
+    chunks = []
+    obj_ids_in_chunk = []
+    accumulator = 0
+
+    # Loop over the object id counts dictionary
+    for k, v in reader.obj_id_counts.items():
+        # Check if the chunk size is exceeded, if so, save the current chunk and start a new chunk
+        if accumulator + v > chunk_size:
+            chunks.append(obj_ids_in_chunk)
+            obj_ids_in_chunk = []
+            accumulator = 0
+
+        # Increase the accumulator and add the object id to the current chunk
+        accumulator += v
+        obj_ids_in_chunk.append(k)
+
+    # Add the last chunk if it is not empty
+    if obj_ids_in_chunk:
+        chunks.append(obj_ids_in_chunk)
+
+    return chunks

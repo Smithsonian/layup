@@ -47,6 +47,10 @@ class CSVDataReader(ObjectDataReader):
         # if we try to read data for specific object IDs.
         self.obj_id_table = None
 
+        # A dictionary to hold the number of rows for each object ID. Only populated
+        # if we try to read data for specific object IDs.
+        self.obj_id_counts = {}
+
     def get_reader_info(self):
         """Return a string identifying the current reader name
         and input information (for logging and output).
@@ -196,6 +200,9 @@ class CSVDataReader(ObjectDataReader):
 
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
+        for i in self.obj_id_table:
+            self.obj_id_counts[str(i["ObjID"])] = self.obj_id_counts.get(str(i["ObjID"]), 0) + 1
+
     def _read_objects_internal(self, obj_ids, **kwargs):
         """Read in a chunk of data for given object IDs.
 
@@ -235,7 +242,7 @@ class CSVDataReader(ObjectDataReader):
             )
 
         records = res_df.to_records(index=False)
-        return np.array(records, dtype=records.dtype.descr)
+        return np.sort(np.array(records, dtype=records.dtype.descr), order="ObjID")
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.

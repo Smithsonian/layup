@@ -41,3 +41,21 @@ def process_data(data, n_workers, func, **kwargs):
         futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
         # Concatenate all processed blocks together as our final result
         return np.concatenate([future.result() for future in futures])
+
+
+def process_data_by_id(data, n_workers, func, **kwargs):
+    if n_workers < 1:
+        raise ValueError(f"n_workers must be greater than 0, {n_workers} was provided.")
+
+    #! Perhaps in this case we should return None???
+    if len(data) == 0:
+        return data
+
+    # define blocks as the start and end index for each objectId in `data`.
+    blocks = [(0, 1)]  #! Place holder
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        # Create a future applying the function to each block of data
+        futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
+        # Concatenate all processed blocks together as our final result
+        return np.concatenate([future.result() for future in futures])
