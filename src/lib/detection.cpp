@@ -40,13 +40,14 @@ using ObservationType = std::variant<AstrometryObservation, StreakObservation>;
 // --- Main Observation Structure ---
 // Now, Observation has private constructors and public static factory methods.
 struct Observation {
-    double epoch; // e.g., seconds since epoch
+    double epoch; // utc jd
     ObservationType observation_type;
     std::array<double, 3> observer_position;
     std::array<double, 3> observer_velocity;
     std::optional<Eigen::MatrixXd> inverse_covariance;
     std::optional<double> mag;
     std::optional<double> mag_err;
+    std::optional<double> epoch_err;
 
 private:
     // Private constructor used by the factory methods.
@@ -79,6 +80,10 @@ public:
         obs.observation_type = StreakObservation(ra, dec, ra_rate, dec_rate);
         return obs;
     }
+
+    // Factory method for a Radar observation.
+    // not implemented yet
+
 };
 
 
