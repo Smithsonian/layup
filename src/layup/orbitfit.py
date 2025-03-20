@@ -21,7 +21,7 @@ INPUT_FORMAT_READERS = {
 }
 
 
-def _orbitfit(data, cache_dir:str):
+def _orbitfit(data, cache_dir: str):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations.
 
@@ -37,7 +37,7 @@ def _orbitfit(data, cache_dir:str):
     return data
 
 
-def orbitfit(data, cache_dir:str, num_workers=1):
+def orbitfit(data, cache_dir: str, num_workers=1):
     """This is the function that you would call interactively. i.e. from a notebook
 
     Parameters
@@ -55,13 +55,13 @@ def orbitfit(data, cache_dir:str, num_workers=1):
 
 
 def orbitfit_cli(
-        input: str,
-        input_file_format: Literal["MPC80col", "ADES_csv", "ADES_psv", "ADES_xml", "ADES_hdf5"],
-        output_file_stem: str,
-        output_file_format: Literal["csv", "hdf5"] = "csv",
-        chunk_size: int = 10_000,
-        num_workers: int = -1,
-        cli_args: dict = None,
+    input: str,
+    input_file_format: Literal["MPC80col", "ADES_csv", "ADES_psv", "ADES_xml", "ADES_hdf5"],
+    output_file_stem: str,
+    output_file_format: Literal["csv", "hdf5"] = "csv",
+    chunk_size: int = 10_000,
+    num_workers: int = -1,
+    cli_args: dict = None,
 ):
     """This is the function that is called from the command line
 

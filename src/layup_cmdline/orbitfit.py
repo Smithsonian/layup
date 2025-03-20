@@ -120,14 +120,15 @@ def execute(args):
         configs = LayupConfigs()
         print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
-
     orbitfit_cli(
-        input = args.input,
-        input_file_format = args.type,
-        output_file_stem = args.o,
-        output_file_format = args.output_format,
+        input=args.input,
+        input_file_format=args.type,
+        output_file_stem=args.o,
+        output_file_format=args.output_format,
         num_workers=args.n,
         cli_args=args,
+    )
+
 
 if __name__ == "__main__":
     main()
