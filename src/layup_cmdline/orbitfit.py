@@ -32,7 +32,7 @@ def main():
         "--ar-data-path",
         help="Directory path where Assist+Rebound data files where stored when running bootstrap_layup_data_files from the command line.",
         type=str,
-        dest="ar",
+        dest="ar_data_file_path",
         required=False,
     )
 
@@ -41,14 +41,13 @@ def main():
         "--conf",
         help="optional configuration file",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
     optional.add_argument(
-        "-ch",
         "--chunksize",
         help="number of orbits to be processed at once",
-        dest="c",
+        dest="chunksize",
         type=int,
         default=10000,
         required=False,
@@ -80,10 +79,9 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "-of",
         "--output_format",
         help="output file format.",
-        dest="of",
+        dest="output_format",
         type=str,
         default="csv",
         required=False,
@@ -95,6 +93,8 @@ def main():
 
 
 def execute(args):
+    from layup.orbitfit import orbitfit_cli
+
     print("Hello world this would start orbitfit")
 
     if args.g and args.i == "gauss":
@@ -120,6 +120,14 @@ def execute(args):
         configs = LayupConfigs()
         print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
+
+    orbitfit_cli(
+        input = args.input,
+        input_file_format = args.type,
+        output_file_stem = args.o,
+        output_file_format = args.output_format,
+        num_workers=args.n,
+        cli_args=args,
 
 if __name__ == "__main__":
     main()
