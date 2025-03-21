@@ -87,6 +87,16 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-n",
+        "--num-workers",
+        help="Number of CPU workers to use for parallel processing each chunk. -1 uses all available CPUs.",
+        dest="n",
+        type=int,
+        default=-1,
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -103,8 +113,8 @@ def execute(args):
         sys.exit("ERROR: IOD and initial guess file cannot be called together")
 
     find_file_or_exit(arg_fn=args.input, argname="positional input")
-    if args.ar:
-        find_directory_or_exit(args.ar, argname="--ar --ar-data-path")
+    if args.ar_data_file_path:
+        find_directory_or_exit(args.ar, argname="--a --ar-data-path")
     if not ((args.type.lower()) in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]):
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
     from layup.utilities.layup_configs import LayupConfigs
@@ -112,8 +122,8 @@ def execute(args):
     if args.g is not None:
         find_file_or_exit(args.g, "-g, --guess")
 
-    if args.c:
-        find_file_or_exit(args.c, "-c, --config")
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.c)
         print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
     else:
@@ -125,6 +135,7 @@ def execute(args):
         input_file_format=args.type,
         output_file_stem=args.o,
         output_file_format=args.output_format,
+        chunk_size=args.chunksize,
         num_workers=args.n,
         cli_args=args,
     )

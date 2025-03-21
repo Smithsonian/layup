@@ -6,7 +6,7 @@ from typing import Literal
 
 import numpy as np
 
-from layup.utilities.data_processing_utilities import process_data
+from layup.utilities.data_processing_utilities import process_data_by_id
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
@@ -34,6 +34,8 @@ def _orbitfit(data, cache_dir: str):
     cache_dir : str
         The directory where the required orbital files are stored
     """
+    #! This is a stub for the actual orbit fitting code - remove this print line
+    print(f"ObjID:{data[0][0]}")
     return data
 
 
@@ -51,7 +53,7 @@ def orbitfit(data, cache_dir: str, num_workers=1):
     """
     if num_workers == 1:
         return _orbitfit(data, cache_dir)
-    return process_data(data, num_workers, _orbitfit, cache_dir=cache_dir)
+    return process_data_by_id(data, num_workers, _orbitfit, cache_dir=cache_dir)
 
 
 def orbitfit_cli(
@@ -117,8 +119,7 @@ def orbitfit_cli(
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
-    #! Out input data won't have a "FORMAT" column!!!
-    reader = reader_class(input_file, format_column_name="FORMAT")
+    reader = reader_class(input_file)
 
     chunks = _create_chunks(reader, chunk_size)
 
@@ -126,7 +127,9 @@ def orbitfit_cli(
 
     for chunk in chunks:
         data = reader.read_objects(chunk)
-        #! Do we need to sort by object id here so that all object ids are grouped together?
+
+        logger.info(f"Processing {len(data)} rows for {chunk}")
+
         fit_orbits = orbitfit(data, cache_dir=cache_dir, num_workers=num_workers)
 
         if output_file_format == "hdf5":
@@ -158,9 +161,18 @@ def _create_chunks(reader, chunk_size):
     # Force the reader to build the id table and id count dictionary
     reader._build_id_map()
 
+    # Find all object ids with more rows than the max allowed number of rows.
+    exceeds_id_list = []
+    for k, v in reader.obj_id_counts.items():
+        if v > chunk_size:
+            exceeds_id_list.append(k)
+
     # Log an error if the any of the objects have more rows than the chunk size
-    if np.max(reader.obj_id_counts.values()) > chunk_size:
-        logger.error("The maximum number of rows for a single object id exceeds the chunk size.")
+    if exceeds_id_list:
+        logger.error("The following objects have more rows than the max allowed number of rows.")
+        for k in exceeds_id_list:
+            logger.error(f"Object id {k} has {reader.obj_id_counts[k]} rows")
+        raise ValueError("At least one object has more rows than the max allowed number of rows.")
 
     chunks = []
     obj_ids_in_chunk = []

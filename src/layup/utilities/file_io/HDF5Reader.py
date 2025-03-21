@@ -98,6 +98,7 @@ class HDF5DataReader(ObjectDataReader):
         self.obj_id_table = pd.read_hdf(self.filename, columns=["ObjID"])
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
+        # Create a dictionary to hold the number of rows for each object ID.
         for i in self.obj_id_table["ObjID"]:
             self.obj_id_counts[i] = self.obj_id_counts.get(str(i), 0) + 1
 
@@ -123,7 +124,7 @@ class HDF5DataReader(ObjectDataReader):
         res_df = pd.read_hdf(self.filename, where="index=match_inds")  # noqa: F841
 
         records = res_df.to_records(index=False)
-        return np.sort(np.array(records, dtype=records.dtype.descr), order="ObjID")
+        return np.array(records, dtype=records.dtype.descr)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.

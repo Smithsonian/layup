@@ -44,18 +44,42 @@ def process_data(data, n_workers, func, **kwargs):
 
 
 def process_data_by_id(data, n_workers, func, **kwargs):
+    """
+    Process a structured numpy array in parallel for a given function and
+    keyword arguments. Instead of distributing the data across all available workers
+    it is expected that the data will contain a `ObjID` column. The data will be
+    split by the unique values in the `ObjID` column and each block of data will
+    be processed in parallel.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to process. Expected to contain a column named `ObjID`.
+    n_workers : int
+        The number of workers to use for parallel processing.
+    func : function
+        The function to apply to each block of data within parallel.
+    **kwargs : dictionary
+        Extra arguments to pass to the function.
+
+    Returns
+    -------
+    res : numpy structured array
+        The processed data concatenated from each function result
+    """
     if n_workers < 1:
         raise ValueError(f"n_workers must be greater than 0, {n_workers} was provided.")
 
-    #! Perhaps in this case we should return None???
+    #! Perhaps this should be None, or raise and exception that is caught by the
+    #! caller. If we return `data`, the columns won't match the columns of the
+    #! processed data.
     if len(data) == 0:
         return data
 
-    # define blocks as the start and end index for each objectId in `data`.
-    blocks = [(0, 1)]  #! Place holder
-
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        # Create a future applying the function to each block of data
-        futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
+        # Create a future applying the function to each block of data for a given object id
+        futures = [
+            executor.submit(func, data[data["ObjID"] == id], **kwargs) for id in np.unique(data["ObjID"])
+        ]
         # Concatenate all processed blocks together as our final result
         return np.concatenate([future.result() for future in futures])

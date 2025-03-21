@@ -187,21 +187,26 @@ class CSVDataReader(ObjectDataReader):
         if self.obj_id_table is not None:
             return
 
-        self.obj_id_table = np.genfromtxt(
-            self.filename,
-            delimiter="," if self.sep != "whitespace" else None,
-            names=True,
-            dtype=None,
-            encoding="utf8",
-            deletechars=_INVALID_COL_CHARS,
-            ndmin=1,  # Ensure we always get a structured array even with a single result
-            usecols=(0,),  # Only read in the first column, ObjID
-        )
+        if self.sep == "whitespace":
+            self.obj_id_table = pd.read_csv(
+                self.filename,
+                sep="\\s+",
+                usecols=["ObjID"],
+                header=self.header_row,
+            )
+        else:
+            self.obj_id_table = pd.read_csv(
+                self.filename,
+                delimiter=",",
+                usecols=["ObjID"],
+                header=self.header_row,
+            )
 
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
-        for i in self.obj_id_table:
-            self.obj_id_counts[str(i["ObjID"])] = self.obj_id_counts.get(str(i["ObjID"]), 0) + 1
+        # Create a dictionary of the object ID counts.
+        for i in self.obj_id_table["ObjID"]:
+            self.obj_id_counts[i] = self.obj_id_counts.get(str(i), 0) + 1
 
     def _read_objects_internal(self, obj_ids, **kwargs):
         """Read in a chunk of data for given object IDs.
@@ -242,7 +247,7 @@ class CSVDataReader(ObjectDataReader):
             )
 
         records = res_df.to_records(index=False)
-        return np.sort(np.array(records, dtype=records.dtype.descr), order="ObjID")
+        return np.array(records, dtype=records.dtype.descr)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.
