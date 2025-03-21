@@ -47,6 +47,10 @@ class CSVDataReader(ObjectDataReader):
         # if we try to read data for specific object IDs.
         self.obj_id_table = None
 
+        # A dictionary to hold the number of rows for each object ID. Only populated
+        # if we try to read data for specific object IDs.
+        self.obj_id_counts = {}
+
     def get_reader_info(self):
         """Return a string identifying the current reader name
         and input information (for logging and output).
@@ -183,18 +187,26 @@ class CSVDataReader(ObjectDataReader):
         if self.obj_id_table is not None:
             return
 
-        self.obj_id_table = np.genfromtxt(
-            self.filename,
-            delimiter="," if self.sep != "whitespace" else None,
-            names=True,
-            dtype=None,
-            encoding="utf8",
-            deletechars=_INVALID_COL_CHARS,
-            ndmin=1,  # Ensure we always get a structured array even with a single result
-            usecols=(0,),  # Only read in the first column, ObjID
-        )
+        if self.sep == "whitespace":
+            self.obj_id_table = pd.read_csv(
+                self.filename,
+                sep="\\s+",
+                usecols=["ObjID"],
+                header=self.header_row,
+            )
+        else:
+            self.obj_id_table = pd.read_csv(
+                self.filename,
+                delimiter=",",
+                usecols=["ObjID"],
+                header=self.header_row,
+            )
 
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
+
+        # Create a dictionary of the object ID counts.
+        for i in self.obj_id_table["ObjID"]:
+            self.obj_id_counts[i] = self.obj_id_counts.get(str(i), 0) + 1
 
     def _read_objects_internal(self, obj_ids, **kwargs):
         """Read in a chunk of data for given object IDs.

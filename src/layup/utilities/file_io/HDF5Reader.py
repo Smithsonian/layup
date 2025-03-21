@@ -22,6 +22,10 @@ class HDF5DataReader(ObjectDataReader):
         # if we try to read data for specific object IDs.
         self.obj_id_table = None
 
+        # A dictionary to hold the number of rows for each object ID. Only populated
+        # if we try to read data for specific object IDs.
+        self.obj_id_counts = {}
+
     def get_reader_info(self):
         """Return a string identifying the current reader name
         and input information (for logging and output).
@@ -93,6 +97,10 @@ class HDF5DataReader(ObjectDataReader):
             return
         self.obj_id_table = pd.read_hdf(self.filename, columns=["ObjID"])
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
+
+        # Create a dictionary to hold the number of rows for each object ID.
+        for i in self.obj_id_table["ObjID"]:
+            self.obj_id_counts[i] = self.obj_id_counts.get(str(i), 0) + 1
 
     def _read_objects_internal(self, obj_ids, **kwargs):
         """Read in a chunk of data for given object IDs.
