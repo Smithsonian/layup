@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """Read and format obs80 data for orbit fitting.
-   Add astrometric uncertainties based on Veres et al 2017
-   Do the catalog debiasing according to Eggl et al ...
+Add astrometric uncertainties based on Veres et al 2017
+Do the catalog debiasing according to Eggl et al ...
 """
 
 # Import standard packages
