@@ -696,9 +696,9 @@ void run_from_files(std::string cache_dir, char *ephemeris_filename) {
 	std::string small_bodies_kernel = cache_dir + "sb441-n16.bsp";
 
 	char* ephem_kernel_char = new char[ephem_kernel.length()];
-    std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
+	std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
 	char* small_bodies_kernel_char = new char[small_bodies_kernel.length()];
-    std::strcpy(small_bodies_kernel_char, small_bodies_kernel.c_str());
+	std::strcpy(small_bodies_kernel_char, small_bodies_kernel.c_str());
 
 	struct assist_ephem* ephem = assist_ephem_create(
 	    ephem_kernel_char, 
