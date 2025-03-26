@@ -3,7 +3,9 @@ from numpy.testing import assert_equal, assert_allclose
 
 import numpy as np
 
-from layup.utilities.data_processing_utilities import process_data
+from layup.utilities.file_io.CSVReader import CSVDataReader
+
+from layup.utilities.data_processing_utilities import process_data, LayupObservatory
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
 
@@ -116,3 +118,33 @@ def test_parallelization(n_rows, n_workers):
 
     # Check that the sum of the "cnt" column is equal to the number of rows in the original data
     assert_equal(sum(processed_data["cnt"]), len(data))
+
+
+def test_layup_observatory_init():
+    """Test that we can get an observatory object."""
+    observatory = LayupObservatory()
+    assert observatory is not None
+
+
+def test_layup_observatory_obscodes_to_barycentric():
+    """Test that we can process the obscodes data."""
+    csv_reader = CSVDataReader(get_test_filepath("100_random_mpc_ADES.csv"), "csv")
+    data = csv_reader.read_rows()
+
+    observatory = LayupObservatory()
+
+    processed_data = observatory.obscodes_to_barycentric(data)
+    assert len(processed_data) == len(data)
+    assert processed_data.dtype == [("x", "<f8"), ("y", "<f8"), ("z", "<f8")]
+
+    # The test file has observatories with no set barycentric positions
+    # so we should expect NaNs for all of these
+
+    # Check that fail_on_missing=True raises an error
+    with pytest.raises(ValueError):
+        _ = observatory.obscodes_to_barycentric(data, fail_on_missing=True)
+
+    # Drop the nans from the results
+    nan_free_data = processed_data[~np.isnan(processed_data["x"])]
+    assert len(nan_free_data) > 0
+    assert len(nan_free_data) != len(data)
