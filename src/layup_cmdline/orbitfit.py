@@ -105,7 +105,7 @@ def main():
 def execute(args):
     from layup.orbitfit import orbitfit_cli
 
-    print("Hello world this would start orbitfit")
+    print("Starting orbitfit...")
 
     if args.g and args.i == "gauss":
         args.i = None
@@ -114,9 +114,10 @@ def execute(args):
 
     find_file_or_exit(arg_fn=args.input, argname="positional input")
     if args.ar_data_file_path:
-        find_directory_or_exit(args.ar, argname="--a --ar-data-path")
+        find_directory_or_exit(args.ar_data_file_path, argname="--a --ar-data-path")
     if not ((args.type.lower()) in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]):
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
+
     from layup.utilities.layup_configs import LayupConfigs
 
     if args.g is not None:
