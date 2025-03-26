@@ -35,7 +35,8 @@ def _orbitfit(data, cache_dir: str):
         The directory where the required orbital files are stored
     """
     #! This is a stub for the actual orbit fitting code - remove this print line
-    print(f"ObjID:{data[0][0]}")
+    print(f"Num rows: {len(data)}")
+    # print(f"ObjID:{data[0][0]}")
     return data
 
 

@@ -123,13 +123,10 @@ def execute(args):
     if args.g is not None:
         find_file_or_exit(args.g, "-g, --guess")
 
+    configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.c)
-        print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
-    else:
-        configs = LayupConfigs()
-        print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
     orbitfit_cli(
         input=args.input,
