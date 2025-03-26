@@ -35,6 +35,8 @@
 #include <cmath>
 #include <complex>
 #include <pybind11/pybind11.h>
+#include <string>
+#include <cstring>
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
@@ -689,10 +691,18 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 // radar: range and doppler
 // shift+stack
 
-void run_from_files(char *ephem_kernel, char *small_bodies_kernel, char *ephemeris_filename) {
+void run_from_files(std::string cache_dir, char *ephemeris_filename) {
+	std::string ephem_kernel = cache_dir + "linux_p1550p2650.440";
+	std::string small_bodies_kernel = cache_dir + "sb441-n16.bsp";
+
+	char* ephem_kernel_char = new char[ephem_kernel.length()];
+    std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
+	char* small_bodies_kernel_char = new char[small_bodies_kernel.length()];
+    std::strcpy(small_bodies_kernel_char, small_bodies_kernel.c_str());
+
 	struct assist_ephem* ephem = assist_ephem_create(
-	    ephem_kernel, 
-	    small_bodies_kernel); 
+	    ephem_kernel_char, 
+	    small_bodies_kernel_char); 
     if (!ephem){
         printf("Cannot create ephemeris structure.\n");
         exit(-1);
@@ -771,14 +781,14 @@ void run_from_files(char *ephem_kernel, char *small_bodies_kernel, char *ephemer
     }
 }
 
-void main() {
+int main(int argc, char *argv[]) {
 
     // ephemeris files should be passed in or put in a config
     // file
 	// int argc = 2;
     // these strings will eventually need to be passed down by the python layer.
-	char ephemeris_filename[128] = "/Users/maxwest/Library/Caches/layup/linux_p1550p2650.440";
-    char small_bodies_filename[128] = "/Users/maxwest/Library/Caches/layup/sb441-n16.bsp";
+	char ephemeris_filename[128] = "../../data/linux_p1550p2650.440";
+    char small_bodies_filename[128] = "../../data/sb441-n16.bsp";
     struct assist_ephem* ephem = assist_ephem_create(
 	    ephemeris_filename, 
 	    small_bodies_filename); 
@@ -804,13 +814,9 @@ void main() {
     
     
     // Read the observations
-	printf("here");
-	fflush(stdout);
     char detections_filename[128]; 
-    sscanf("/Users/maxwest/layup/tests/data/03666_out.txt", "%s", detections_filename);
+    sscanf(argv[1], "%s", detections_filename);
     read_detections(detections_filename, detections, times);
-	printf("here2");
-	fflush(stdout);
 
     std::vector<std::vector<size_t>> idx = IOD_indices(detections, 8.0, 10.0, 15.0, 25.0, 1000);
 
