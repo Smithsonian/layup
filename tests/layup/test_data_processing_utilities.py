@@ -2,6 +2,8 @@ import pytest
 from numpy.testing import assert_equal, assert_allclose
 
 import numpy as np
+from numpy.lib import recfunctions as rfn
+import spiceypy as spice
 
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -120,12 +122,6 @@ def test_parallelization(n_rows, n_workers):
     assert_equal(sum(processed_data["cnt"]), len(data))
 
 
-def test_layup_observatory_init():
-    """Test that we can get an observatory object."""
-    observatory = LayupObservatory()
-    assert observatory is not None
-
-
 def test_layup_observatory_obscodes_to_barycentric():
     """Test that we can process the obscodes data."""
     csv_reader = CSVDataReader(get_test_filepath("100_random_mpc_ADES.csv"), "csv")
@@ -134,6 +130,10 @@ def test_layup_observatory_obscodes_to_barycentric():
     observatory = LayupObservatory()
     # Check that the cache is empty
     assert_equal(len(observatory.cached_obs), 0)
+
+    # Add an et column to the data representing the ephemeris time in tdb
+    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et_col, usemask=False)
 
     processed_data = observatory.obscodes_to_barycentric(data)
     assert len(processed_data) == len(data)

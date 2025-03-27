@@ -73,8 +73,11 @@ class LayupObservatory(SorchaObservatory):
 
     def obscodes_to_barycentric(self, data, fail_on_missing=False):
         """
-        Takes a structured array of observatiofns and returns the barycentric positions and velocites
+        Takes a structured array of observations and returns the barycentric positions and velocites
         of the observatories.
+
+        This assumes that data must have a column 'et' representing the ephemeris time of each
+        observation in TDB.
 
         Parameters
         ----------
@@ -105,7 +108,7 @@ class LayupObservatory(SorchaObservatory):
             else:
                 # Since the observatory has a known position, we can calculate the barycentric coordinates
                 # at the observed epoch
-                et = spice.str2et(row["obstime"])
+                et = row["et"]
                 if obscode not in self.cached_obs:
                     self.cached_obs[obscode] = {}
                 try:
