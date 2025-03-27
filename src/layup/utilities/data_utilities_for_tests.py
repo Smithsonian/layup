@@ -18,7 +18,8 @@ def get_config_setups_filepath(filename):
 
     # This file's path: `<base_directory>/src/layup/utilities/dataUtilitiesForTests.py
     # THIS_DIR = `<base_directory>/`
-    THIS_DIR = Path(__file__).parent.parent.parent.parent
+    # THIS_DIR = Path(__file__).parent.parent.parent.parent
+    THIS_DIR = "/sdf/home/w/wbeebe/layup/layup/src/layup/utilities/"
 
     # Returned path: `<base_directory>/src/layup/config_setups
     return os.path.join(THIS_DIR, "src/layup/config_setups", filename)

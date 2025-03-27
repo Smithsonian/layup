@@ -1,9 +1,10 @@
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 
-from sorcha.ephemeris.simulation_setup import furnish_spiceypy
 from layup.utilities.layup_configs import LayupConfigs
+from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
+from sorcha.ephemeris.simulation_setup import furnish_spiceypy
 import spiceypy as spice
 
 """ A module for utilities useful for processing data in structured numpy arrays """
@@ -68,11 +69,12 @@ class LayupObservatory(SorchaObservatory):
         super().__init__(FakeSorchaArgs(), config.auxiliary)
 
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
-        self.cached_obs_positions = {}
+        self.cached_obs = {}
 
     def obscodes_to_barycentric(self, data, fail_on_missing=False):
         """
-        Takes a structured array of observations and returns the barycentric positions of the observatories.
+        Takes a structured array of observatiofns and returns the barycentric positions and velocites
+        of the observatories.
 
         Parameters
         ----------
@@ -85,13 +87,12 @@ class LayupObservatory(SorchaObservatory):
         Returns
         -------
         res : numpy structured array
-            Representing the barycentric positions of the observatories in the data (x,y,z).
+            Representing the barycentric positions and velocities of the observatories in the data (x,y,z,vx,vy,vz).
         """
         if "stn" not in data.dtype.names:
             raise ValueError("The data must have a 'stn' field.")
 
         res = []
-        output_dtype = [("x", "<f8"), ("y", "<f8"), ("z", "<f8")]
         for row in data:
             obscode = row["stn"]
             coords = self.ObservatoryXYZ[obscode]
@@ -100,23 +101,37 @@ class LayupObservatory(SorchaObservatory):
                 # TODO most of the the time this is a moving observatory, and we should handle that case
                 if fail_on_missing:
                     raise ValueError(f"Observatory {obscode} does not have a known fixed position.")
-                res.append(np.array((np.nan, np.nan, np.nan), dtype=output_dtype))
-                continue
-            et = spice.str2et(row["obstime"])
-            if obscode not in self.cached_obs_positions:
-                self.cached_obs_positions[obscode] = {}
-            try:
-                bary_obs = self.cached_obs_positions[obscode].setdefault(
-                    et, self.barycentricObservatory(et, obscode)
-                )
-                bary_obs = self.barycentricObservatory(et, obscode)
-            except Exception as e:
-                if fail_on_missing:
-                    raise ValueError(
-                        f"Error calculating barycentric coordinates for {obscode} at et: {et} from obstime: {row['obstime']} {e} "
+                bary_obs_pos, bary_obs_vel = [np.nan] * 3, [np.nan] * 3
+            else:
+                # Since the observatory has a known position, we can calculate the barycentric coordinates
+                # at the observed epoch
+                et = spice.str2et(row["obstime"])
+                if obscode not in self.cached_obs:
+                    self.cached_obs[obscode] = {}
+                try:
+                    # Calculate the barycentric position and velocity of the observatory or fetch
+                    # it from the cache if it has already been calculated
+                    bary_obs_pos, bary_obs_vel = self.cached_obs[obscode].setdefault(
+                        et, barycentricObservatoryRates(et, obscode, self)
                     )
-                res.append(np.array((np.nan, np.nan, np.nan), dtype=output_dtype))
-                continue
-            x, y, z = bary_obs
-            res.append(np.array((x, y, z), dtype=output_dtype))
+                except Exception as e:
+                    if fail_on_missing:
+                        raise ValueError(
+                            f"Error calculating barycentric coordinates for {obscode} at et: {et} from obstime: {row['obstime']} {e} "
+                        )
+                    bary_obs_pos, bary_obs_vel = [np.nan] * 3, [np.nan] * 3
+            # Create a structured array for our barycentric coordinates with appropriate dtypes.
+            x, y, z = bary_obs_pos[0], bary_obs_pos[1], bary_obs_pos[2]
+            vx, vy, vz = bary_obs_vel[0], bary_obs_vel[1], bary_obs_vel[2]
+            output_dtype = [
+                ("x", "<f8"),
+                ("y", "<f8"),
+                ("z", "<f8"),
+                ("vx", "<f8"),
+                ("vy", "<f8"),
+                ("vz", "<f8"),
+            ]
+            res.append(np.array((x, y, z, vx, vy, vz), dtype=output_dtype))
+
+        # Combine all of our resutls into a single structured array
         return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
