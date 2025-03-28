@@ -5,8 +5,12 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
+from numpy.lib import recfunctions as rfn
 
-from layup.utilities.data_processing_utilities import process_data_by_id
+import spiceypy as spice
+
+from layup.routines import AstrometryObservation
+from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
@@ -35,12 +39,21 @@ def _orbitfit(data, cache_dir: str):
         The directory where the required orbital files are stored
     """
     #! This is a stub for the actual orbit fitting code - remove this print line
-    print(f"Num rows: {len(data)}")
-    # print(f"ObjID:{data[0][0]}")
+    print(f"ObjID: {data[0]['provID']} Num rows: {len(data)}")
+
+    #! This doesn't seem to be the correct signature for AstrometryObservation???
+    observations = [
+        AstrometryObservation(
+            d["ra"], d["dec"], d["et"], [d["x"], d["y"], d["z"]], [d["vx"], d["vy"], d["vz"]]
+        )
+        for d in data
+    ]
+    # result = orbit_fit(observations, ...)
+
     return data
 
 
-def orbitfit(data, cache_dir: str, num_workers=1):
+def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID"):
     """This is the function that you would call interactively. i.e. from a notebook
 
     Parameters
@@ -51,10 +64,33 @@ def orbitfit(data, cache_dir: str, num_workers=1):
         The directory where the required orbital files are stored
     num_workers : int
         The number of workers to use for parallel processing. Default is 1
+    primary_id_column_name : str
+        The name of the primary identifier column for the objects. Default is "provID".
     """
+
+    layup_observatory = LayupObservatory()
+
+    #! It would be worth timing this, as there may be efficiency gains to be had
+    #! by vectorizing this: et_col = spcie.str2et(data["obstime"]).
+    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
+
+    pos_vel = layup_observatory.obscodes_to_barycentric(data)
+
+    #! Having an oddly difficult time concatenating the position and velocity columns???
+    #! We shouldn't have to do this in a for loop.
+    all_data = [
+        rfn.append_fields(
+            data[i], ["x", "y", "z", "vx", "vy", "vz"], pos_vel[i], usemask=False, asrecarray=True
+        )
+        for i in range(len(data))
+    ]
+
     if num_workers == 1:
-        return _orbitfit(data, cache_dir)
-    return process_data_by_id(data, num_workers, _orbitfit, cache_dir=cache_dir)
+        return _orbitfit(all_data, cache_dir)
+    return process_data_by_id(
+        all_data, num_workers, _orbitfit, primary_id_column_name=primary_id_column_name, cache_dir=cache_dir
+    )
 
 
 def orbitfit_cli(
@@ -85,6 +121,8 @@ def orbitfit_cli(
     cli_args : argparse, optional (default=None)
         The argparse object that was created when running from the CLI.
     """
+
+    _primary_id_column_name = "provID"
 
     input_file = Path(input)
     if output_file_format == "csv":
@@ -120,7 +158,7 @@ def orbitfit_cli(
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
-    reader = reader_class(input_file)
+    reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name)
 
     chunks = _create_chunks(reader, chunk_size)
 
@@ -131,7 +169,9 @@ def orbitfit_cli(
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
-        fit_orbits = orbitfit(data, cache_dir=cache_dir, num_workers=num_workers)
+        fit_orbits = orbitfit(
+            data, cache_dir=cache_dir, num_workers=num_workers, primary_id_column_name=_primary_id_column_name
+        )
 
         if output_file_format == "hdf5":
             write_hdf5(fit_orbits, output_file, key="data")

@@ -78,7 +78,7 @@ class CSVDataReader(ObjectDataReader):
             encoding="utf8",
             deletechars=_INVALID_COL_CHARS,
             ndmin=1,  # Ensure we always get a structured array even with a single result
-            usecols=(0,),  # Only read in the first column, ObjID
+            usecols=(0,),  # Only read in the first column, self._primary_id_column_name
         )
 
         return len(data)
@@ -95,7 +95,7 @@ class CSVDataReader(ObjectDataReader):
         # If we reach here, we did not find a valid header line.
         error_str = (
             f"ERROR: CSVReader: column headings not found in the first lines of {self.filename}. "
-            "Ensure column headings exist in input files and first column is ObjID."
+            f"Ensure column headings exist in input files and first column is {self._primary_id_column_name}."
         )
         logger.error(error_str)
         sys.exit(error_str)
@@ -126,9 +126,9 @@ class CSVDataReader(ObjectDataReader):
             logger.error(error_str)
             sys.exit(error_str)
 
-        if "ObjID" not in column_names:
+        if self._primary_id_column_name not in column_names:
             error_str = (
-                f"ERROR: {self.filename} header does not have 'ObjID' column.  "
+                f"ERROR: {self.filename} header does not have '{self._primary_id_column_name}' column. "
                 "Confirm that you using the correct delimiter."
             )
             logger.error(error_str)
@@ -191,21 +191,21 @@ class CSVDataReader(ObjectDataReader):
             self.obj_id_table = pd.read_csv(
                 self.filename,
                 sep="\\s+",
-                usecols=["ObjID"],
+                usecols=[self._primary_id_column_name],
                 header=self.header_row,
             )
         else:
             self.obj_id_table = pd.read_csv(
                 self.filename,
                 delimiter=",",
-                usecols=["ObjID"],
+                usecols=[self._primary_id_column_name],
                 header=self.header_row,
             )
 
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
         # Create a dictionary of the object ID counts.
-        for i in self.obj_id_table["ObjID"]:
+        for i in self.obj_id_table[self._primary_id_column_name]:
             self.obj_id_counts[i] = self.obj_id_counts.get(str(i), 0) + 1
 
     def _read_objects_internal(self, obj_ids, **kwargs):
@@ -229,7 +229,7 @@ class CSVDataReader(ObjectDataReader):
         # Create list of only the matching rows for these object IDs and the header row.
         skipped_row = [True] * self.header_row  # skip the pre-header
         skipped_row.extend([False])  # Keep the the column header
-        skipped_row.extend(~np.isin(self.obj_id_table["ObjID"], obj_ids))
+        skipped_row.extend(~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids))
 
         # Read in the data from self.filename, extracting the header row, and skipping in all of
         # block_size rows, skipping all of the skip_rows.

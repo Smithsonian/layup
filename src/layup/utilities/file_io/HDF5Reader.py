@@ -95,11 +95,11 @@ class HDF5DataReader(ObjectDataReader):
         """Builds a table of just the object IDs"""
         if self.obj_id_table is not None:
             return
-        self.obj_id_table = pd.read_hdf(self.filename, columns=["ObjID"])
+        self.obj_id_table = pd.read_hdf(self.filename, columns=[self._primary_id_column_name])
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
         # Create a dictionary to hold the number of rows for each object ID.
-        for i in self.obj_id_table["ObjID"]:
+        for i in self.obj_id_table[self._primary_id_column_name]:
             self.obj_id_counts[i] = self.obj_id_counts.get(str(i), 0) + 1
 
     def _read_objects_internal(self, obj_ids, **kwargs):
@@ -119,7 +119,7 @@ class HDF5DataReader(ObjectDataReader):
             The dataframe for the object data.
         """
         self._build_id_map()
-        row_match = self.obj_id_table["ObjID"].isin(obj_ids)
+        row_match = self.obj_id_table[self._primary_id_column_name].isin(obj_ids)
         match_inds = self.obj_id_table[row_match].index
         res_df = pd.read_hdf(self.filename, where="index=match_inds")  # noqa: F841
 

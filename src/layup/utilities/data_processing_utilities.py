@@ -49,18 +49,18 @@ def process_data(data, n_workers, func, **kwargs):
         return np.concatenate([future.result() for future in futures])
 
 
-def process_data_by_id(data, n_workers, func, **kwargs):
+def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
     """
     Process a structured numpy array in parallel for a given function and
     keyword arguments. Instead of distributing the data across all available workers
-    it is expected that the data will contain a `ObjID` column. The data will be
-    split by the unique values in the `ObjID` column and each block of data will
+    it is expected that the data will contain a primary id column. The data will be
+    split by the unique values in the primary id column and each block of data will
     be processed in parallel.
 
     Parameters
     ----------
     data : numpy structured array
-        The data to process. Expected to contain a column named `ObjID`.
+        The data to process. Expected to contain a primary id column.
     n_workers : int
         The number of workers to use for parallel processing.
     func : function
@@ -85,7 +85,8 @@ def process_data_by_id(data, n_workers, func, **kwargs):
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         # Create a future applying the function to each block of data for a given object id
         futures = [
-            executor.submit(func, data[data["ObjID"] == id], **kwargs) for id in np.unique(data["ObjID"])
+            executor.submit(func, data[data[primary_id_column_name] == id], **kwargs)
+            for id in np.unique(data[primary_id_column_name])
         ]
         # Concatenate all processed blocks together as our final result
         return np.concatenate([future.result() for future in futures])
@@ -140,7 +141,7 @@ class LayupObservatory(SorchaObservatory):
         res = []
         for row in data:
             obscode = row["stn"]
-            coords = self.ObservatoryXYZ[obscode]
+            coords = self.ObservatoryXYZ.get(obscode, None)
             if coords is None or None in coords or np.isnan(coords).any():
                 # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
                 # TODO most of the the time this is a moving observatory, and we should handle that case
@@ -178,5 +179,5 @@ class LayupObservatory(SorchaObservatory):
             ]
             res.append(np.array((x, y, z, vx, vy, vz), dtype=output_dtype))
 
-        # Combine all of our resutls into a single structured array
+        # Combine all of our results into a single structured array
         return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
