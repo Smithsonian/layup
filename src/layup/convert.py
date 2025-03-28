@@ -11,8 +11,7 @@ from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.orbit_conversion_utilities import universal_cometary, universal_keplerian
 
 from layup.utilities.data_processing_utilities import process_data
-from layup.utilities.file_io.CSVReader import CSVDataReader
-from layup.utilities.file_io.HDF5Reader import HDF5DataReader
+from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.layup_configs import LayupConfigs
 
@@ -213,7 +212,7 @@ def convert_cli(
         The format of the output file. Must be one of: "csv", "hdf5"
     chunk_size : int, optional (default=10_000)
         The number of rows to read in at a time.
-    num_workers : int, optional (default=1)
+    num_workers : int, optional (default=-1)
         The number of workers to use for parallel processing of the individual
         chunk. If -1, the number of workers will be set to the number of CPUs on
         the system. The default is 1 worker.
