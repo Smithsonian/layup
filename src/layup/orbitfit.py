@@ -70,26 +70,16 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
 
     layup_observatory = LayupObservatory()
 
-    #! It would be worth timing this, as there may be efficiency gains to be had
-    #! by vectorizing this: et_col = spcie.str2et(data["obstime"]).
     et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
-
-    #! Having an oddly difficult time concatenating the position and velocity columns???
-    #! We shouldn't have to do this in a for loop.
-    all_data = [
-        rfn.append_fields(
-            data[i], ["x", "y", "z", "vx", "vy", "vz"], pos_vel[i], usemask=False, asrecarray=True
-        )
-        for i in range(len(data))
-    ]
+    data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
     if num_workers == 1:
-        return _orbitfit(all_data, cache_dir)
+        return _orbitfit(data, cache_dir)
     return process_data_by_id(
-        all_data, num_workers, _orbitfit, primary_id_column_name=primary_id_column_name, cache_dir=cache_dir
+        data, num_workers, _orbitfit, primary_id_column_name=primary_id_column_name, cache_dir=cache_dir
     )
 
 
