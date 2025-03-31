@@ -24,7 +24,12 @@ class ObjectDataReader(abc.ABC):
     """The base class for reading in the object data."""
 
     def __init__(
-        self, cache_table=False, format_column_name: str = None, required_columns: list[str] = [], **kwargs
+        self,
+        cache_table=False,
+        format_column_name: str = None,
+        required_columns: list[str] = [],
+        primary_id_column_name: str = "ObjID",
+        **kwargs,
     ):
         """Set up the reader.
 
@@ -36,11 +41,21 @@ class ObjectDataReader(abc.ABC):
         ----------
         cache_table : bool, optional
             Indicates whether to keep the entire table in memory.
+        format_column_name : str, optional
+            The name of the column that indicates the format of each row.
+            When provided, indicates the format of the orbital parameters provided.
+        required_columns : list of str, optional
+            A list of required columns that must be present in the input data.
+            If any are missing, an error will be raised.
+        primary_id_column_name : str, optional
+            The name of the primary identifier column for the objects.
+            Default is "ObjID".
         """
         self._cache_table = cache_table
         self._table = None
         self._format_column_name = format_column_name
         self._required_columns = required_columns
+        self._primary_id_column_name = primary_id_column_name
 
     @abc.abstractmethod
     def get_reader_info(self):
@@ -164,10 +179,10 @@ class ObjectDataReader(abc.ABC):
         """
         # Check that the ObjID column exists and convert it to a string.
         try:
-            input_table["ObjID"] = input_table["ObjID"].astype(str)
+            input_table[self._primary_id_column_name] = input_table[self._primary_id_column_name].astype(str)
         except KeyError:
             logger = logging.getLogger(__name__)
-            err_str = f"ERROR: Unable to find ObjID column headings ({self.get_reader_info()})."
+            err_str = f"ERROR: Unable to find {self._primary_id_column_name} column headings ({self.get_reader_info()})."
             logger.error(err_str)
             sys.exit(err_str)
 
