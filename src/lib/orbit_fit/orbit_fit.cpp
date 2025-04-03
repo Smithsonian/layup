@@ -521,15 +521,16 @@ void create_sequences(std::vector<double>& times,
 
 }
 
-int orbit_fit(struct assist_ephem* ephem,
-	      struct reb_particle& p0, double epoch,
-	      std::vector<double>& times,	      // not modified
-	      std::vector<detection>& detections, // not modified
-	      std::vector<residuals>& resid_vec,
-	      std::vector<partials>& partials_vec,
-	      size_t& iters,
-	      double& chi2_final,
-	      double eps, size_t iter_max){
+struct OrbfitResult orbit_fit(
+	struct assist_ephem* ephem,
+	struct reb_particle& p0, double epoch,
+	std::vector<double>& times,	      // not modified
+	std::vector<detection>& detections, // not modified
+	std::vector<residuals>& resid_vec,
+	std::vector<partials>& partials_vec,
+	size_t& iters,
+	double& chi2_final,
+	double eps, size_t iter_max){
 
     std::vector<size_t> reverse_in_seq;
     std::vector<size_t> reverse_out_seq;
@@ -555,6 +556,10 @@ int orbit_fit(struct assist_ephem* ephem,
 
     // Do an initial step
     double lambda = (206265.0*206265.0)/1000;
+	int ndof_final;
+	std::array<double, 6> state_vec_final;
+	std::array<float, 36> covariance_final;
+	int iters_final;
     for(iters=0; iters<iter_max; iters++){
 
 	compute_residuals(ephem, p0, epoch,
@@ -617,13 +622,43 @@ int orbit_fit(struct assist_ephem* ephem,
 	if(cflag){
 	    flag = 0;
 	    chi2_final = chi2_d;
+		ndof_final = ndof;
+		state_vec_final = {
+			p0.x,
+			p0.y,
+			p0.z,
+			p0.vx,
+			p0.vy,
+			p0.vz
+		};
+		iters_final = iters;
 	    break;
 	}
 
 
     }
 
-    return flag;
+	// I can't find where the covariance is currently used
+	// presumably we want this to be an actual matrix at some point
+	covariance_final = {
+		0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+	};
+
+	struct OrbfitResult result = OrbfitResult{
+		static_cast<float>(chi2_final),
+		ndof_final,
+		state_vec_final,
+		static_cast<float>(epoch),
+		covariance_final,
+		iters_final
+	};
+
+    return result;
 
 }
 
@@ -691,7 +726,7 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 // radar: range and doppler
 // shift+stack
 
-void run_from_files(std::string cache_dir, char *ephemeris_filename) {
+struct OrbfitResult run_from_files(std::string cache_dir, char *ephemeris_filename) {
 	std::string ephem_kernel = cache_dir + "linux_p1550p2650.440";
 	std::string small_bodies_kernel = cache_dir + "sb441-n16.bsp";
 
@@ -764,7 +799,7 @@ void run_from_files(std::string cache_dir, char *ephemeris_filename) {
 		//print_initial_condition(p1, res.value()[0].epoch);
 	double chi2_final;
 
-	int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
+	struct OrbfitResult result = orbit_fit(ephem, p1, res.value()[0].epoch,
 			     times, 
 			     detections,
 			     resid_vec,
@@ -773,11 +808,12 @@ void run_from_files(std::string cache_dir, char *ephemeris_filename) {
 			     chi2_final,
 			     eps, iter_max);
 
-	if(flag == 0){
-	    printf("flag: %d iters: %lu chi2: %lf\n", flag, iters, chi2_final);
-	}else{
-	    printf("flag: %d iters: %lu\n", flag, iters);
-	}
+	// if(flag == 0){
+	//     printf("flag: %d iters: %lu chi2: %lf\n", flag, iters, chi2_final);
+	// }else{
+	//     printf("flag: %d iters: %lu\n", flag, iters);
+	// }
+	return result;
     }
 }
 
@@ -882,7 +918,7 @@ int main(int argc, char *argv[]) {
 	//print_initial_condition(p1, res.value()[0].epoch);
 	double chi2_final;
 
-	int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
+	struct OrbfitResult result = orbit_fit(ephem, p1, res.value()[0].epoch,
 			     times, 
 			     detections,
 			     resid_vec,
@@ -891,11 +927,12 @@ int main(int argc, char *argv[]) {
 			     chi2_final,
 			     eps, iter_max);
 
-	if(flag == 0){
-	    printf("flag: %d iters: %lu chi2: %lf\n", flag, iters, chi2_final);
-	}else{
-	    printf("flag: %d iters: %lu\n", flag, iters);
-	}
+	// if(flag == 0){
+	//     printf("flag: %d iters: %lu chi2: %lf\n", flag, iters, chi2_final);
+	// }else{
+	//     printf("flag: %d iters: %lu\n", flag, iters);
+	// }
+	return 1;
 	// return flag; 
     }
     
