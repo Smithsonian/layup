@@ -3,6 +3,10 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
+import logging
+import sys
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -93,6 +97,21 @@ def main():
 
 def execute(args):
     from layup.convert import convert_cli
+    from layup.utilities.cli_utilities import warn_or_remove_file
+    from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
+
+    if args.ar_data_file_path:
+        find_directory_or_exit(args.ar_data_file_path, "-ar, --ar_data_path")
+
+    find_file_or_exit(args.input, "input")
+    if args.i.lower() == "csv":
+        output_file = args.o + ".csv"
+    elif args.i.lower() == "hdf5":
+        output_file = args.o + ".h5"
+    else:
+        sys.exit("ERROR: Unsupported format. [csv, hdf5]")
+
+    warn_or_remove_file(str(output_file), args.force, logger)
 
     convert_cli(
         input=args.input,
