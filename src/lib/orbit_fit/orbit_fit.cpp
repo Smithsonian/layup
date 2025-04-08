@@ -690,15 +690,16 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 // shift+stack
 
 void run_from_files(char *ephem_kernel, char *small_bodies_kernel, char *ephemeris_filename) {
-	struct assist_ephem* ephem = assist_ephem_create(
-	    ephem_kernel, 
-	    small_bodies_kernel); 
+
+    std::cout << "I am here\n" << std::endl;
+
+    struct assist_ephem* ephem = assist_ephem_create(ephem_kernel, small_bodies_kernel); 
     if (!ephem){
         printf("Cannot create ephemeris structure.\n");
         exit(-1);
     }
 
-	std::vector<detection> detections;
+    std::vector<detection> detections;
     std::vector<double> times;
 
 	// Read the observations
@@ -777,7 +778,7 @@ void main() {
     // file
 	// int argc = 2;
     // these strings will eventually need to be passed down by the python layer.
-	char ephemeris_filename[128] = "/Users/maxwest/Library/Caches/layup/linux_p1550p2650.440";
+    char ephemeris_filename[128] = "/Users/maxwest/Library/Caches/layup/linux_p1550p2650.440";
     char small_bodies_filename[128] = "/Users/maxwest/Library/Caches/layup/sb441-n16.bsp";
     struct assist_ephem* ephem = assist_ephem_create(
 	    ephemeris_filename, 
