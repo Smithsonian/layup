@@ -418,6 +418,8 @@ void predict(struct assist_ephem* ephem,
 	B(1, j) = dy_resid[j];
     }
 
+    std::cout << "B: " << B << "cov: " << cov << std::endl;
+
     //Eigen::MatrixXd obs_cov(6, 6);
     obs_cov = B * cov * B.transpose();
 
@@ -653,8 +655,8 @@ void create_sequences(std::vector<double>& times,
 
 int orbit_fit(struct assist_ephem* ephem,
 	      struct reb_particle& p0, double epoch,
-	      std::vector<double>& times,	      // not modified
-	      std::vector<detection>& detections, // not modified
+	      std::vector<double>& times,	      
+	      std::vector<detection>& detections,
 	      std::vector<residuals>& resid_vec,
 	      std::vector<partials>& partials_vec,
 	      size_t& iters,
@@ -720,7 +722,7 @@ int orbit_fit(struct assist_ephem* ephem,
 	    p0.vx += dX(3);
 	    p0.vy += dX(4);
 	    p0.vz += dX(5);
-	    print_initial_condition(p0, epoch);
+	    //print_initial_condition(p0, epoch);
 	    chi2_prev = chi2_d;	    
 	    
 	}else{
@@ -738,9 +740,9 @@ int orbit_fit(struct assist_ephem* ephem,
 	//std::cout   << "rows: " << chi2.rows() << " cols: " << chi2.cols() << std::endl;      	
 	//std::cout   << "Cinv:\n" << C.inverse() << "\n";
 
-	std::cout << "lambda: " << lambda << std::endl;
-	std::cout << "chi2: " << chi2_d << std::endl;		
-	std::cout << "matrix dX\n" << dX << std::endl;
+	//std::cout << "lambda: " << lambda << std::endl;
+	//std::cout << "chi2: " << chi2_d << std::endl;		
+	//std::cout << "matrix dX\n" << dX << std::endl;
 
 	size_t ndof = detections.size()*2 - 6;
 	double thresh = 10;
@@ -753,6 +755,14 @@ int orbit_fit(struct assist_ephem* ephem,
 
 
     }
+
+    size_t ndof = detections.size()*2 - 6;
+    double thresh = 10.0;
+    if((chi2_final/ndof)>thresh){
+	flag = 2;
+    }
+
+    cov = C.inverse();
 
     return flag;
 
