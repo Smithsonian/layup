@@ -1202,7 +1202,26 @@ int main(int argc, char *argv[]) {
 
 #ifdef Py_PYTHON_H
 static void orbit_fit_bindings(py::module& m) {
-	m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Main function)pbdoc"); 
+	m.def("orbit_fit", [](const std::vector<Observation>& observations) -> std::vector<OrbfitResult> {
+		// TODO(wilsonbb): Placeholder for the actual implementation
+		std::vector<OrbfitResult> results(observations.size());
+		for (size_t i = 0; i < observations.size(); ++i) {
+			results[i].csq = 0.0;
+			results[i].ndof = 1;
+			results[i].state[0] = 1.0;
+			results[i].state[1] = 2.0;
+			results[i].state[2] = 3.0;
+			results[i].state[3] = 4.0;
+			results[i].state[4] = 5.0;
+			results[i].state[5] = 6.0;
+			results[i].epoch = 0.0;
+			results[i].niter = 1;
+			for (size_t j = 0; j < 36; ++j) {
+				results[i].cov[j] = 7.0;
+			}
+		}
+		return results;
+	}, R"pbdoc(Main function that takes a vector of Observations and returns a vector of OrbfitResults)pbdoc");
 	m.def("run_from_files", &orbit_fit::run_from_files, R"pbdoc(Runner function)pbdoc"); 
 }
 #endif /* Py_PYTHON_H */

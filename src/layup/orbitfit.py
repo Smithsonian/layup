@@ -1,15 +1,13 @@
-import os
 import logging
-
+import os
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
-import spiceypy as spice
-
-from layup.routines import AstrometryObservation
+from layup.routines import Observation, orbit_fit
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -43,14 +41,39 @@ def _orbitfit(data, cache_dir: str):
 
     #! This doesn't seem to be the correct signature for AstrometryObservation???
     observations = [
-        AstrometryObservation(
+        Observation.from_astrometry(
             d["ra"], d["dec"], d["et"], [d["x"], d["y"], d["z"]], [d["vx"], d["vy"], d["vz"]]
         )
         for d in data
     ]
-    # result = orbit_fit(observations, ...)
+    print(f"Processing {len(observations)} observations for {data[0]['provID']}")
+    results = orbit_fit(observations)
 
-    return data
+    # Define the structured dtype to match the OrbfitResult fields
+    result_dtype = np.dtype(
+        [
+            ("csq", "f8"),  # Chi-square value
+            ("ndof", "i4"),  # Number of degrees of freedom
+            ("state", "f8", (6,)),  # State vector (6 elements)
+            ("epoch", "f8"),  # Epoch
+            ("cov", "f8", (36,)),  # Covariance matrix (36 elements)
+            ("niter", "i4"),  # Number of iterations
+        ]
+    )
+
+    # Create an empty structured array
+    structured_array = np.empty(len(results), dtype=result_dtype)
+
+    # Populate the structured array with data from the results
+    for i, result in enumerate(results):
+        structured_array[i]["csq"] = result.csq
+        structured_array[i]["ndof"] = result.ndof
+        structured_array[i]["state"] = result.state
+        structured_array[i]["epoch"] = result.epoch
+        structured_array[i]["cov"] = result.cov
+        structured_array[i]["niter"] = result.niter
+
+    return structured_array
 
 
 def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID"):
