@@ -8,6 +8,7 @@
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
 
 std::string hello_world() {
+    std::cout << "Hello hello" << std::endl;
     return "Hello, World!";
 }
 

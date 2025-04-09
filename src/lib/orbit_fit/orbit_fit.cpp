@@ -28,6 +28,7 @@
 // g++ -std=c++11 -I../..//src/ -I../../../rebound/src/ -I/Users/mholman/eigen-3.4.0 -Wl,-rpath,./ -Wpointer-arith -D_GNU_SOURCE -O3 -fPIC -I/usr/local/include -Wall -g  -Wno-unknown-pragmas -D_APPLE -DSERVER -DGITHASH=e99d8d73f0aa7fb7bf150c680a2d581f43d3a8be orbit_fit.cpp -L. -lassist -lrebound -L/usr/local/lib -o orbit_fit
 
 #include <iostream>
+#include <cstdlib>
 #include <cstdio>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -37,6 +38,12 @@
 #include <pybind11/pybind11.h>
 #include <string>
 #include <cstring>
+#include <vector>
+#include <algorithm>
+#include <random>
+#include <variant>
+#include <optional>
+
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
@@ -75,7 +82,6 @@ int integrate_light_time(struct assist_extras* ax, int np, double t, reb_vec3d r
 
 }
 
-// deh
 struct reb_particle read_initial_conditions(const char *ic_file_name, double *epoch){
 
     FILE *ic_file;    
@@ -104,7 +110,7 @@ struct reb_particle read_initial_conditions(const char *ic_file_name, double *ep
 
 void print_initial_condition(struct reb_particle p0, double epoch){
 
-    printf("%lf %lf %lf %lf %lf %lf %lf\n",  epoch, p0.x, p0.y, p0.z, p0.vx, p0.vy, p0.vz);
+    printf("%lf %.16le %.16le %.16le %.16le %.16le %.16le\n",  epoch, p0.x, p0.y, p0.z, p0.vx, p0.vy, p0.vz);
 
     return;
 
@@ -179,7 +185,6 @@ void read_detections(const char *data_file_name,
     }
 
 }
-
 
 void add_variational_particles(struct reb_simulation* r, size_t np, int *var){
 
@@ -307,6 +312,120 @@ void compute_single_residuals(struct assist_ephem* ephem,
 
 }
 
+void predict(struct assist_ephem* ephem,
+	     struct reb_particle p0, double epoch,	     
+	     detection this_det,
+	     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>& cov,	     
+	     Eigen::MatrixXd& obs_cov
+	     ){
+
+    // Takes an ephemeris object, a simulation,
+    // a detection/observation (only the time and observatory
+    // state matter), and an orbit covariance
+    // as arguments. 
+    // Returns the model observation, the partials, and
+    // the observation covariance.
+
+    // Pass in this simulation stuff to keep it flexible
+    struct reb_simulation* r = reb_simulation_create();
+    struct assist_extras* ax = assist_attach(r, ephem);    
+
+    // 0. Set initial time, relative to ephem->jd_ref
+    r->t = epoch - ephem->jd_ref;
+
+    // 1. Add the main particle to the REBOUND simulation.
+    reb_simulation_add(r, p0);
+
+    // 2. incorporate the variational particles
+    int var;
+    add_variational_particles(r, 0, &var);
+
+    double jd_tdb = this_det.jd_tdb;
+
+    double xe = this_det.xe;
+    double ye = this_det.ye;
+    double ze = this_det.ze;
+
+    double Ax = this_det.Ax;
+    double Ay = this_det.Ay;
+    double Az = this_det.Az;
+
+    double Dx = this_det.Dx;
+    double Dy = this_det.Dy;
+    double Dz = this_det.Dz;
+
+    // 5. compare the model result to the observation.
+    //   This means dotting the model unit vector with the
+    //   A and D vectors of the observation
+
+    reb_vec3d r_obs = {xe, ye, ze};
+    double t_obs = jd_tdb - ephem->jd_ref;
+
+    int j = 0;
+    // Make the number of iterations flexible
+    // Could make integrate_light_time return
+    // rho and its components, since those are
+    // already computed for the light time iteration.
+
+    integrate_light_time(ax, j, t_obs, r_obs, 0.0, 4, SPEED_OF_LIGHT);
+
+    double rho_x = r->particles[j].x - xe;
+    double rho_y = r->particles[j].y - ye;
+    double rho_z = r->particles[j].z - ze;
+    double rho = sqrt(rho_x*rho_x + rho_y*rho_y + rho_z*rho_z);
+
+    rho_x /= rho;
+    rho_y /= rho;
+    rho_z /= rho;
+
+    // Calculate the partial deriviatives of the model
+    // observations with respect to the initial conditions
+
+    double dxk[6], dyk[6], dzk[6];
+    double drho_x[6], drho_y[6], drho_z[6];	
+
+    for(size_t i = 0; i<6; i++){
+	size_t vn = var + i;
+	dxk[i] = r->particles[vn].x;
+	dyk[i] = r->particles[vn].y;
+	dzk[i] = r->particles[vn].z;
+    }
+
+    double invd = 1./rho;
+
+    double ddist[6];
+    double dx_resid[6];
+    double dy_resid[6];	
+    for (size_t i=0; i<6; i++) {
+
+	// Derivative of topocentric distance w.r.t. parameters 
+	ddist[i] = rho_x*dxk[i] + rho_y*dyk[i] + rho_z*dzk[i];
+
+	drho_x[i] = dxk[i]*invd - rho_x*invd*ddist[i] - r->particles[0].vx*ddist[i]*invd/SPEED_OF_LIGHT;
+	drho_y[i] = dyk[i]*invd - rho_y*invd*ddist[i] - r->particles[0].vy*ddist[i]*invd/SPEED_OF_LIGHT;
+	drho_z[i] = dzk[i]*invd - rho_z*invd*ddist[i] - r->particles[0].vz*ddist[i]*invd/SPEED_OF_LIGHT;
+
+	dx_resid[i] = -(drho_x[i]*Ax + drho_y[i]*Ay + drho_z[i]*Az);
+	dy_resid[i] = -(drho_x[i]*Dx + drho_y[i]*Dy + drho_z[i]*Dz);
+
+    }
+
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> B;
+    B.resize(2, 6);
+
+    for(size_t j=0; j<6; j++){
+	B(0, j) = dx_resid[j];
+	B(1, j) = dy_resid[j];
+    }
+
+    //Eigen::MatrixXd obs_cov(6, 6);
+    obs_cov = B * cov * B.transpose();
+
+    assist_free(ax);
+    reb_simulation_free(r);
+
+}
+
 // This routine requires that resid_vec and partials_vec are
 // preallocated because the indices in out_seq will be used for
 // random access of locations in those vectors.
@@ -348,10 +467,19 @@ void compute_residuals_sequence(struct assist_ephem* ephem,
 				 resids,
 				 parts);
 	resid_vec[k] = resids;
+
+	/*
+	double thresh = 10;	
+	if(fabs(resids.x_resid*206265)>thresh ||
+	   fabs(resids.y_resid*206265)>thresh){
+	    printf("resid: %lu %lf %lf %lf\n", k, this_det.jd_tdb, resids.x_resid*206265, resids.y_resid*206265);
+	}
+	*/
 	partials_vec[k] = parts;
 	
     }
-
+    //printf("out\n");
+    
     assist_free(ax);
     reb_simulation_free(r);
 
@@ -416,7 +544,9 @@ void compute_dX(std::vector<residuals>& resid_vec,
     }
 
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Bt = B.transpose();
-    C = Bt * W * B + lambda*eye;  // This is where I would put the extra term for LM.
+    C = Bt * W * B + lambda*eye;  // This is where the extra term for LM is.
+
+    //std::cout << "C: \n" << C << std::endl;
 
     grad = Bt * W * resid_v;
 
@@ -424,10 +554,10 @@ void compute_dX(std::vector<residuals>& resid_vec,
     // An alternative looks like this.  It's probably less stable.
     //Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> G = C.inverse();
     //dX = -G * Bt * W * resid_v;    
-    
 
     chi2 = resid_v.transpose() * W * resid_v;
-
+    // reset for inverse covariance
+    C -= lambda*eye; 
     
 }
 
@@ -529,6 +659,7 @@ int orbit_fit(struct assist_ephem* ephem,
 	      std::vector<partials>& partials_vec,
 	      size_t& iters,
 	      double& chi2_final,
+	      Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>& cov,
 	      double eps, size_t iter_max){
 
     std::vector<size_t> reverse_in_seq;
@@ -635,11 +766,12 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 					     double interval0_max,
 					     double interval1_min,
 					     double interval1_max,
-					     size_t max_count){
+					     size_t max_count,
+					     size_t i_start){
 
     size_t cnt = 0;
     std::vector<std::vector<size_t>> res;
-    for(int i=detections.size()-1; i>=2; i--){
+    for(int i=i_start; i>=2; i--){
 
 	size_t idx_i = (size_t) i;
 	detection d2 = detections[idx_i];
@@ -663,10 +795,10 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 		if(fabs(t1-t0)<interval1_min || fabs(t1-t0)>=interval1_max)
 		    continue;
 
+		cnt++;		
+
 		if(cnt>max_count)
 		    return res;
-
-		cnt++;
 
 		res.push_back({idx_k, idx_j, idx_i});
 		//printf("%lu %lu %lu %lf %lf %lf\n", idx_k, idx_j, idx_i, t0, t1, t2);
@@ -691,45 +823,122 @@ std::vector<std::vector<size_t>> IOD_indices(std::vector<detection>& detections,
 // radar: range and doppler
 // shift+stack
 
-void run_from_files(std::string cache_dir, char *ephemeris_filename) {
-	std::string ephem_kernel = cache_dir + "linux_p1550p2650.440";
-	std::string small_bodies_kernel = cache_dir + "sb441-n16.bsp";
+struct OrbfitResult run_from_files(std::string cache_dir, char *ephemeris_filename) {
 
-	char* ephem_kernel_char = new char[ephem_kernel.length()];
-	std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
-	char* small_bodies_kernel_char = new char[small_bodies_kernel.length()];
-	std::strcpy(small_bodies_kernel_char, small_bodies_kernel.c_str());
+    std::cout << "I am here: " << ephemeris_filename << std::endl;
 
-	struct assist_ephem* ephem = assist_ephem_create(
-	    ephem_kernel_char, 
-	    small_bodies_kernel_char); 
+    std::string ephem_kernel = cache_dir + "linux_p1550p2650.440";
+    std::string small_bodies_kernel = cache_dir + "sb441-n16.bsp";
+
+    char* ephem_kernel_char = new char[ephem_kernel.length()];
+    std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
+    char* small_bodies_kernel_char = new char[small_bodies_kernel.length()];
+    std::strcpy(small_bodies_kernel_char, small_bodies_kernel.c_str());
+
+    struct assist_ephem* ephem = assist_ephem_create(ephem_kernel_char, small_bodies_kernel_char); 
     if (!ephem){
         printf("Cannot create ephemeris structure.\n");
         exit(-1);
     }
 
-	std::vector<detection> detections;
+    std::vector<detection> detections;
     std::vector<double> times;
 
-	// Read the observations
+    std::vector<detection> detections_full;
+    std::vector<double> times_full;
+
+    // Read the observations
     char detections_filename[128]; 
     sscanf(ephemeris_filename, "%s", detections_filename);
-    read_detections(detections_filename, detections, times);
+    read_detections(detections_filename, detections_full, times_full);
 
-    std::vector<std::vector<size_t>> idx = IOD_indices(detections, 8.0, 10.0, 15.0, 25.0, 1000);
+    // Seed the random number generator    
+    std::random_device rd;
+    std::mt19937 gen(rd());
 
-    for(auto it=idx.begin(); it != idx.end(); it++){
-	std::vector<size_t> indices = *it;
+    std::uniform_int_distribution<size_t> intDistribution(detections_full.size()*0.9, detections_full.size()-1);
+
+    // Generate and print a random integer
+    size_t random_i = intDistribution(gen);
+    random_i = detections_full.size();
+
+    // This should be a little more clever and flexible
+    // First find a triple of detections in the full data set.
+    //std::vector<std::vector<size_t>> idx = IOD_indices_v2(detections_full, 5.0, 30.0, 10.0, 50.0, 10, random_i);
+    std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, random_i);    
+
+    /*
+    // Seed the random number generator (only needs to be done once)
+    // Shuffle the vector
+    std::shuffle(idx.begin(), idx.end(), gen);
+    */
+
+    int success=0;
+    size_t iters;
+    double chi2_final;
+    size_t dof;
+    struct reb_particle p1;
+    std::optional<std::vector<gauss_soln>> res;
+        
+    for(size_t i=0; i<idx.size(); i++){
+	
+	std::vector<size_t> indices = idx[i];
 	size_t id0 = indices[0];
 	size_t id1 = indices[1];
 	size_t id2 = indices[2];
 
-	printf("%lu %lu %lu\n", id0, id1, id2);
+	detection d0 = detections_full[id0];
+	detection d1 = detections_full[id1];
+	detection d2 = detections_full[id2];
 
-	// Probably want to turn these into more
-	// general vector types, to make calling from
-	// python easier.
-	// declare and preallocate the result vectors    
+	printf("%lu %lu %lf %lu %lf %lu %lf\n", i, id0, d0.jd_tdb, id1, d1.jd_tdb, id2, d2.jd_tdb);
+
+	// Put this in a better place
+	double GMtotal = 0.00029630927487993194;
+	res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
+	if (!res.has_value()) {
+	    printf("gauss failed.  Try another triplet.\n");
+	    fflush(stdout);
+	    continue;
+	}
+
+	// Now get a segment of data that spans the triplet and that uses up to
+	// a certain number of points, if they are available in a time window.
+	// This should be a parameter
+	size_t num = 40;
+
+	size_t curr_num = id2-id1+1;
+
+	size_t start_index;
+	size_t end_index;    
+	if(curr_num >= num){
+	    // We already have enough data and
+	    // don't need to move the limits
+	    start_index = id0;
+	    end_index = id1;	 
+	}else if((detections_full.size()-id0)>=num){
+	    // There are enough points if we include
+	    // only the later points, we only need to
+	    // later limit.
+	    start_index = id0;
+	    end_index = id0+num;
+	}else if(detections_full.size()>=num){
+	    end_index = detections_full.size();
+	    start_index = detections_full.size()-num;
+	}else{
+	    start_index = 0;
+	    end_index = detections_full.size();
+	}
+
+	std::vector<detection>::const_iterator first_d = detections_full.begin() + start_index;
+	std::vector<detection>::const_iterator last_d = detections_full.begin() + end_index;
+	std::vector<detection> detections(first_d, last_d);    
+
+	std::vector<double>::const_iterator first_t = times_full.begin() + start_index;
+	std::vector<double>::const_iterator last_t = times_full.begin() + end_index;
+	std::vector<double> times(first_t, last_t);
+
+
 	std::vector<residuals> resid_vec(detections.size());
 	std::vector<partials> partials_vec(detections.size());
 
@@ -737,22 +946,8 @@ void run_from_files(std::string cache_dir, char *ephemeris_filename) {
 	size_t iter_max = 100;
 	double eps = 1e-12;
 
-	size_t iters;
-
-	// Put this in a better place
-	double GMtotal = 0.00029630927487993194;
-	std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
-	if (res.has_value()) {
-	    for(size_t i=0; i<res.value().size(); i++){
-		printf("guess: %lu %lf %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].root, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
-		       res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
-	    }
-	} else {
-	    printf("gauss failed\n");
-	    exit(1);
-	}
-
-	struct reb_particle p1;
+	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
+	int flag;
 
 	p1.x = res.value()[0].x;
 	p1.y = res.value()[0].y;
@@ -760,25 +955,117 @@ void run_from_files(std::string cache_dir, char *ephemeris_filename) {
 	p1.vx = res.value()[0].vx;
 	p1.vy = res.value()[0].vy;
 	p1.vz = res.value()[0].vz;
+	
+	flag = orbit_fit(ephem, p1, res.value()[0].epoch,
+			 times, 
+			 detections,
+			 resid_vec,
+			 partials_vec,
+			 iters,
+			 chi2_final,
+			 cov,
+			 eps, iter_max);
 
-		//print_initial_condition(p1, res.value()[0].epoch);
-	double chi2_final;
-
-	int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
-			     times, 
-			     detections,
-			     resid_vec,
-			     partials_vec,
-			     iters,
-			     chi2_final,
-			     eps, iter_max);
+	dof = 2*detections.size()-6;
 
 	if(flag == 0){
-	    printf("flag: %d iters: %lu chi2: %lf\n", flag, iters, chi2_final);
+	    printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
+	    print_initial_condition(p1, res.value()[0].epoch);
 	}else{
-	    printf("flag: %d iters: %lu\n", flag, iters);
+	    printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
+	    continue;
+	}
+
+	Eigen::MatrixXd obs_cov(6, 6);
+	predict(ephem, p1, res.value()[0].epoch, detections_full[0],
+		cov, obs_cov);
+	//std::cout << "obs_cov: \n" << obs_cov << std::endl;	
+
+	size_t last = detections_full.size()-1;
+	predict(ephem, p1, res.value()[0].epoch, detections_full[last],
+		cov, obs_cov);
+	//std::cout << "obs_cov: \n" << obs_cov << std::endl;
+
+	num = detections_full.size();
+
+	first_d = detections_full.begin() + detections_full.size()-num;
+	last_d = detections_full.end();
+	std::vector<detection> detections2(first_d, last_d);
+
+	first_t = times_full.begin() + times_full.size()-num;
+	last_t = times_full.end();
+	std::vector<double> times2(first_t, last_t);
+
+	std::vector<residuals> resid_vec2(detections2.size());
+	std::vector<partials> partials_vec2(detections2.size());
+
+	dof = 2*detections2.size()-6;
+
+
+	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov2;	
+	flag = orbit_fit(ephem, p1, res.value()[0].epoch,
+			 times2, 
+			 detections2,
+			 resid_vec2,
+			 partials_vec2,
+			 iters,
+			 chi2_final,
+			 cov2,
+			 eps, iter_max);
+
+	if(flag == 0){
+	    printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
+	    print_initial_condition(p1, res.value()[0].epoch);
+	    //std::cout << "cov: \n" << cov2 << std::endl;
+	    Eigen::MatrixXd obs_cov2(6, 6);
+	    predict(ephem, p1, res.value()[0].epoch, detections_full[0],
+		    cov2, obs_cov2);
+	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;	
+
+	    last = detections_full.size()-1;
+	    predict(ephem, p1, res.value()[0].epoch, detections_full[last],
+		    cov2, obs_cov2);
+	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;
+	    success = 1;
+	    break;
+	}else{
+	    // At this point there is a good gauss solution and a good
+	    // short interval solution, but the full data set is still failing.
+	    // That probably means that the data set should be gradually enlarged.
+	    printf("flag: %d iters: %lu, stage 3 failed.  Try another triplet %lu\n", flag, iters, i);	    
+	    continue;
 	}
     }
+    if(success==0){
+	printf("fully failed\n");
+    }
+
+    struct OrbfitResult result;
+
+    result.csq = chi2_final;
+    result.ndof = dof;
+    result.state[0] = p1.x;
+    result.state[1] = p1.y;
+    result.state[2] = p1.z;    
+    result.state[3] = p1.vx;
+    result.state[4] = p1.vy;
+    result.state[5] = p1.vz;    
+    
+    result.epoch = res.value()[0].epoch;
+    result.niter = iters;
+    
+    // Important issues:
+    // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
+    // 2. Making sure the weight matrix is as good as it can be
+    // 3. Identifying and removing outliers
+
+    // Later issues:
+    // 1. Deflection of light
+    
+    assist_ephem_free(ephem);
+
+    return result;
+
 }
 
 int main(int argc, char *argv[]) {
@@ -818,7 +1105,9 @@ int main(int argc, char *argv[]) {
     sscanf(argv[1], "%s", detections_filename);
     read_detections(detections_filename, detections, times);
 
-    std::vector<std::vector<size_t>> idx = IOD_indices(detections, 8.0, 10.0, 15.0, 25.0, 1000);
+    size_t start_i = detections.size();
+
+    std::vector<std::vector<size_t>> idx = IOD_indices(detections, 8.0, 10.0, 15.0, 25.0, 1000, start_i);
 
     // Read the initial conditions
     //char ic_filename[128]; 
@@ -855,6 +1144,8 @@ int main(int argc, char *argv[]) {
 
 	size_t iters;
 
+	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
+
 	// Put this in a better place
 	double GMtotal = 0.00029630927487993194;
 	std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
@@ -889,6 +1180,7 @@ int main(int argc, char *argv[]) {
 			     partials_vec,
 			     iters,
 			     chi2_final,
+			     cov,
 			     eps, iter_max);
 
 	if(flag == 0){
