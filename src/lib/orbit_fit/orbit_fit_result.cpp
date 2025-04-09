@@ -4,11 +4,11 @@ namespace py = pybind11;
 namespace orbit_fit {
 
 struct OrbfitResult {
-    float csq;   // Chi-square value
+    double csq;   // Chi-square value
     int ndof;    // Number of degrees of freedom
-    std::array<float, 6> state;  // State vector
-    float epoch;  // Epoch
-    std::array<float, 36> cov;  // Covariance matrix
+    std::array<double, 6> state;  // State vector
+    double epoch;  // Epoch
+    std::array<double, 36> cov;  // Covariance matrix
     int niter;  // Number of iterations
 };
 

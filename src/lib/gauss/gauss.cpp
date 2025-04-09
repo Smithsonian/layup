@@ -120,7 +120,7 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, detection &o1_in, d
 
     std::vector<gauss_soln> res;
     for (double root : roots) {
-	std::cout << root << std::endl;
+	std::cout << "root: " << root << std::endl;
         double root3 = std::pow(root, 3);
 
         // Compute a1
