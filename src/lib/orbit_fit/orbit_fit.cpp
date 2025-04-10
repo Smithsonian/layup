@@ -922,12 +922,11 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
 	
 	res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
-	// NEEDS TO ACTUALLY WORK FIGHT MAX IF THIS ISN'T MERGED TO MAIN
-	// if (!res.has_value()) {
-	//     printf("gauss failed.  Try another triplet.\n");
-	//     fflush(stdout);
-	//     continue;
-	// }
+	if (!res.has_value()) {
+	    printf("gauss failed.  Try another triplet.\n");
+	    fflush(stdout);
+	    continue;
+	}
 
 	// Now get a segment of data that spans the triplet and that uses up to
 	// a certain number of points, if they are available in a time window.
@@ -976,29 +975,17 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
 	int flag;
 
-	std::cout << "here" << std::endl;
-	//actual code, use this in the future
-	// p1.x = res.value()[0].x;
-	// p1.y = res.value()[0].y;
-	// p1.z = res.value()[0].z;    
-	// p1.vx = res.value()[0].vx;
-	// p1.vy = res.value()[0].vy;
-	// p1.vz = res.value()[0].vz;
-
-	// if this gets merged to main throw a marker at max
-	p1.x = 1.0;
-	p1.y = 1.0;
-	p1.z = 1.0;    
-	p1.vx = 1.0;
-	p1.vy = 1.0;
-	p1.vz = 1.0;
-	std::cout << "here?" << std::endl;
+	p1.x = res.value()[0].x;
+	p1.y = res.value()[0].y;
+	p1.z = res.value()[0].z;    
+	p1.vx = res.value()[0].vx;
+	p1.vy = res.value()[0].vy;
+	p1.vz = res.value()[0].vz;
 	
 	flag = orbit_fit(
 		ephem,
 		p1,
-		// res.value()[0].epoch, // actual code
-		2460611.0, // if this gets merged to main poke max with a sharp pencil
+		res.value()[0].epoch,
 		detections,
 		resid_vec,
 		partials_vec,
@@ -1023,7 +1010,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	predict(
 		ephem,
 		p1,
-		2460611.0, // res.value()[0].epoch, REMOVE CONSTANT !!!!
+		res.value()[0].epoch,
 		detections_full[0],
 		cov,
 		obs_cov
@@ -1034,7 +1021,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	predict(
 		ephem,
 		p1, 
-		2460611.0, // res.value()[0].epoch, REMOVE CONSTANT !!!!!!!
+		res.value()[0].epoch,
 		detections_full[last],
 		cov,
 		obs_cov
@@ -1061,7 +1048,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	flag = orbit_fit(
 		ephem,
 		p1,
-		2460611.0, // res.value()[0].epoch, REMOVE. CONSTANT.
+		res.value()[0].epoch,
 		detections2,
 		resid_vec2,
 		partials_vec2,
@@ -1080,7 +1067,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	    predict(
 			ephem,
 			p1,
-			2460611.0, // res.value()[0].epoch, REMOVECONSTANT!!!!!!
+			res.value()[0].epoch,
 			detections_full[0],
 		    cov2,
 			obs_cov2
@@ -1091,7 +1078,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	    predict(
 			ephem,
 			p1,
-			2460611.0, //res.value()[0].epoch, CONSTANT REMOVE
+			res.value()[0].epoch,
 			detections_full[last],
 		    cov2,
 			obs_cov2
@@ -1138,138 +1125,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
     return result;
 
 }
-
-// int main(int argc, char *argv[]) {
-
-//     // ephemeris files should be passed in or put in a config
-//     // file
-// 	// int argc = 2;
-//     // these strings will eventually need to be passed down by the python layer.
-// 	char ephemeris_filename[128] = "../../data/linux_p1550p2650.440";
-//     char small_bodies_filename[128] = "../../data/sb441-n16.bsp";
-//     struct assist_ephem* ephem = assist_ephem_create(
-// 	    ephemeris_filename, 
-// 	    small_bodies_filename); 
-//     if (!ephem){
-//         printf("Cannot create ephemeris structure.\n");
-//         exit(-1);
-//     }
-
-//     std::vector<detection> detections;
-//     std::vector<double> times;
-
-//     /*
-//     if(argc != 6){
-// 	printf("./orbit_fit detection_filename ic_filename id0 id1 id2\n");
-// 	exit(1);
-//     }
-//     */
-
-//     // if(argc != 2){
-// 	// printf("./orbit_fit detection_filename\n");
-// 	// exit(1);
-//     // }
-    
-    
-//     // Read the observations
-//     char detections_filename[128]; 
-//     sscanf(argv[1], "%s", detections_filename);
-//     read_detections(detections_filename, detections, times);
-
-//     size_t start_i = detections.size();
-
-//     std::vector<std::vector<size_t>> idx = IOD_indices(detections, 8.0, 10.0, 15.0, 25.0, 1000, start_i);
-
-//     // Read the initial conditions
-//     //char ic_filename[128]; 
-//     //sscanf(argv[2], "%s", ic_filename);
-
-    
-//     ///double epoch;
-//     //struct reb_particle p0 = read_initial_conditions(ic_filename, &epoch);
-
-//     for(auto it=idx.begin(); it != idx.end(); it++){
-// 	std::vector<size_t> indices = *it;
-// 	size_t id0 = indices[0];
-// 	size_t id1 = indices[1];
-// 	size_t id2 = indices[2];
-
-// 	/*
-// 	  sscanf(argv[3], "%lu", &id0);
-// 	  sscanf(argv[4], "%lu", &id1);
-// 	  sscanf(argv[5], "%lu", &id2);
-// 	*/
-
-// 	printf("%lu %lu %lu\n", id0, id1, id2);
-
-// 	// Probably want to turn these into more
-// 	// general vector types, to make calling from
-// 	// python easier.
-// 	// declare and preallocate the result vectors    
-// 	std::vector<residuals> resid_vec(detections.size());
-// 	std::vector<partials> partials_vec(detections.size());
-
-// 	// Make these parameters flexible.
-// 	size_t iter_max = 100;
-// 	double eps = 1e-12;
-
-// 	size_t iters;
-
-// 	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
-
-// 	// Put this in a better place
-// 	double GMtotal = 0.00029630927487993194;
-// 	std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
-// 	if (res.has_value()) {
-// 	    for(size_t i=0; i<res.value().size(); i++){
-// 		printf("guess: %lu %lf %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].root, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
-// 		       res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
-// 	    }
-// 	} else {
-// 	    printf("gauss failed\n");
-// 	    exit(1);
-// 	}
-
-// 	//print_initial_condition(p0, epoch);
-
-// 	struct reb_particle p1;
-
-// 	p1.x = res.value()[0].x;
-// 	p1.y = res.value()[0].y;
-// 	p1.z = res.value()[0].z;    
-// 	p1.vx = res.value()[0].vx;
-// 	p1.vy = res.value()[0].vy;
-// 	p1.vz = res.value()[0].vz;
-
-// 	//print_initial_condition(p1, res.value()[0].epoch);
-// 	double chi2_final;
-
-// 	int flag = orbit_fit(ephem, p1, res.value()[0].epoch,
-// 			     times, 
-// 			     detections,
-// 			     resid_vec,
-// 			     partials_vec,
-// 			     iters,
-// 			     chi2_final,
-// 			     cov,
-// 			     eps, iter_max);
-
-// 	if(flag == 0){
-// 	    printf("flag: %d iters: %lu chi2: %lf\n", flag, iters, chi2_final);
-// 	}else{
-// 	    printf("flag: %d iters: %lu\n", flag, iters);
-// 	}
-// 	// return flag; 
-//     }
-    
-//     // Important issues:
-//     // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
-//     // 2. Making sure the weight matrix is as good as it can be
-//     // 3. Identifying and removing outliers
-
-//     // Later issues:
-//     // 1. Deflection of light
-// }
 
 #ifdef Py_PYTHON_H
 static void orbit_fit_bindings(py::module& m) {
