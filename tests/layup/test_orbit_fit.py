@@ -33,7 +33,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         cli_args=None,
     )
 
-    # Verify the conversion produced an output file
+    # Verify the orbit fit produced an output file
     assert os.path.exists(temp_out_file)
     # Create a new CSV reader to read in our output file
     output_csv_reader = CSVDataReader(temp_out_file, "csv", primary_id_column_name="provID")
@@ -45,7 +45,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     )
     input_data = input_csv_reader.read_rows()
 
-    # Verify that the number of rows in the input and output files are the same
-    # Note that the input file includes some rows without our provID column
+    # Verify that the number of rows outputted orbit fit is the same as the number of unique provIDs in the input file
+    # Note that the input file includes some rows without our provID column, so exclude the nans
     n_uniq_ids = sum([0 if np.isnan(id) else 1 for id in set(input_data["provID"])])
     assert_equal(len(output_data), n_uniq_ids)
