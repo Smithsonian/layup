@@ -41,7 +41,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
 
     # Read the input data and get the provID column
     input_csv_reader = CSVDataReader(
-        get_test_filepath("100_random_mpc_ADES.csv"), "csv", primary_id_column_name="provID"
+        get_test_filepath("100_random_mpc_ADES_provIDs.csv"), "csv", primary_id_column_name="provID"
     )
     input_data = input_csv_reader.read_rows()
 
