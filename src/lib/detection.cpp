@@ -53,6 +53,8 @@ struct Observation {
     std::optional<double> mag;
     std::optional<double> mag_err;
     std::optional<double> epoch_err;
+    std::optional<double> ra_unc;
+    std::optional<double> dec_unc;
 
 private:
     // Private constructor used by the factory methods.
@@ -72,6 +74,8 @@ public:
     {
         Observation obs(epoch_val, obs_position, obs_velocity);
         obs.observation_type = AstrometryObservation(ra, dec);
+        obs.ra_unc = 1.0;
+        obs.dec_unc = 1.0;
         return obs;
     }
 
