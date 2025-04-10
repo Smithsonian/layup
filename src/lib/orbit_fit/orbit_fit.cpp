@@ -974,6 +974,22 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
 	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
 	int flag;
+	size_t iters;
+
+	std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, detections[id0], detections[id1], detections[id2], 0.0001, SPEED_OF_LIGHT);
+	if (res.has_value()) {
+	    for(size_t i=0; i<res.value().size(); i++){
+		printf("guess: %lu %lf %lf %lf %lf %lf %lf %lf %lf\n", i, res.value()[i].root, res.value()[i].epoch, res.value()[i].x, res.value()[i].y, res.value()[i].z,
+		       res.value()[i].vx, res.value()[i].vy, res.value()[i].vz);
+	    }
+	} else {
+	    printf("gauss failed\n");
+	    exit(1);
+	}
+
+	//print_initial_condition(p0, epoch);
+
+	struct reb_particle p1;
 
 	p1.x = res.value()[0].x;
 	p1.y = res.value()[0].y;
