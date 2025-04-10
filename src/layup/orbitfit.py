@@ -104,9 +104,6 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
-    # This is a bug since we assume that the data is split by provID
-    # if num_workers == 1:
-    #    return _orbitfit(data, cache_dir)
     return process_data_by_id(
         data, num_workers, _orbitfit, primary_id_column_name=primary_id_column_name, cache_dir=cache_dir
     )
