@@ -1,11 +1,11 @@
 from concurrent.futures import ProcessPoolExecutor
-import numpy as np
 
-from layup.utilities.layup_configs import LayupConfigs
+import numpy as np
 from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
-import spiceypy as spice
+
+from layup.utilities.layup_configs import LayupConfigs
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 

@@ -25,7 +25,8 @@ INPUT_FORMAT_READERS = {
 
 def _orbitfit(data, cache_dir: str):
     """This function will contain all of the calls to the c++ code that will
-    calculate an orbit given a set of observations.
+    calculate an orbit given a set of observations. Note that all observations
+    should correspond to the same object.
 
     This is function that is passed to the parallelizer.
 
@@ -36,44 +37,48 @@ def _orbitfit(data, cache_dir: str):
     cache_dir : str
         The directory where the required orbital files are stored
     """
-    #! This is a stub for the actual orbit fitting code - remove this print line
-    print(f"ObjID: {data[0]['provID']} Num rows: {len(data)}")
+    # Define a structured dtype to match the OrbfitResult fields
+    result_dtype = np.dtype(
+        [
+            ("provID", "O"),  # Object ID
+            ("csq", "f8"),  # Chi-square value
+            ("ndof", "i4"),  # Number of degrees of freedom
+            ("state", "O"),  # State vector (6 elements)
+            ("epoch", "f8"),  # Epoch
+            ("cov", "O"),  # Covariance matrix as an object dtype
+            ("niter", "i4"),  # Number of iterations
+        ]
+    )
+    if len(data) == 0:
+        return np.array([], dtype=result_dtype)
 
-    #! This doesn't seem to be the correct signature for AstrometryObservation???
+    # Convert the astrometry data to a list of Observations
     observations = [
         Observation.from_astrometry(
             d["ra"], d["dec"], d["et"], [d["x"], d["y"], d["z"]], [d["vx"], d["vy"], d["vz"]]
         )
         for d in data
     ]
-    print(f"Processing {len(observations)} observations for {data[0]['provID']}")
-    results = orbit_fit(observations)
+    # Perform the orbit fitting
+    res = orbit_fit(observations)
 
-    # Define the structured dtype to match the OrbfitResult fields
-    result_dtype = np.dtype(
+    # Populate our output structured array with the orbit fit results
+    output = np.array(
         [
-            ("csq", "f8"),  # Chi-square value
-            ("ndof", "i4"),  # Number of degrees of freedom
-            ("state", "f8", (6,)),  # State vector (6 elements)
-            ("epoch", "f8"),  # Epoch
-            ("cov", "f8", (36,)),  # Covariance matrix (36 elements)
-            ("niter", "i4"),  # Number of iterations
-        ]
+            (
+                data["provID"][0],
+                res.csq,
+                res.ndof,
+                res.state,
+                res.epoch,
+                res.cov,
+                res.niter,
+            )
+        ],
+        dtype=result_dtype,
     )
 
-    # Create an empty structured array
-    structured_array = np.empty(len(results), dtype=result_dtype)
-
-    # Populate the structured array with data from the results
-    for i, result in enumerate(results):
-        structured_array[i]["csq"] = result.csq
-        structured_array[i]["ndof"] = result.ndof
-        structured_array[i]["state"] = result.state
-        structured_array[i]["epoch"] = result.epoch
-        structured_array[i]["cov"] = result.cov
-        structured_array[i]["niter"] = result.niter
-
-    return structured_array
+    return output
 
 
 def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID"):
@@ -99,8 +104,9 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
-    if num_workers == 1:
-        return _orbitfit(data, cache_dir)
+    # This is a bug since we assume that the data is split by provID
+    # if num_workers == 1:
+    #    return _orbitfit(data, cache_dir)
     return process_data_by_id(
         data, num_workers, _orbitfit, primary_id_column_name=primary_id_column_name, cache_dir=cache_dir
     )
