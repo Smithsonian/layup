@@ -93,6 +93,22 @@ public:
 
 
 static void detection_bindings(py::module& m) {
+    // Test with the current deteciton type.
+    py::class_<detection>(m, "detection")
+        .def(py::init<>())
+        .def_readwrite("objID", &detection::objID, "Observation ID")
+        .def_readwrite("obsCode", &detection::obsCode, "MPC observatory code")
+        .def_readwrite("jd_tdb", &detection::jd_tdb, "Observation time")
+        .def_readwrite("rho_hat", &detection::rho_hat, "Unit vector to object")
+        .def_readwrite("A", &detection::A, "Unit vector normal to rho_hat, along RA lines")
+        .def_readwrite("D", &detection::D, "Unit vector normal to rho_hat, along Dec lines")
+        .def_readwrite("r_e", &detection::r_e, "position of observatory")
+        .def_readwrite("ra_unc", &detection::ra_unc, "ra uncertainty")
+        .def_readwrite("dec_unc", &detection::dec_unc, "dec uncertainty")	
+        .def_readwrite("mag", &detection::mag, "Optional magnitude")
+        .def_readwrite("mag_unc", &detection::mag_unc, "Optional magnitude uncertainty");
+
+
     py::class_<AstrometryObservation>(m, "AstrometryObservation")
         .def(py::init<double, double>(),
              py::arg("ra"), py::arg("dec"))
@@ -133,3 +149,4 @@ static void detection_bindings(py::module& m) {
 }
 
 } //namespace orbit_fit
+

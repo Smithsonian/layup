@@ -43,13 +43,19 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, detection &o1_in, d
     });
 
     // Get the observer positions and pointing directions
-    Eigen::Vector3d o1 = {triplet[0].xe, triplet[0].ye, triplet[0].ze};
-    Eigen::Vector3d o2 = {triplet[1].xe, triplet[1].ye, triplet[1].ze};
-    Eigen::Vector3d o3 = {triplet[2].xe, triplet[2].ye, triplet[2].ze};        
+    Eigen::Vector3d o1 = {triplet[0].r_e[0], triplet[0].r_e[1], triplet[0].r_e[2]};
+    Eigen::Vector3d o2 = {triplet[1].r_e[0], triplet[1].r_e[1], triplet[1].r_e[2]};
+    Eigen::Vector3d o3 = {triplet[2].r_e[0], triplet[2].r_e[1], triplet[2].r_e[2]};        
 
+    /*
     Eigen::Vector3d rho1 = {triplet[0].theta_x, triplet[0].theta_y, triplet[0].theta_z};
     Eigen::Vector3d rho2 = {triplet[1].theta_x, triplet[1].theta_y, triplet[1].theta_z};
-    Eigen::Vector3d rho3 = {triplet[2].theta_x, triplet[2].theta_y, triplet[2].theta_z};        
+    Eigen::Vector3d rho3 = {triplet[2].theta_x, triplet[2].theta_y, triplet[2].theta_z};
+    */
+
+    Eigen::Vector3d rho1 = {triplet[0].rho_hat[0], triplet[0].rho_hat[1], triplet[0].rho_hat[2]};
+    Eigen::Vector3d rho2 = {triplet[1].rho_hat[0], triplet[1].rho_hat[1], triplet[1].rho_hat[2]};
+    Eigen::Vector3d rho3 = {triplet[2].rho_hat[0], triplet[2].rho_hat[1], triplet[2].rho_hat[2]};        
 
     double t1 = triplet[0].jd_tdb;
     double t2 = triplet[1].jd_tdb;

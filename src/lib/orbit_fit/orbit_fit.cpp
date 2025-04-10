@@ -140,14 +140,20 @@ void read_detections(const char *data_file_name,
 		 objID, obsCode, mag_str, filt, &jd_tdb, &theta_x, &theta_y, &theta_z, &xe, &ye, &ze, &ast_unc) !=EOF){
 	detection this_det = detection();
 
-	this_det.jd_tdb = jd_tdb;	
+	this_det.jd_tdb = jd_tdb;
+	/*
 	this_det.theta_x = theta_x;
 	this_det.theta_y = theta_y;
 	this_det.theta_z = theta_z;
+	*/
+
+	this_det.rho_hat[0] = theta_x;
+	this_det.rho_hat[1] = theta_y;
+	this_det.rho_hat[2] = theta_z;
 	
-	this_det.xe = xe;
-	this_det.ye = ye;
-	this_det.ze = ze;
+	this_det.r_e[0] = xe;
+	this_det.r_e[1] = ye;
+	this_det.r_e[2] = ze;
 	
 	this_det.obsCode = obsCode;
 
@@ -164,9 +170,9 @@ void read_detections(const char *data_file_name,
 	double A = sqrt(Ax*Ax + Ay*Ay + Az*Az);
 	Ax /= A; Ay /= A; Az /= A;
 
-	this_det.Ax = Ax;
-	this_det.Ay = Ay;
-	this_det.Az = Az;	
+	this_det.A[0] = Ax;
+	this_det.A[1] = Ay;
+	this_det.A[2] = Az;	
 
 	double Dx = -theta_x*theta_y;
 	double Dy =  theta_x*theta_x + theta_z*theta_z;
@@ -175,9 +181,9 @@ void read_detections(const char *data_file_name,
 	double D = sqrt(Dx*Dx + Dy*Dy + Dz*Dz);
 	Dx /= D; Dy /= D; Dz /= D;
 
-	this_det.Dx = Dx;
-	this_det.Dy = Dy;
-	this_det.Dz = Dz;	
+	this_det.D[0] = Dx;
+	this_det.D[1] = Dy;
+	this_det.D[2] = Dz;	
 
 	detections.push_back(this_det);
 	times.push_back(jd_tdb);
@@ -227,17 +233,17 @@ void compute_single_residuals(struct assist_ephem* ephem,
     
     double jd_tdb = this_det.jd_tdb;
 
-    double xe = this_det.xe;
-    double ye = this_det.ye;
-    double ze = this_det.ze;
+    double xe = this_det.r_e[0];
+    double ye = this_det.r_e[1];
+    double ze = this_det.r_e[2];
 
-    double Ax = this_det.Ax;
-    double Ay = this_det.Ay;
-    double Az = this_det.Az;
+    double Ax = this_det.A[0];
+    double Ay = this_det.A[1];
+    double Az = this_det.A[2];
 
-    double Dx = this_det.Dx;
-    double Dy = this_det.Dy;
-    double Dz = this_det.Dz;
+    double Dx = this_det.D[0];
+    double Dy = this_det.D[1];
+    double Dz = this_det.D[2];
 
     // 5. compare the model result to the observation.
     //   This means dotting the model unit vector with the
@@ -342,17 +348,17 @@ void predict(struct assist_ephem* ephem,
 
     double jd_tdb = this_det.jd_tdb;
 
-    double xe = this_det.xe;
-    double ye = this_det.ye;
-    double ze = this_det.ze;
+    double xe = this_det.r_e[0];
+    double ye = this_det.r_e[1];
+    double ze = this_det.r_e[2];
 
-    double Ax = this_det.Ax;
-    double Ay = this_det.Ay;
-    double Az = this_det.Az;
+    double Ax = this_det.A[0];
+    double Ay = this_det.A[1];
+    double Az = this_det.A[2];
 
-    double Dx = this_det.Dx;
-    double Dy = this_det.Dy;
-    double Dz = this_det.Dz;
+    double Dx = this_det.D[0];
+    double Dy = this_det.D[1];
+    double Dz = this_det.D[2];
 
     // 5. compare the model result to the observation.
     //   This means dotting the model unit vector with the
