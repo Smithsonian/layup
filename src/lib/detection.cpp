@@ -14,6 +14,9 @@ namespace orbit_fit {
 
 struct AstrometryObservation {
     Eigen::Vector3d rho_hat;  // Computed unit direction vector
+    // tangent plane vectors
+    Eigen::Vector3d a_vec;
+    Eigen::Vector3d d_vec;
 
     AstrometryObservation() = default;
     // Constructor: takes ra and dec (in radians) and computes rho_hat.
@@ -21,6 +24,15 @@ struct AstrometryObservation {
         rho_hat.x() = std::cos(dec) * std::cos(ra);
         rho_hat.y() = std::cos(dec) * std::sin(ra);
         rho_hat.z() = std::sin(dec);
+
+        // danby trick ?
+        a_vec.x() = rho_hat.z();
+        a_vec.y() = 0.0;
+        a_vec.z() = -rho_hat.x();
+
+        d_vec.x() = -rho_hat.x() * rho_hat.y(); 
+        d_vec.y() = rho_hat.x()*rho_hat.x() + rho_hat.z()*rho_hat.z(); 
+        d_vec.x() = -rho_hat.z() * rho_hat.y(); 
     }
 };
 
@@ -28,6 +40,9 @@ struct StreakObservation {
     double ra_rate;
     double dec_rate;
     Eigen::Vector3d rho_hat;
+    // tangent plane vectors
+    Eigen::Vector3d a_vec;
+    Eigen::Vector3d d_vec;
 
     StreakObservation() = default;
     // Constructor: takes ra, dec and the corresponding rates, and computes rho_hat.
@@ -37,6 +52,15 @@ struct StreakObservation {
         rho_hat.x() = std::cos(dec) * std::cos(ra);
         rho_hat.y() = std::cos(dec) * std::sin(ra);
         rho_hat.z() = std::sin(dec);
+
+        // danby trick ?
+        a_vec.x() = rho_hat.z();
+        a_vec.y() = 0.0;
+        a_vec.z() = -rho_hat.x();
+
+        d_vec.x() = -rho_hat.x() * rho_hat.y(); 
+        d_vec.y() = rho_hat.x()*rho_hat.x() + rho_hat.z()*rho_hat.z(); 
+        d_vec.x() = -rho_hat.z() * rho_hat.y(); 
     }
 };
 

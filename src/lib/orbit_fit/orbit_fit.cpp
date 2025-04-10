@@ -213,7 +213,7 @@ void add_variational_particles(struct reb_simulation* r, size_t np, int *var){
 void compute_single_residuals(struct assist_ephem* ephem,
 			      struct assist_extras* ax,
 			      int var,
-			      detection this_det,
+			      Observation this_det,
 			      residuals& resid,
 			      partials& parts
 			      ){
@@ -225,19 +225,22 @@ void compute_single_residuals(struct assist_ephem* ephem,
 
     struct reb_simulation* r = ax->sim;        
     
-    double jd_tdb = this_det.jd_tdb;
+    double jd_tdb = this_det.epoch;
 
-    double xe = this_det.xe;
-    double ye = this_det.ye;
-    double ze = this_det.ze;
+    double xe = this_det.observer_position[0];
+    double ye = this_det.observer_position[1];
+    double ze = this_det.observer_position[2];
 
-    double Ax = this_det.Ax;
-    double Ay = this_det.Ay;
-    double Az = this_det.Az;
+	Eigen::Vector3d Av = std::get<AstrometryObservation>(this_det.observation_type).a_vec;
+	Eigen::Vector3d Dv = std::get<AstrometryObservation>(this_det.observation_type).d_vec;
 
-    double Dx = this_det.Dx;
-    double Dy = this_det.Dy;
-    double Dz = this_det.Dz;
+    double Ax = Av.x();
+    double Ay = Av.y();
+    double Az = Av.z();
+
+    double Dx = Dv.x();
+    double Dy = Dv.y();
+    double Dz = Dv.z();
 
     // 5. compare the model result to the observation.
     //   This means dotting the model unit vector with the
@@ -314,7 +317,7 @@ void compute_single_residuals(struct assist_ephem* ephem,
 
 void predict(struct assist_ephem* ephem,
 	     struct reb_particle p0, double epoch,	     
-	     detection this_det,
+	     Observation this_det,
 	     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>& cov,	     
 	     Eigen::MatrixXd& obs_cov
 	     ){
@@ -340,19 +343,22 @@ void predict(struct assist_ephem* ephem,
     int var;
     add_variational_particles(r, 0, &var);
 
-    double jd_tdb = this_det.jd_tdb;
+    double jd_tdb = this_det.epoch;
 
-    double xe = this_det.xe;
-    double ye = this_det.ye;
-    double ze = this_det.ze;
+    double xe = this_det.observer_position[0];
+    double ye = this_det.observer_position[1];
+    double ze = this_det.observer_position[2];
 
-    double Ax = this_det.Ax;
-    double Ay = this_det.Ay;
-    double Az = this_det.Az;
+	Eigen::Vector3d Av = std::get<AstrometryObservation>(this_det.observation_type).a_vec;
+	Eigen::Vector3d Dv = std::get<AstrometryObservation>(this_det.observation_type).d_vec;
 
-    double Dx = this_det.Dx;
-    double Dy = this_det.Dy;
-    double Dz = this_det.Dz;
+    double Ax = Av.x();
+    double Ay = Av.y();
+    double Az = Av.z();
+
+    double Dx = Dv.x();
+    double Dy = Dv.y();
+    double Dz = Dv.z();
 
     // 5. compare the model result to the observation.
     //   This means dotting the model unit vector with the
@@ -434,7 +440,7 @@ void predict(struct assist_ephem* ephem,
 // Also, in_seq and out_seq must be of the same length.
 void compute_residuals_sequence(struct assist_ephem* ephem,
 				struct reb_particle p0, double epoch,
-				std::vector<detection>& detections,
+				std::vector<Observation>& detections,
 				std::vector<residuals>& resid_vec,
 				std::vector<partials>& partials_vec,
 				std::vector<size_t>& in_seq,
@@ -463,7 +469,7 @@ void compute_residuals_sequence(struct assist_ephem* ephem,
 
 	residuals resids;
 	partials parts;
-	detection this_det = detections[j];
+	Observation this_det = detections[j];
 	compute_single_residuals(ephem, ax, var,
 				 this_det,
 				 resids,
@@ -491,7 +497,7 @@ void compute_residuals_sequence(struct assist_ephem* ephem,
 
 void compute_residuals(struct assist_ephem* ephem,
 			  struct reb_particle p0, double epoch,
-			  std::vector<detection>& detections,
+			  std::vector<Observation>& detections,
 			  std::vector<residuals>& resid_vec,
 			  std::vector<partials>& partials_vec,
 			  std::vector<size_t>& forward_in_seq,
@@ -683,7 +689,6 @@ int orbit_fit(struct assist_ephem* ephem,
 
     Eigen::SparseMatrix<double> W = get_weight_matrix(detections);
     
-    /*
 	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> C;
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> chi2;
     Eigen::MatrixXd dX;
@@ -744,13 +749,13 @@ int orbit_fit(struct assist_ephem* ephem,
 	    
 	}
 	
-	//std::cout   << "chi2:\n" << chi2_d << std::endl;
-	//std::cout   << "rows: " << chi2.rows() << " cols: " << chi2.cols() << std::endl;      	
-	//std::cout   << "Cinv:\n" << C.inverse() << "\n";
+	std::cout   << "chi2:\n" << chi2_d << std::endl;
+	std::cout   << "rows: " << chi2.rows() << " cols: " << chi2.cols() << std::endl;      	
+	std::cout   << "Cinv:\n" << C.inverse() << "\n";
 
-	//std::cout << "lambda: " << lambda << std::endl;
-	//std::cout << "chi2: " << chi2_d << std::endl;		
-	//std::cout << "matrix dX\n" << dX << std::endl;
+	std::cout << "lambda: " << lambda << std::endl;
+	std::cout << "chi2: " << chi2_d << std::endl;		
+	std::cout << "matrix dX\n" << dX << std::endl;
 
 	size_t ndof = detections.size()*2 - 6;
 	double thresh = 10;
@@ -760,7 +765,6 @@ int orbit_fit(struct assist_ephem* ephem,
 	    chi2_final = chi2_d;
 	    break;
 	}
-
 
     }
 
@@ -773,7 +777,6 @@ int orbit_fit(struct assist_ephem* ephem,
     cov = C.inverse();
 
     return flag;
-	*/
 
 }
 
@@ -857,6 +860,11 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
         exit(-1);
     }
 
+	std::vector<double> times_full(detections_full.size());
+	for(int i = 0; i < times_full.size (); i++) {
+		times_full[i] = detections_full[i].epoch;
+	}
+
     // std::vector<detection> detections;
     // std::vector<double> times;
 
@@ -914,11 +922,12 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
 	
 	res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
-	if (!res.has_value()) {
-	    printf("gauss failed.  Try another triplet.\n");
-	    fflush(stdout);
-	    continue;
-	}
+	// NEEDS TO ACTUALLY WORK FIGHT MAX IF THIS ISN'T MERGED TO MAIN
+	// if (!res.has_value()) {
+	//     printf("gauss failed.  Try another triplet.\n");
+	//     fflush(stdout);
+	//     continue;
+	// }
 
 	// Now get a segment of data that spans the triplet and that uses up to
 	// a certain number of points, if they are available in a time window.
@@ -952,9 +961,9 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
 	std::vector<Observation> detections(first_d, last_d);    
 
-	// std::vector<double>::const_iterator first_t = times_full.begin() + start_index;
-	// std::vector<double>::const_iterator last_t = times_full.begin() + end_index;
-	// std::vector<double> times(first_t, last_t);
+	std::vector<double>::const_iterator first_t = times_full.begin() + start_index;
+	std::vector<double>::const_iterator last_t = times_full.begin() + end_index;
+	std::vector<double> times(first_t, last_t);
 
 
 	std::vector<residuals> resid_vec(detections.size());
@@ -967,17 +976,29 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
 	int flag;
 
-	p1.x = res.value()[0].x;
-	p1.y = res.value()[0].y;
-	p1.z = res.value()[0].z;    
-	p1.vx = res.value()[0].vx;
-	p1.vy = res.value()[0].vy;
-	p1.vz = res.value()[0].vz;
+	std::cout << "here" << std::endl;
+	//actual code, use this in the future
+	// p1.x = res.value()[0].x;
+	// p1.y = res.value()[0].y;
+	// p1.z = res.value()[0].z;    
+	// p1.vx = res.value()[0].vx;
+	// p1.vy = res.value()[0].vy;
+	// p1.vz = res.value()[0].vz;
+
+	// if this gets merged to main throw a marker at max
+	p1.x = 1.0;
+	p1.y = 1.0;
+	p1.z = 1.0;    
+	p1.vx = 1.0;
+	p1.vy = 1.0;
+	p1.vz = 1.0;
+	std::cout << "here?" << std::endl;
 	
 	flag = orbit_fit(
 		ephem,
 		p1,
-		res.value()[0].epoch,
+		// res.value()[0].epoch, // actual code
+		2460611.0, // if this gets merged to main poke max with a sharp pencil
 		detections,
 		resid_vec,
 		partials_vec,
@@ -987,33 +1008,45 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 		eps,
 		iter_max
 	);
-	/*
+	
 	dof = 2*detections.size()-6;
 
 	if(flag == 0){
 	    printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
-	    print_initial_condition(p1, res.value()[0].epoch);
+	    print_initial_condition(p1, 2460611.0); // res.value()[0].epoch); REMOVE CONSTANT!!!
 	}else{
 	    printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
 	    continue;
 	}
 
 	Eigen::MatrixXd obs_cov(6, 6);
-	predict(ephem, p1, res.value()[0].epoch, detections_full[0],
-		cov, obs_cov);
+	predict(
+		ephem,
+		p1,
+		2460611.0, // res.value()[0].epoch, REMOVE CONSTANT !!!!
+		detections_full[0],
+		cov,
+		obs_cov
+	);
 	//std::cout << "obs_cov: \n" << obs_cov << std::endl;	
 
 	size_t last = detections_full.size()-1;
-	predict(ephem, p1, res.value()[0].epoch, detections_full[last],
-		cov, obs_cov);
+	predict(
+		ephem,
+		p1, 
+		2460611.0, // res.value()[0].epoch, REMOVE CONSTANT !!!!!!!
+		detections_full[last],
+		cov,
+		obs_cov
+	);
 	//std::cout << "obs_cov: \n" << obs_cov << std::endl;
 
 	num = detections_full.size();
 
 	first_d = detections_full.begin() + detections_full.size()-num;
 	last_d = detections_full.end();
-	std::vector<detection> detections2(first_d, last_d);
-
+	std::vector<Observation> detections2(first_d, last_d);
+	
 	first_t = times_full.begin() + times_full.size()-num;
 	last_t = times_full.end();
 	std::vector<double> times2(first_t, last_t);
@@ -1025,28 +1058,44 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
 
 	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov2;	
-	flag = orbit_fit(ephem, p1, res.value()[0].epoch,
-			 times2, 
-			 detections2,
-			 resid_vec2,
-			 partials_vec2,
-			 iters,
-			 chi2_final,
-			 cov2,
-			 eps, iter_max);
+	flag = orbit_fit(
+		ephem,
+		p1,
+		2460611.0, // res.value()[0].epoch, REMOVE. CONSTANT.
+		detections2,
+		resid_vec2,
+		partials_vec2,
+		iters,
+		chi2_final,
+		cov2,
+		eps,
+		iter_max
+	);
 
 	if(flag == 0){
 	    printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
-	    print_initial_condition(p1, res.value()[0].epoch);
+	    // print_initial_condition(p1, res.value()[0].epoch);
 	    //std::cout << "cov: \n" << cov2 << std::endl;
 	    Eigen::MatrixXd obs_cov2(6, 6);
-	    predict(ephem, p1, res.value()[0].epoch, detections_full[0],
-		    cov2, obs_cov2);
+	    predict(
+			ephem,
+			p1,
+			2460611.0, // res.value()[0].epoch, REMOVECONSTANT!!!!!!
+			detections_full[0],
+		    cov2,
+			obs_cov2
+		);
 	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;	
 
 	    last = detections_full.size()-1;
-	    predict(ephem, p1, res.value()[0].epoch, detections_full[last],
-		    cov2, obs_cov2);
+	    predict(
+			ephem,
+			p1,
+			2460611.0, //res.value()[0].epoch, CONSTANT REMOVE
+			detections_full[last],
+		    cov2,
+			obs_cov2
+		);
 	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;
 	    success = 1;
 	    break;
@@ -1057,7 +1106,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	    printf("flag: %d iters: %lu, stage 3 failed.  Try another triplet %lu\n", flag, iters, i);	    
 	    continue;
 	}
-	*/
     }
     if(success==0){
 	printf("fully failed\n");
@@ -1065,17 +1113,17 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
     struct OrbfitResult result;
 
-    // result.csq = chi2_final;
-    // result.ndof = dof;
-    // result.state[0] = p1.x;
-    // result.state[1] = p1.y;
-    // result.state[2] = p1.z;    
-    // result.state[3] = p1.vx;
-    // result.state[4] = p1.vy;
-    // result.state[5] = p1.vz;    
+    result.csq = chi2_final;
+    result.ndof = dof;
+    result.state[0] = p1.x;
+    result.state[1] = p1.y;
+    result.state[2] = p1.z;    
+    result.state[3] = p1.vx;
+    result.state[4] = p1.vy;
+    result.state[5] = p1.vz;    
     
     // result.epoch = res.value()[0].epoch;
-    // result.niter = iters;
+    result.niter = iters;
     
     // Important issues:
     // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
