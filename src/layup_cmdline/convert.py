@@ -106,6 +106,9 @@ def execute(args):
 
     # check input exists
     find_file_or_exit(args.input, "input")
+
+    # Check that output directory exists
+    find_directory_or_exit(args.o,"-o, --")
     # check format of input file
     if args.i.lower() == "csv":
         output_file = args.o + ".csv"

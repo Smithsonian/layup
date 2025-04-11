@@ -229,31 +229,12 @@ def convert_cli(
             if output_file_stem.endswith(".h5")
             else Path(f"{output_file_stem}.h5")
         )
-    output_directory = output_file.parent.resolve()
+    
 
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    # Check that input file exists
-    if not input_file.exists():
-        logger.error(f"Input file {input_file} does not exist")
-
-    # Check that output directory exists
-    if not output_directory.exists():
-        logger.error(f"Output directory {output_directory} does not exist")
-
-    # Check that chunk size is a positive integer
-    if not isinstance(chunk_size, int) or chunk_size <= 0:
-        logger.error("Chunk size must be a positive integer")
-
-    # Check that the file format is valid
-    if file_format.lower() not in ["csv", "hdf5"]:
-        logger.error("File format must be 'csv' or 'hdf5'")
-
-    # Check that the conversion type is valid
-    if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        logger.error("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
-
+ 
     # Open the input file and read the first line
     if file_format == "hdf5":
         sample_reader = HDF5DataReader(
