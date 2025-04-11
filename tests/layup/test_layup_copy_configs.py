@@ -15,8 +15,6 @@ def test_layupCopyConfigs(tmp_path):
 
     # test the error message if user supplies non-existent directory
     dummy_folder = os.path.join(tmp_path, "dummy_folder")
-    print(os.path.exists(dummy_folder))
-    print("\n",dummy_folder)
     with pytest.raises(SystemExit) as e:
         copy_demo_configs(dummy_folder, "all", False)
 
