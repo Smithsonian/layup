@@ -1,11 +1,11 @@
 from concurrent.futures import ProcessPoolExecutor
-import numpy as np
 
-from layup.utilities.layup_configs import LayupConfigs
+import numpy as np
 from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
-import spiceypy as spice
+
+from layup.utilities.layup_configs import LayupConfigs
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 
@@ -45,6 +45,49 @@ def process_data(data, n_workers, func, **kwargs):
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         # Create a future applying the function to each block of data
         futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
+        # Concatenate all processed blocks together as our final result
+        return np.concatenate([future.result() for future in futures])
+
+
+def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
+    """
+    Process a structured numpy array in parallel for a given function and
+    keyword arguments. Instead of distributing the data across all available workers
+    it is expected that the data will contain a primary id column. The data will be
+    split by the unique values in the primary id column and each block of data will
+    be processed in parallel.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to process. Expected to contain a primary id column.
+    n_workers : int
+        The number of workers to use for parallel processing.
+    func : function
+        The function to apply to each block of data within parallel.
+    **kwargs : dictionary
+        Extra arguments to pass to the function.
+
+    Returns
+    -------
+    res : numpy structured array
+        The processed data concatenated from each function result
+    """
+    if n_workers < 1:
+        raise ValueError(f"n_workers must be greater than 0, {n_workers} was provided.")
+
+    #! Perhaps this should be None, or raise and exception that is caught by the
+    #! caller. If we return `data`, the columns won't match the columns of the
+    #! processed data.
+    if len(data) == 0:
+        return data
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        # Create a future applying the function to each block of data for a given object id
+        futures = [
+            executor.submit(func, data[data[primary_id_column_name] == id], **kwargs)
+            for id in np.unique(data[primary_id_column_name])
+        ]
         # Concatenate all processed blocks together as our final result
         return np.concatenate([future.result() for future in futures])
 
@@ -98,7 +141,7 @@ class LayupObservatory(SorchaObservatory):
         res = []
         for row in data:
             obscode = row["stn"]
-            coords = self.ObservatoryXYZ[obscode]
+            coords = self.ObservatoryXYZ.get(obscode, None)
             if coords is None or None in coords or np.isnan(coords).any():
                 # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
                 # TODO most of the the time this is a moving observatory, and we should handle that case
@@ -136,5 +179,5 @@ class LayupObservatory(SorchaObservatory):
             ]
             res.append(np.array((x, y, z, vx, vy, vz), dtype=output_dtype))
 
-        # Combine all of our resutls into a single structured array
+        # Combine all of our results into a single structured array
         return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
