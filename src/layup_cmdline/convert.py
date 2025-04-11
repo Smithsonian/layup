@@ -100,19 +100,31 @@ def execute(args):
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
 
+    # check ar directory exists if specified
     if args.ar_data_file_path:
         find_directory_or_exit(args.ar_data_file_path, "-ar, --ar_data_path")
 
+    # check input exists
     find_file_or_exit(args.input, "input")
+    # check format of input file 
     if args.i.lower() == "csv":
         output_file = args.o + ".csv"
     elif args.i.lower() == "hdf5":
         output_file = args.o + ".h5"
     else:
-        sys.exit("ERROR: Unsupported format. [csv, hdf5]")
+        sys.exit("File format must be 'csv' or 'hdf5'")
 
+    # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
 
+    # Check that the conversion type is valid
+    if args.orbit_type not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        logger.error("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
+
+
+    # Check that chunk size is a positive integer
+    if not isinstance(args.chunk, int) or args.chunk <= 0:
+        logger.error("Chunk size must be a positive integer")
     convert_cli(
         input=args.input,
         output_file_stem=args.o,
