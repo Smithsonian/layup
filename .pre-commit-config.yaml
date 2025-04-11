@@ -47,7 +47,7 @@ repos:
         args: ["--verbose"]
     # Analyze the code style and report code that doesn't adhere.
   - repo: https://github.com/psf/black
-    rev: 23.7.0
+    rev: 25.1.0
     hooks:
       - id: black-jupyter
         name: Format code using black
