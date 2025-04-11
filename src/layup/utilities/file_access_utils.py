@@ -47,7 +47,8 @@ def find_directory_or_exit(arg_fn, argname):
     """
 
     file_path = Path(f"{arg_fn}")
-    directory_path = file_path.parent.resolve()
+    # file_path = file_path.parent.resolve()
 
-    if not directory_path.exists():
+    if not file_path.is_dir():
+        print("\n is this working \n")
         sys.exit("ERROR: filepath {} supplied for {} argument does not exist.".format(arg_fn, argname))

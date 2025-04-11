@@ -115,18 +115,18 @@ def execute(args):
     elif args.i.lower() == "hdf5":
         output_file = args.o + ".h5"
     else:
-        sys.exit("File format must be 'csv' or 'hdf5'")
+        sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
     # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
 
     # Check that the conversion type is valid
     if args.orbit_type not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        logger.error("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
+        logger.error("ERROR: Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
 
     # Check that chunk size is a positive integer
     if not isinstance(args.chunk, int) or args.chunk <= 0:
-        logger.error("Chunk size must be a positive integer")
+        logger.error("ERROR: Chunk size must be a positive integer")
     convert_cli(
         input=args.input,
         output_file_stem=args.o,
