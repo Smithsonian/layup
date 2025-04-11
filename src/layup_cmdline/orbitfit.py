@@ -32,7 +32,7 @@ def main():
         "--ar-data-path",
         help="Directory path where Assist+Rebound data files where stored when running bootstrap_layup_data_files from the command line.",
         type=str,
-        dest="ar",
+        dest="ar_data_file_path",
         required=False,
     )
 
@@ -41,14 +41,13 @@ def main():
         "--conf",
         help="optional configuration file",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
     optional.add_argument(
-        "-ch",
         "--chunksize",
         help="number of orbits to be processed at once",
-        dest="cs",  # Change dest to cs to avoid conflict with --conf
+        dest="chunksize",
         type=int,
         default=10000,
         required=False,
@@ -80,12 +79,21 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "-of",
         "--output_format",
         help="output file format.",
-        dest="of",
+        dest="output_format",
         type=str,
         default="csv",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-n",
+        "--num-workers",
+        help="Number of CPU workers to use for parallel processing each chunk. -1 uses all available CPUs.",
+        dest="n",
+        type=int,
+        default=-1,
         required=False,
     )
 
@@ -95,6 +103,8 @@ def main():
 
 
 def execute(args):
+    from layup.orbitfit import orbitfit_cli
+
     print("Starting orbitfit...")
 
     if args.g and args.i == "gauss":
@@ -103,8 +113,8 @@ def execute(args):
         sys.exit("ERROR: IOD and initial guess file cannot be called together")
 
     find_file_or_exit(arg_fn=args.input, argname="positional input")
-    if args.ar:
-        find_directory_or_exit(args.ar, argname="--ar --ar-data-path")
+    if args.ar_data_file_path:
+        find_directory_or_exit(args.ar_data_file_path, argname="--a --ar-data-path")
     if not ((args.type.lower()) in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]):
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
 
@@ -113,54 +123,20 @@ def execute(args):
     if args.g is not None:
         find_file_or_exit(args.g, "-g, --guess")
 
-    if args.c:
-        find_file_or_exit(args.c, "-c, --config")
+    configs = LayupConfigs()
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.c)
-        print("printing the config file filename of jpl_planets:", configs.auxiliary.jpl_planets)
-    else:
-        configs = LayupConfigs()
-        print("printing the default filename of jpl_planets:", configs.auxiliary.jpl_planets)
 
-    import os
-
-    output_file = f"{args.o}.{args.of}"
-    if os.path.exists(output_file) and not args.force:
-        sys.exit(f"ERROR: Output file {output_file} already exists. Use -f/--force to overwrite.")
-
-    # Not handling chunk size for now
-    print(f"Loading observations from {args.input} as {args.type}")
-    try:
-        if args.type.lower() == "mpc80col":
-            print("read the 80 column mpc format")
-
-        elif args.type.lower() == "ades_csv":
-            from layup.utilities.file_io.CSVReader import CSVDataReader
-
-            reader = CSVDataReader(args.input, sep="csv")
-            observations = reader._read_rows_internal()
-
-        elif args.type.lower() == "ades_psv":
-            from layup.utilities.file_io.CSVReader import CSVDataReader
-
-            reader = CSVDataReader(args.input, sep="|")
-            observations = reader._read_rows_internal()
-
-        elif args.type.lower() == "ades_xml":
-            print("read the xml format")
-
-        elif args.type.lower() == "ades_hdf5":
-            from layup.utilities.file_io.HDF5Reader import HDF5DataReader
-
-            reader = HDF5DataReader(args.input)
-            observations = reader._read_rows_internal()
-
-        row_count = len(observations)
-        print(f"Successfully loaded {row_count} observation records")
-
-    except ImportError as ie:
-        sys.exit(f"ERROR: Failed to import required modules for reading observations: {ie}")
-    except Exception as e:
-        sys.exit(f"ERROR: Failed to load observations: {e}")
+    orbitfit_cli(
+        input=args.input,
+        input_file_format=args.type,
+        output_file_stem=args.o,
+        output_file_format=args.output_format,
+        chunk_size=args.chunksize,
+        num_workers=args.n,
+        cli_args=args,
+    )
 
 
 if __name__ == "__main__":
