@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 
+
 def find_file_or_exit(arg_fn, argname):
     """Checks to see if a file given by a filename exists. If it doesn't,
     this fails gracefully and exits to the command line.
@@ -47,7 +48,6 @@ def find_directory_or_exit(arg_fn, argname):
 
     file_path = Path(f"{arg_fn}")
     directory_path = file_path.parent.resolve()
-
 
     if not directory_path.exists():
         sys.exit("ERROR: filepath {} supplied for {} argument does not exist.".format(arg_fn, argname))

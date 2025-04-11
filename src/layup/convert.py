@@ -229,12 +229,10 @@ def convert_cli(
             if output_file_stem.endswith(".h5")
             else Path(f"{output_file_stem}.h5")
         )
-    
 
     if num_workers < 0:
         num_workers = os.cpu_count()
 
- 
     # Open the input file and read the first line
     if file_format == "hdf5":
         sample_reader = HDF5DataReader(
