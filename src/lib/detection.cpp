@@ -34,6 +34,18 @@ struct AstrometryObservation {
         d_vec.y() = rho_hat.x()*rho_hat.x() + rho_hat.z()*rho_hat.z(); 
         d_vec.x() = -rho_hat.z() * rho_hat.y(); 
     }
+    AstrometryObservation(std::array<double, 3> rho, std::array<double, 3> a, std::array<double, 3> d) {
+        // constructor for if unit vectors have been precomputed
+        rho_hat.x() = rho[0];
+        rho_hat.y() = rho[1];
+        rho_hat.z() = rho[2];
+        a_vec.x() = a[0];
+        a_vec.y() = a[1];
+        a_vec.z() = a[2];
+        d_vec.x() = d[0];
+        d_vec.x() = d[1];
+        d_vec.x() = d[2];
+    }
 };
 
 struct StreakObservation {
@@ -61,6 +73,18 @@ struct StreakObservation {
         d_vec.x() = -rho_hat.x() * rho_hat.y(); 
         d_vec.y() = rho_hat.x()*rho_hat.x() + rho_hat.z()*rho_hat.z(); 
         d_vec.x() = -rho_hat.z() * rho_hat.y(); 
+    }
+    StreakObservation(std::array<double, 3> rho, std::array<double, 3> a, std::array<double, 3> d) {
+        // constructor for if unit vectors have been precomputed
+        rho_hat.x() = rho[0];
+        rho_hat.y() = rho[1];
+        rho_hat.z() = rho[2];
+        a_vec.x() = a[0];
+        a_vec.y() = a[1];
+        a_vec.z() = a[2];
+        d_vec.x() = d[0];
+        d_vec.y() = d[1];
+        d_vec.z() = d[2];
     }
 };
 
@@ -91,6 +115,21 @@ private:
     {}
 
 public:
+    Observation(
+        double ep,
+        std::array<double, 3> obs_position,
+        std::array<double, 3> obs_velocity,
+        std::array<double, 3> rho,
+        std::array<double, 3> a_vec,
+        std::array<double, 3> d_vec
+    ) {
+        epoch = ep;
+        observer_position = obs_position;
+        observer_velocity = obs_velocity;
+        observation_type = AstrometryObservation(rho, a_vec, d_vec);
+
+    }
+
     // Factory method for an Astrometry observation.
     static Observation from_astrometry(double ra, double dec, double epoch_val,
                                        const std::array<double, 3>& obs_position,
@@ -124,6 +163,7 @@ static void detection_bindings(py::module& m) {
     py::class_<AstrometryObservation>(m, "AstrometryObservation")
         .def(py::init<double, double>(),
              py::arg("ra"), py::arg("dec"))
+        .def(py::init<std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
         .def_readonly("rho_hat", &AstrometryObservation::rho_hat,
                       "Computed unit direction vector (rho_hat)");
 
@@ -132,6 +172,7 @@ static void detection_bindings(py::module& m) {
     py::class_<StreakObservation>(m, "StreakObservation")
         .def(py::init<double, double, double, double>(),
              py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"))
+        .def(py::init<std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
         .def_readonly("ra_rate", &StreakObservation::ra_rate)
         .def_readonly("dec_rate", &StreakObservation::dec_rate)
         .def_readonly("rho_hat", &StreakObservation::rho_hat,
@@ -141,6 +182,7 @@ static void detection_bindings(py::module& m) {
     py::class_<Observation>(m, "Observation")
         // Constructor for an Astrometry observation.
         // bind the ::from_astrometry factory method
+        .def(py::init<double, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
         .def_static("from_astrometry", &Observation::from_astrometry,
                   py::arg("ra"), py::arg("dec"), py::arg("epoch"),
                   py::arg("observer_position"), py::arg("observer_velocity"),
