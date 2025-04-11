@@ -7,7 +7,7 @@ import numpy as np
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
-from layup.routines import Observation, orbit_fit
+from layup.routines import Observation, run_from_files
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -60,7 +60,7 @@ def _orbitfit(data, cache_dir: str):
         for d in data
     ]
     # Perform the orbit fitting
-    res = orbit_fit(observations)
+    res = run_from_files(cache_dir, observations)
 
     # Populate our output structured array with the orbit fit results
     output = np.array(
@@ -98,7 +98,9 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
 
     layup_observatory = LayupObservatory()
 
-    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
+    et_col = np.array(
+        [spice.j2000() + spice.str2et(row["obstime"]) / (24 * 60 * 60) for row in data], dtype="<f8"
+    )
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
@@ -178,7 +180,7 @@ def orbitfit_cli(
 
     chunks = _create_chunks(reader, chunk_size)
 
-    cache_dir = cli_args.ar_data_file_path if cli_args else None
+    cache_dir = cli_args.ar_data_file_path
 
     for chunk in chunks:
         data = reader.read_objects(chunk)
