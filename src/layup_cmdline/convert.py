@@ -106,7 +106,7 @@ def execute(args):
 
     # check input exists
     find_file_or_exit(args.input, "input")
-    # check format of input file 
+    # check format of input file
     if args.i.lower() == "csv":
         output_file = args.o + ".csv"
     elif args.i.lower() == "hdf5":
@@ -120,7 +120,6 @@ def execute(args):
     # Check that the conversion type is valid
     if args.orbit_type not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
         logger.error("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
-
 
     # Check that chunk size is a positive integer
     if not isinstance(args.chunk, int) or args.chunk <= 0:
