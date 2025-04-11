@@ -55,7 +55,11 @@ def _orbitfit(data, cache_dir: str):
     # Convert the astrometry data to a list of Observations
     observations = [
         Observation.from_astrometry(
-            d["ra"], d["dec"], d["et"], [d["x"], d["y"], d["z"]], [d["vx"], d["vy"], d["vz"]]
+            d["ra"],
+            d["dec"],
+            spice.j2000() + d["et"] / (24 * 60 * 60),  # Convert ET to JD TDB
+            [d["x"], d["y"], d["z"]],  # Barycentric position
+            [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
         )
         for d in data
     ]
@@ -98,9 +102,7 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
 
     layup_observatory = LayupObservatory()
 
-    et_col = np.array(
-        [spice.j2000() + spice.str2et(row["obstime"]) / (24 * 60 * 60) for row in data], dtype="<f8"
-    )
+    et_col = np.array([spice.str2et(row["obstime"]) / (24 * 60 * 60) for row in data], dtype="<f8")
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
