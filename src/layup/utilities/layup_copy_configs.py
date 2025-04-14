@@ -30,7 +30,7 @@ def copy_demo_configs(copy_location, which_configs, force_overwrite):
     """
     # For the future multiple config file formats can be stored in config_setups and be called
 
-    _ = find_directory_or_exit(copy_location, "filepath")
+    find_directory_or_exit(copy_location, "filepath")
 
     config_data_root = files("layup.config_setups")
 

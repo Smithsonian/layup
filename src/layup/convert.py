@@ -11,8 +11,7 @@ from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.orbit_conversion_utilities import universal_cometary, universal_keplerian
 
 from layup.utilities.data_processing_utilities import process_data
-from layup.utilities.file_io.CSVReader import CSVDataReader
-from layup.utilities.file_io.HDF5Reader import HDF5DataReader
+from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.layup_configs import LayupConfigs
 
@@ -213,7 +212,7 @@ def convert_cli(
         The format of the output file. Must be one of: "csv", "hdf5"
     chunk_size : int, optional (default=10_000)
         The number of rows to read in at a time.
-    num_workers : int, optional (default=1)
+    num_workers : int, optional (default=-1)
         The number of workers to use for parallel processing of the individual
         chunk. If -1, the number of workers will be set to the number of CPUs on
         the system. The default is 1 worker.
@@ -229,30 +228,9 @@ def convert_cli(
             if output_file_stem.endswith(".h5")
             else Path(f"{output_file_stem}.h5")
         )
-    output_directory = output_file.parent.resolve()
 
     if num_workers < 0:
         num_workers = os.cpu_count()
-
-    # Check that input file exists
-    if not input_file.exists():
-        logger.error(f"Input file {input_file} does not exist")
-
-    # Check that output directory exists
-    if not output_directory.exists():
-        logger.error(f"Output directory {output_directory} does not exist")
-
-    # Check that chunk size is a positive integer
-    if not isinstance(chunk_size, int) or chunk_size <= 0:
-        logger.error("Chunk size must be a positive integer")
-
-    # Check that the file format is valid
-    if file_format.lower() not in ["csv", "hdf5"]:
-        logger.error("File format must be 'csv' or 'hdf5'")
-
-    # Check that the conversion type is valid
-    if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        logger.error("Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
 
     # Open the input file and read the first line
     if file_format == "hdf5":
