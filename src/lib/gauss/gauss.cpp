@@ -186,7 +186,8 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observat
         double corrected_t = triplet[1].epoch;
         corrected_t -= ltt;
 
-	gauss_soln soln = gauss_soln(root, corrected_t, x, y, z, vx, vy, vz, 0, 0, 0.0);
+	gauss_soln soln = gauss_soln(root, corrected_t, x, y, z, vx, vy, vz);
+	soln.method = "gauss";
 
 	res.push_back(soln);
 
@@ -194,6 +195,27 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observat
     
     return res;	
 
+}
+
+static void gauss_bindings(py::module& m) {
+    // Bind the gauss_soln struct as a Python class
+    py::class_<gauss_soln>(m, "gauss_soln")
+        .def(py::init<>())  // Expose the default constructor
+        .def_readwrite("root", &orbit_fit::gauss_soln::root, "root")
+        .def_readwrite("method", &orbit_fit::gauss_soln::method, "method")
+        .def_readwrite("epoch", &orbit_fit::gauss_soln::epoch, "epoch")
+        .def_readwrite("iters", &orbit_fit::gauss_soln::iters, "iters")
+        .def_readwrite("dof", &orbit_fit::gauss_soln::dof, "dof")
+        .def_readwrite("csq", &orbit_fit::gauss_soln::csq, "csq")
+	.def_readwrite("flag", &orbit_fit::gauss_soln::flag, "flag")
+        .def_readwrite("x", &orbit_fit::gauss_soln::x, "x")
+        .def_readwrite("y", &orbit_fit::gauss_soln::y, "y")
+        .def_readwrite("z", &orbit_fit::gauss_soln::z, "z")	
+        .def_readwrite("vx", &orbit_fit::gauss_soln::vx, "vx")
+        .def_readwrite("vy", &orbit_fit::gauss_soln::vy, "vy")
+        .def_readwrite("vz", &orbit_fit::gauss_soln::vz, "vz")
+    .def_readwrite("cov", &orbit_fit::gauss_soln::cov, "cov");    
+    m.def("gauss", &orbit_fit::gauss);
 }
 
 }

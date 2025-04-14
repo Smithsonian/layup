@@ -24,6 +24,14 @@
 // Then use the results of that as an initial guess for fitting a
 // larger segment of data.
 
+// Important issues:
+// 1. Obtaining reliable initial orbit determination for the nonlinear fits.
+// 2. Making sure the weight matrix is as good as it can be
+// 3. Identifying and removing outliers
+
+// Later issues:
+// 1. Deflection of light
+
 // Compile with something like this
 // g++ -std=c++11 -I../..//src/ -I../../../rebound/src/ -I/Users/mholman/eigen-3.4.0 -Wl,-rpath,./ -Wpointer-arith -D_GNU_SOURCE -O3 -fPIC -I/usr/local/include -Wall -g  -Wno-unknown-pragmas -D_APPLE -DSERVER -DGITHASH=e99d8d73f0aa7fb7bf150c680a2d581f43d3a8be orbit_fit.cpp -L. -lassist -lrebound -L/usr/local/lib -o orbit_fit
 
@@ -319,7 +327,7 @@ void compute_single_residuals(struct assist_ephem* ephem,
 void predict(struct assist_ephem* ephem,
 	     struct reb_particle p0, double epoch,	     
 	     Observation this_det,
-	     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>& cov,	     
+	     Eigen::MatrixXd& cov,
 	     Eigen::MatrixXd& obs_cov
 	     ){
 
@@ -350,8 +358,8 @@ void predict(struct assist_ephem* ephem,
     double ye = this_det.observer_position[1];
     double ze = this_det.observer_position[2];
 
-	Eigen::Vector3d Av = std::get<AstrometryObservation>(this_det.observation_type).a_vec;
-	Eigen::Vector3d Dv = std::get<AstrometryObservation>(this_det.observation_type).d_vec;
+    Eigen::Vector3d Av = std::get<AstrometryObservation>(this_det.observation_type).a_vec;
+    Eigen::Vector3d Dv = std::get<AstrometryObservation>(this_det.observation_type).d_vec;
 
     double Ax = Av.x();
     double Ay = Av.y();
@@ -474,18 +482,9 @@ void compute_residuals_sequence(struct assist_ephem* ephem,
 				 resids,
 				 parts);
 	resid_vec[k] = resids;
-
-	/*
-	double thresh = 10;	
-	if(fabs(resids.x_resid*206265)>thresh ||
-	   fabs(resids.y_resid*206265)>thresh){
-	    printf("resid: %lu %lf %lf %lf\n", k, this_det.jd_tdb, resids.x_resid*206265, resids.y_resid*206265);
-	}
-	*/
 	partials_vec[k] = parts;
 	
     }
-    //printf("out\n");
     
     assist_free(ax);
     reb_simulation_free(r);
@@ -628,9 +627,6 @@ Eigen::SparseMatrix<double> get_weight_matrix(std::vector<Observation>& detectio
 	double y_unc = *detections[i].dec_unc;
 	double w2_y = 1.0/(y_unc*y_unc);	
 	tripletList.push_back(T(2*i+1, 2*i+1, w2_y));
-
-	//printf("%.3le %.3le\n", *detections[i].ra_unc, *detections[i].dec_unc);
-	//fflush(stdout);
     }
     W.setFromTriplets(tripletList.begin(), tripletList.end());
 
@@ -667,9 +663,10 @@ int orbit_fit(struct assist_ephem* ephem,
 	      std::vector<partials>& partials_vec, // Compute as part of run
 	      size_t& iters, // runtime
 	      double& chi2_final, // result
-	      Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>& cov, // result
+	      Eigen::MatrixXd& cov,
+	      //Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>& cov, // result
 	      double eps, //constant
-		  size_t iter_max){ // runtime
+	      size_t iter_max){ // runtime
 
     std::vector<size_t> reverse_in_seq;
     std::vector<size_t> reverse_out_seq;
@@ -677,11 +674,11 @@ int orbit_fit(struct assist_ephem* ephem,
     std::vector<size_t> forward_in_seq;
     std::vector<size_t> forward_out_seq;    
 
-	std::vector<double> times(detections.size());
+    std::vector<double> times(detections.size());
 
-	for(int i = 0; i < detections.size(); i++) {
-		times[i] = detections[i].epoch;
-	}
+    for(int i = 0; i < detections.size(); i++) {
+	times[i] = detections[i].epoch;
+    }
 
     create_sequences(times, epoch,
 		     reverse_in_seq, reverse_out_seq,
@@ -722,7 +719,6 @@ int orbit_fit(struct assist_ephem* ephem,
 	
 	if(rho>rho_accept){
 
-
 	    // Accept the step
 	    // Reduce lambda
 	    // Update the state
@@ -735,7 +731,6 @@ int orbit_fit(struct assist_ephem* ephem,
 	    p0.vx += dX(3);
 	    p0.vy += dX(4);
 	    p0.vz += dX(5);
-	    //print_initial_condition(p0, epoch);
 	    chi2_prev = chi2_d;	    
 	    
 	}else{
@@ -748,14 +743,12 @@ int orbit_fit(struct assist_ephem* ephem,
 	    lambda *= 2.0;
 	    
 	}
-	
-	std::cout   << "chi2: " << chi2_d << std::endl;
-	//std::cout   << "rows: " << chi2.rows() << " cols: " << chi2.cols() << std::endl;      	
-	//std::cout   << "Cinv:\n" << C.inverse() << "\n";
 
+	/*
+	std::cout   << "chi2: " << chi2_d << std::endl;
 	std::cout << "lambda: " << lambda << std::endl;
-	//std::cout << "chi2: " << chi2_d << std::endl;		
 	std::cout << "dX\n" << dX << std::endl;
+	*/
 
 	size_t ndof = detections.size()*2 - 6;
 	double thresh = 10;
@@ -863,7 +856,6 @@ std::optional<struct assist_ephem*> get_ephem(std::string cache_dir) {
 	return ephem;
     }
 }
-
     
 struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observation>& detections_full) {
 
@@ -1102,16 +1094,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
     result.state[4] = p1.vy;
     result.state[5] = p1.vz;    
     
-    // result.epoch = res.value()[0].epoch;
     result.niter = iters;
-    
-    // Important issues:
-    // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
-    // 2. Making sure the weight matrix is as good as it can be
-    // 3. Identifying and removing outliers
-
-    // Later issues:
-    // 1. Deflection of light
     
     assist_ephem_free(ephem);
 
@@ -1336,15 +1319,13 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
     result.epoch = result_epoch;
     result.csq = chi2_final;
     result.ndof = dof;
+    result.niter = iters;    
     result.state[0] = p1.x;
     result.state[1] = p1.y;
     result.state[2] = p1.z;    
     result.state[3] = p1.vx;
     result.state[4] = p1.vy;
     result.state[5] = p1.vz;    
-    
-    // result.epoch = res.value()[0].epoch;
-    result.niter = iters;
     
     // Important issues:
     // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
@@ -1354,22 +1335,16 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
     // Later issues:
     // 1. Deflection of light
     
-    //assist_ephem_free(ephem);
-
     return result;
 
 }
 
-    //std::optional<struct OrbfitResult> run_from_vector_with_ic(struct assist_ephem* ephem, gauss_soln soln, std::vector<Observation>& detections) {
 std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ephem, gauss_soln soln, std::vector<Observation>& detections) {    
 
     int success=0;
     size_t iters;
     double chi2_final;
     size_t dof;
-
-    printf("%d\n", soln.niter);
-    fflush(stdout);
 
     std::vector<residuals> resid_vec(detections.size());
     std::vector<partials> partials_vec(detections.size());
@@ -1407,11 +1382,11 @@ std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ep
 	
     dof = 2*detections.size()-6;
 
-    printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);    
+    //printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);    
 
     if(flag == 0){
 
-	Eigen::MatrixXd obs_cov(6, 6);
+	Eigen::MatrixXd obs_cov(2, 2);
 	predict(
 		ephem,
 		p1,
@@ -1433,28 +1408,23 @@ std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ep
 		);
 	std::cout << "obs_cov: \n" << obs_cov << std::endl;
 
-	//struct OrbfitResult result;
 	struct gauss_soln result;	
 
-	result.epoch = epoch;
+	result.iters = iters;
 	result.csq = chi2_final;
 	result.dof = dof;
-	/*
-	result.state[0] = p1.x;
-	result.state[1] = p1.y;
-	result.state[2] = p1.z;    
-	result.state[3] = p1.vx;
-	result.state[4] = p1.vy;
-	result.state[5] = p1.vz;
-	*/
+	result.flag = flag;
+	result.method = "orbit_fit";
+
+	result.epoch = epoch;
 	result.x = p1.x;
 	result.y = p1.y;
 	result.z = p1.z;    
 	result.vx = p1.vx;
 	result.vy = p1.vy;
 	result.vz = p1.vz;
-	
-	result.niter = iters;
+
+	result.cov = cov;	
 
 	return result;
 	
@@ -1465,27 +1435,15 @@ std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ep
     
 #ifdef Py_PYTHON_H
 static void orbit_fit_bindings(py::module& m) {
-    // Bind the gauss_soln struct as a Python class
-    py::class_<gauss_soln>(m, "gauss_soln")
-        .def(py::init<>())  // Expose the default constructor
-        .def_readwrite("root", &orbit_fit::gauss_soln::root, "root")
-        .def_readwrite("epoch", &orbit_fit::gauss_soln::epoch, "epoch")
-        .def_readwrite("x", &orbit_fit::gauss_soln::x, "x")
-        .def_readwrite("y", &orbit_fit::gauss_soln::y, "y")
-        .def_readwrite("z", &orbit_fit::gauss_soln::z, "z")	
-        .def_readwrite("vx", &orbit_fit::gauss_soln::vx, "vx")
-        .def_readwrite("vy", &orbit_fit::gauss_soln::vy, "vy")
-        .def_readwrite("vz", &orbit_fit::gauss_soln::vz, "vz");
-
+    py::class_<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>>(m, "MatrixXd")
+        .def(py::init<>());
     py::class_<assist_ephem>(m, "assist_ephem");
-    //.def_readonly("jd_ref", &assist_ephem::jd_ref, "jd_ref");
-    
     m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Main function)pbdoc");
     m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");    
     m.def("run_from_files", &orbit_fit::run_from_files, R"pbdoc(Runner function)pbdoc");
     m.def("run_from_vector", &orbit_fit::run_from_vector, R"pbdoc(Runner function v2)pbdoc");
-    m.def("run_from_vector_with_ic", &orbit_fit::run_from_vector_with_ic, R"pbdoc(Runner function ic version)pbdoc");        
-    m.def("gauss", &orbit_fit::gauss);
+    m.def("run_from_vector_with_ic", &orbit_fit::run_from_vector_with_ic, R"pbdoc(Runner function ic version)pbdoc");
+    m.def("predict", &orbit_fit::predict, R"pbdoc(predict)pbdoc");            
 }
 #endif /* Py_PYTHON_H */
 
