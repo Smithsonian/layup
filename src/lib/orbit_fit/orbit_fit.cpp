@@ -425,8 +425,6 @@ void predict(struct assist_ephem* ephem,
 	B(1, j) = dy_resid[j];
     }
 
-    //std::cout << "B: " << B << std::endl;
-
     //Eigen::MatrixXd obs_cov(6, 6);
     obs_cov = B * cov * B.transpose();
 
@@ -554,8 +552,6 @@ void compute_dX(std::vector<residuals>& resid_vec,
 
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Bt = B.transpose();
     C = Bt * W * B + lambda*eye;  // This is where the extra term for LM is.
-
-    //std::cout << "C: \n" << C << std::endl;
 
     grad = Bt * W * resid_v;
 
@@ -1017,7 +1013,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 		cov,
 		obs_cov
 	);
-	//std::cout << "obs_cov: \n" << obs_cov << std::endl;	
 
 	size_t last = detections_full.size()-1;
 	predict(
@@ -1028,7 +1023,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 		cov,
 		obs_cov
 	);
-	// std::cout << "obs_cov: \n" << obs_cov << std::endl;
 
 	num = detections_full.size();
 
@@ -1063,8 +1057,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
 	if(flag == 0){
 	    printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
-	    // print_initial_condition(p1, res.value()[0].epoch);
-	    //std::cout << "cov: \n" << cov2 << std::endl;
 	    Eigen::MatrixXd obs_cov2(6, 6);
 	    predict(
 			ephem,
@@ -1074,7 +1066,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 		    cov2,
 			obs_cov2
 		);
-	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;	
 
 	    last = detections_full.size()-1;
 	    predict(
@@ -1085,7 +1076,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 			cov2,
 			obs_cov2
 		);
-	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;
 	    success = 1;
 	    break;
 	}else{
@@ -1262,7 +1252,6 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 		cov,
 		obs_cov
 	);
-	//std::cout << "obs_cov: \n" << obs_cov << std::endl;	
 
 	size_t last = detections_full.size()-1;
 	predict(
@@ -1273,7 +1262,6 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 		cov,
 		obs_cov
 	);
-	//std::cout << "obs_cov: \n" << obs_cov << std::endl;
 
 	num = detections_full.size();
 
@@ -1308,8 +1296,6 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 
 	if(flag == 0){
 	    printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
-	    // print_initial_condition(p1, res.value()[0].epoch);
-	    //std::cout << "cov: \n" << cov2 << std::endl;
 	    Eigen::MatrixXd obs_cov2(6, 6);
 	    result_epoch = res.value()[0].epoch;
 	    predict(
@@ -1320,7 +1306,6 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 		    cov2,
 			obs_cov2
 		);
-	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;	
 
 	    last = detections_full.size()-1;
 	    predict(
@@ -1331,7 +1316,6 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 			cov2,
 			obs_cov2
 		);
-	    //std::cout << "obs_cov: \n" << obs_cov2 << std::endl;
 	    success = 1;
 	    break;
 	}else{
