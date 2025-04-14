@@ -31,6 +31,7 @@ jobs:
         pip install -e .
         pip install -e .[dev]
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        layup bootstrap
     - name: Run unit tests with pytest
       run: |
         export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH
