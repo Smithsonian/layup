@@ -858,9 +858,10 @@ std::optional<struct assist_ephem*> get_ephem(std::string cache_dir) {
 }
     
 struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observation>& detections_full) {
+	std::cout << cache_dir << std::endl;
 
-    std::string ephem_kernel = cache_dir + "linux_p1550p2650.440";
-    std::string small_bodies_kernel = cache_dir + "sb441-n16.bsp";
+    std::string ephem_kernel = cache_dir + "/linux_p1550p2650.440";
+    std::string small_bodies_kernel = cache_dir + "/sb441-n16.bsp";
 
     char* ephem_kernel_char = new char[ephem_kernel.length()];
     std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
@@ -1079,7 +1080,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	}
     }
     if(success==0){
-	printf("fully failed\n");
+	printf("failed to find good fit\n");
 	fflush(stdout);
     }
 
