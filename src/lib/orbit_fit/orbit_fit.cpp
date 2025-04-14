@@ -1382,7 +1382,6 @@ std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ep
     int success=0;
     size_t iters;
     double chi2_final;
-    double result_epoch;
     size_t dof;
 
     printf("%d\n", soln.niter);
@@ -1453,9 +1452,9 @@ std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ep
 	//struct OrbfitResult result;
 	struct gauss_soln result;	
 
-	result.epoch = result_epoch;
+	result.epoch = epoch;
 	result.csq = chi2_final;
-	result.ndof = dof;
+	result.dof = dof;
 	/*
 	result.state[0] = p1.x;
 	result.state[1] = p1.y;
