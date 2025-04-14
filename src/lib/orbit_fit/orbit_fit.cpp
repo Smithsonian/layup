@@ -1136,7 +1136,7 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 	times_full[i] = detections_full[i].epoch;
     }
 
-    size_t start_i = detections_full.size();
+    size_t start_i = detections_full.size() - 1;
 
     // First find a triple of detections in the full data set.
     std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);    
