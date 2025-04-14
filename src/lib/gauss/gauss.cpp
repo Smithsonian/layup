@@ -186,7 +186,8 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observat
         double corrected_t = triplet[1].epoch;
         corrected_t -= ltt;
 
-	gauss_soln soln = gauss_soln(root, corrected_t, x, y, z, vx, vy, vz, 0, 0, 0.0);
+	gauss_soln soln = gauss_soln(root, corrected_t, x, y, z, vx, vy, vz);
+	soln.method = "gauss";
 
 	res.push_back(soln);
 
