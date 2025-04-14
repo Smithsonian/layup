@@ -32,7 +32,7 @@ struct AstrometryObservation {
 
         d_vec.x() = -rho_hat.x() * rho_hat.y(); 
         d_vec.y() = rho_hat.x()*rho_hat.x() + rho_hat.z()*rho_hat.z(); 
-        d_vec.x() = -rho_hat.z() * rho_hat.y(); 
+        d_vec.z() = -rho_hat.z() * rho_hat.y(); 
     }
     AstrometryObservation(std::array<double, 3> rho, std::array<double, 3> a, std::array<double, 3> d) {
         // constructor for if unit vectors have been precomputed
@@ -43,8 +43,8 @@ struct AstrometryObservation {
         a_vec.y() = a[1];
         a_vec.z() = a[2];
         d_vec.x() = d[0];
-        d_vec.x() = d[1];
-        d_vec.x() = d[2];
+        d_vec.y() = d[1];
+        d_vec.z() = d[2];
     }
 };
 
@@ -72,7 +72,7 @@ struct StreakObservation {
 
         d_vec.x() = -rho_hat.x() * rho_hat.y(); 
         d_vec.y() = rho_hat.x()*rho_hat.x() + rho_hat.z()*rho_hat.z(); 
-        d_vec.x() = -rho_hat.z() * rho_hat.y(); 
+        d_vec.z() = -rho_hat.z() * rho_hat.y(); 
     }
     StreakObservation(std::array<double, 3> rho, std::array<double, 3> a, std::array<double, 3> d) {
         // constructor for if unit vectors have been precomputed
@@ -130,6 +130,24 @@ public:
 
     }
 
+    Observation(
+        double ep,
+        std::array<double, 3> obs_position,
+        std::array<double, 3> obs_velocity,
+        std::array<double, 3> rho,
+        std::array<double, 3> a_vec,
+        std::array<double, 3> d_vec,
+        double ra_uncy,
+        double dec_uncy
+    ) {
+        epoch = ep;
+        observer_position = obs_position;
+        observer_velocity = obs_velocity;
+        observation_type = AstrometryObservation(rho, a_vec, d_vec);
+	ra_unc = ra_uncy;
+	dec_unc = dec_uncy;	
+    }
+
     // Factory method for an Astrometry observation.
     static Observation from_astrometry(double ra, double dec, double epoch_val,
                                        const std::array<double, 3>& obs_position,
@@ -183,6 +201,8 @@ static void detection_bindings(py::module& m) {
         // Constructor for an Astrometry observation.
         // bind the ::from_astrometry factory method
         .def(py::init<double, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
+        .def(py::init<double, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>,
+	     std::array<double, 3>, std::array<double, 3>, double, double>())
         .def_static("from_astrometry", &Observation::from_astrometry,
                   py::arg("ra"), py::arg("dec"), py::arg("epoch"),
                   py::arg("observer_position"), py::arg("observer_velocity"),
@@ -198,6 +218,8 @@ static void detection_bindings(py::module& m) {
         .def_readonly("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
         .def_readonly("observer_velocity", &Observation::observer_velocity, "Observer velocity as a 3D vector")
         .def_readonly("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")
+        .def_readonly("ra_unc", &Observation::ra_unc, "RA uncertainty")
+        .def_readonly("dec_unc", &Observation::dec_unc, "Dec uncertainty")	
         .def_readonly("mag", &Observation::mag, "Optional magnitude")
         .def_readonly("mag_err", &Observation::mag_err, "Optional magnitude error");
 }

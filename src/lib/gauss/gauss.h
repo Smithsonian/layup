@@ -27,4 +27,5 @@ struct gauss_soln {
 
 };
 
-std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, detection &o1_in, detection &o2_in, detection &o3_in, double min_distance, double SPEED_OF_LIGHT);
+std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observation &o1_in, orbit_fit::Observation &o2_in, orbit_fit::Observation &o3_in, double min_distance, double SPEED_OF_LIGHT);
+//std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, detection &o1_in, detection &o2_in, detection &o3_in, double min_distance, double SPEED_OF_LIGHT);

@@ -1,3 +1,8 @@
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
+namespace py = pybind11;
+
 // This code requires the following:
 // 1. The rebound library
 // 2. The assist library
@@ -27,12 +32,14 @@
 #include <complex>
 #include "../detection.cpp"
 
-#include <chrono>
+//#include <chrono>
 
+namespace orbit_fit {
+    
 #include "gauss.h"
 
 using namespace Eigen;
-using std::cout;
+//using std::cout;
 
 // template for gauss
 // pass in three detections
@@ -133,11 +140,10 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observat
     std::sort(roots.begin(), roots.end(), [](const double a, const double b) {
         return a>b;
     });
-    
 
     std::vector<gauss_soln> res;
     for (double root : roots) {
-	std::cout << "root: " << root << std::endl;
+	//std::cout << "root here: " << root << std::endl;
         double root3 = std::pow(root, 3);
 
         // Compute a1
@@ -184,8 +190,9 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observat
 	res.push_back(soln);
 
     }
+    
+    return res;	
 
-    return res;
 }
 
-
+}
