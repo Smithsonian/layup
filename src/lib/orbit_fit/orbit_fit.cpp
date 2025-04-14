@@ -430,8 +430,6 @@ void predict(struct assist_ephem* ephem,
     //Eigen::MatrixXd obs_cov(6, 6);
     obs_cov = B * cov * B.transpose();
 
-    std::cout << "obs_cov:\n" << obs_cov << std::endl;    
-
     assist_free(ax);
     reb_simulation_free(r);
 
@@ -667,7 +665,7 @@ void create_sequences(std::vector<double>& times,
 
 int orbit_fit(struct assist_ephem* ephem,
 	      struct reb_particle& p0,
-		  double epoch, // Result from gauss
+	      double epoch, // Result from gauss
 	      std::vector<Observation>& detections, // In Observation
 	      std::vector<residuals>& resid_vec, // Compute as part of run
 	      std::vector<partials>& partials_vec, // Compute as part of run
@@ -1138,44 +1136,17 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 	times_full[i] = detections_full[i].epoch;
     }
 
-    // std::vector<detection> detections;
-    // std::vector<double> times;
+    size_t start_i = detections_full.size();
 
-    // std::vector<detection> detections_full;
-    // std::vector<double> times_full;
-
-    // // Read the observations
-    // char detections_filename[128]; 
-    // sscanf(ephemeris_filename, "%s", detections_filename);
-    // read_detections(detections_filename, detections_full, times_full);
-
-    // Seed the random number generator    
-    std::random_device rd;
-    std::mt19937 gen(rd());
-
-    std::uniform_int_distribution<size_t> intDistribution(detections_full.size()*0.9, detections_full.size()-1);
-
-    // Generate and print a random integer
-    size_t random_i = intDistribution(gen);
-    random_i = detections_full.size();
-
-    // This should be a little more clever and flexible
     // First find a triple of detections in the full data set.
-    //std::vector<std::vector<size_t>> idx = IOD_indices_v2(detections_full, 5.0, 30.0, 10.0, 50.0, 10, random_i);
-    std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, random_i);    
-
-    /*
-    // Seed the random number generator (only needs to be done once)
-    // Shuffle the vector
-    std::shuffle(idx.begin(), idx.end(), gen);
-    */
+    std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);    
 
     int success=0;
     size_t iters;
     double chi2_final;
+    double result_epoch;
     size_t dof;
     struct reb_particle p1;
-    //std::optional<std::vector<gauss_soln>> res;
         
     for(size_t i=0; i<idx.size(); i++){
 	
@@ -1276,7 +1247,7 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 
 	if(flag == 0){
 	    printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
-	    print_initial_condition(p1, 2460611.0); // res.value()[0].epoch); REMOVE CONSTANT!!!
+	    print_initial_condition(p1, res.value()[0].epoch);
 	}else{
 	    printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
 	    continue;
@@ -1340,6 +1311,7 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 	    // print_initial_condition(p1, res.value()[0].epoch);
 	    //std::cout << "cov: \n" << cov2 << std::endl;
 	    Eigen::MatrixXd obs_cov2(6, 6);
+	    result_epoch = res.value()[0].epoch;
 	    predict(
 			ephem,
 			p1,
@@ -1377,6 +1349,7 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 
     struct OrbfitResult result;
 
+    result.epoch = result_epoch;
     result.csq = chi2_final;
     result.ndof = dof;
     result.state[0] = p1.x;
@@ -1397,10 +1370,114 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
     // Later issues:
     // 1. Deflection of light
     
-    assist_ephem_free(ephem);
+    //assist_ephem_free(ephem);
 
     return result;
 
+}
+
+    //std::optional<struct OrbfitResult> run_from_vector_with_ic(struct assist_ephem* ephem, gauss_soln soln, std::vector<Observation>& detections) {
+std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ephem, gauss_soln soln, std::vector<Observation>& detections) {    
+
+    int success=0;
+    size_t iters;
+    double chi2_final;
+    double result_epoch;
+    size_t dof;
+
+    printf("%d\n", soln.niter);
+    fflush(stdout);
+
+    std::vector<residuals> resid_vec(detections.size());
+    std::vector<partials> partials_vec(detections.size());
+
+    // Make these parameters flexible.
+    size_t iter_max = 100;
+    double eps = 1e-12;
+
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
+    int flag;
+
+    reb_particle p1;
+
+    p1.x = soln.x;
+    p1.y = soln.y;
+    p1.z = soln.z;    
+    p1.vx = soln.vx;
+    p1.vy = soln.vy;
+    p1.vz = soln.vz;
+    double epoch = soln.epoch;
+
+    flag = orbit_fit(
+		     ephem,
+		     p1,
+		     epoch, 
+		     detections,
+		     resid_vec,
+		     partials_vec,
+		     iters,
+		     chi2_final,
+		     cov,
+		     eps,
+		     iter_max
+		     );
+	
+    dof = 2*detections.size()-6;
+
+    printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);    
+
+    if(flag == 0){
+
+	Eigen::MatrixXd obs_cov(6, 6);
+	predict(
+		ephem,
+		p1,
+		epoch,
+		detections[0],
+		cov,
+		obs_cov
+		);
+	std::cout << "obs_cov: \n" << obs_cov << std::endl;
+
+	size_t last = detections.size()-1;
+	predict(
+		ephem,
+		p1,
+		epoch,
+		detections[last],
+		cov,
+		obs_cov
+		);
+	std::cout << "obs_cov: \n" << obs_cov << std::endl;
+
+	//struct OrbfitResult result;
+	struct gauss_soln result;	
+
+	result.epoch = result_epoch;
+	result.csq = chi2_final;
+	result.ndof = dof;
+	/*
+	result.state[0] = p1.x;
+	result.state[1] = p1.y;
+	result.state[2] = p1.z;    
+	result.state[3] = p1.vx;
+	result.state[4] = p1.vy;
+	result.state[5] = p1.vz;
+	*/
+	result.x = p1.x;
+	result.y = p1.y;
+	result.z = p1.z;    
+	result.vx = p1.vx;
+	result.vy = p1.vy;
+	result.vz = p1.vz;
+	
+	result.niter = iters;
+
+	return result;
+	
+    }else{
+        return std::nullopt;
+    }
 }
     
 #ifdef Py_PYTHON_H
@@ -1423,17 +1500,11 @@ static void orbit_fit_bindings(py::module& m) {
     m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Main function)pbdoc");
     m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");    
     m.def("run_from_files", &orbit_fit::run_from_files, R"pbdoc(Runner function)pbdoc");
-    m.def("run_from_vector", &orbit_fit::run_from_vector, R"pbdoc(Runner function v2)pbdoc");    
-    m.def("gauss", &gauss);
+    m.def("run_from_vector", &orbit_fit::run_from_vector, R"pbdoc(Runner function v2)pbdoc");
+    m.def("run_from_vector_with_ic", &orbit_fit::run_from_vector_with_ic, R"pbdoc(Runner function ic version)pbdoc");        
+    m.def("gauss", &orbit_fit::gauss);
 }
 #endif /* Py_PYTHON_H */
 
 } // namespace: orbit_fit
 
-/*
-struct assist_ephem {
-    double jd_ref;
-    struct jpl_s* jpl;
-    struct spk_s* spl;
-};
-*/
