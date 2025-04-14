@@ -893,7 +893,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
     }
 
     // Generate and print a random integer
-    size_t start_i = detections_full.size();
+    size_t start_i = detections_full.size() - 1;
 
     // This should be a little more clever and flexible
     // First find a triple of detections in the full data set.
@@ -1004,7 +1004,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
 	if(flag == 0){
 	    printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
-	    print_initial_condition(p1, 2460611.0); // res.value()[0].epoch); REMOVE CONSTANT!!!
+	    print_initial_condition(p1, res.value()[0].epoch);
 	}else{
 	    printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
 	    continue;
@@ -1030,7 +1030,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 		cov,
 		obs_cov
 	);
-	//std::cout << "obs_cov: \n" << obs_cov << std::endl;
+	// std::cout << "obs_cov: \n" << obs_cov << std::endl;
 
 	num = detections_full.size();
 
@@ -1276,7 +1276,7 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 
 	if(flag == 0){
 	    printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
-	    print_initial_condition(p1, 2460611.0); // res.value()[0].epoch); REMOVE CONSTANT!!!
+	    print_initial_condition(p1, res.value()[0].epoch);
 	}else{
 	    printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
 	    continue;
@@ -1396,8 +1396,6 @@ struct OrbfitResult run_from_vector(struct assist_ephem* ephem, std::vector<Obse
 
     // Later issues:
     // 1. Deflection of light
-    
-    assist_ephem_free(ephem);
 
     return result;
 
