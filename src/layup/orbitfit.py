@@ -207,7 +207,6 @@ def orbitfit_cli(
                 num_workers=num_workers,
                 primary_id_column_name=_primary_id_column_name,
             )
-            raise Exception("bleh")
         except Exception as e:
             logger.error(f"Error processing chunk: {e}")
             import psutil
