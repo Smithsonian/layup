@@ -200,9 +200,16 @@ def orbitfit_cli(
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
-        fit_orbits = orbitfit(
-            data, cache_dir=cache_dir, num_workers=num_workers, primary_id_column_name=_primary_id_column_name
-        )
+        try:
+            fit_orbits = orbitfit(
+                data,
+                cache_dir=cache_dir,
+                num_workers=num_workers,
+                primary_id_column_name=_primary_id_column_name,
+            )
+        except Exception as e:
+            logger.error(f"Error processing chunk: {e}")
+            continue
 
         if output_file_format == "hdf5":
             write_hdf5(fit_orbits, output_file, key="data")
