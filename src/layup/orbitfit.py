@@ -209,6 +209,18 @@ def orbitfit_cli(
             )
         except Exception as e:
             logger.error(f"Error processing chunk: {e}")
+            import psutil
+            process = psutil.Process()
+
+            # Get memory info in bytes
+            memory_info = process.memory_info()
+            memory_usage_bytes = memory_info.rss
+
+            # Convert to megabytes
+            memory_usage_mb = memory_usage_bytes / (1024 * 1024)
+            print(f"Current memory usage: {memory_usage_mb:.2f} MB")
+            total_memory = psutil.virtual_memory().total
+            print(f"Total memory: {total_memory / (1024 ** 3):.2f} GB")
             continue
 
         if output_file_format == "hdf5":
