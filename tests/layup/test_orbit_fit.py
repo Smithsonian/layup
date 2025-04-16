@@ -25,7 +25,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
 
     orbitfit_cli(
-        input=get_test_filepath("2_random_mpc_ADES_provIDs.csv"),
+        input=get_test_filepath("1_random_mpc_ADES_provIDs_micro.csv"),
         input_file_format="ADES_csv",
         output_file_stem=output_file_stem,
         output_file_format="csv",
@@ -41,7 +41,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
 
     # Read the input data and get the provID column
     input_csv_reader = CSVDataReader(
-        get_test_filepath("2_random_mpc_ADES_provIDs.csv"), "csv", primary_id_column_name="provID"
+        get_test_filepath("1_random_mpc_ADES_provIDs_micro.csv"), "csv", primary_id_column_name="provID"
     )
     input_data = input_csv_reader.read_rows()
 
