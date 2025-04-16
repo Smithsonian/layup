@@ -210,6 +210,7 @@ def orbitfit_cli(
         except Exception as e:
             logger.error(f"Error processing chunk: {e}")
             import psutil
+
             process = psutil.Process()
 
             # Get memory info in bytes
