@@ -858,8 +858,6 @@ std::optional<struct assist_ephem*> get_ephem(std::string cache_dir) {
 }
     
 struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observation>& detections_full) {
-	std::cout << cache_dir << std::endl;
-
     std::string ephem_kernel = cache_dir + "/linux_p1550p2650.440";
     std::string small_bodies_kernel = cache_dir + "/sb441-n16.bsp";
 
