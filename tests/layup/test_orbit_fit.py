@@ -13,8 +13,8 @@ from layup.utilities.file_io.CSVReader import CSVDataReader
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (7_600, 1),
-        (3_800, 2),
+        (630, 1),
+        (630, 2),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
