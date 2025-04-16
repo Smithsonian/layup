@@ -207,6 +207,7 @@ def orbitfit_cli(
                 num_workers=num_workers,
                 primary_id_column_name=_primary_id_column_name,
             )
+            raise Exception("bleh")
         except Exception as e:
             logger.error(f"Error processing chunk: {e}")
             import psutil
@@ -220,6 +221,8 @@ def orbitfit_cli(
             # Convert to megabytes
             memory_usage_mb = memory_usage_bytes / (1024 * 1024)
             print(f"Current memory usage: {memory_usage_mb:.2f} MB")
+            available_memory = psutil.virtual_memory().available
+            print(f"Available memory: {available_memory / (1024 ** 2):.2f} MB")
             total_memory = psutil.virtual_memory().total
             print(f"Total memory: {total_memory / (1024 ** 3):.2f} GB")
             continue
