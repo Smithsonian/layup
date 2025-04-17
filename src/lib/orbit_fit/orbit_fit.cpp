@@ -861,10 +861,14 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
     std::string ephem_kernel = cache_dir + "/linux_p1550p2650.440";
     std::string small_bodies_kernel = cache_dir + "/sb441-n16.bsp";
 
-    char* ephem_kernel_char = new char[ephem_kernel.length()];
-    std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
-    char* small_bodies_kernel_char = new char[small_bodies_kernel.length()];
-    std::strcpy(small_bodies_kernel_char, small_bodies_kernel.c_str());
+    // Allocate space for the string plus the null-terminator
+    char* ephem_kernel_char = new char[ephem_kernel.length() + 1];
+    std::strncpy(ephem_kernel_char, ephem_kernel.c_str(), ephem_kernel.length());
+    ephem_kernel_char[ephem_kernel.length()] = '\0'; // Ensure null-termination
+
+    char* small_bodies_kernel_char = new char[small_bodies_kernel.length() + 1];
+    std::strncpy(small_bodies_kernel_char, small_bodies_kernel.c_str(), small_bodies_kernel.length());
+    small_bodies_kernel_char[small_bodies_kernel.length()] = '\0'; // Ensure null-termination
 
     struct assist_ephem* ephem = assist_ephem_create(ephem_kernel_char, small_bodies_kernel_char); 
     if (!ephem){
