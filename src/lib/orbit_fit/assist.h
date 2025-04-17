@@ -1,8 +1,8 @@
 /**
  * @file    assist.h
  * @brief   ASSIST API definition.
- * @author  Hanno Rein 
- * 
+ * @author  Hanno Rein
+ *
  * @section     LICENSE
  * Copyright (c) 2022 Matthew Holman, Hanno Rein
  *
@@ -29,36 +29,38 @@
 #include <limits.h>
 #include "rebound.h"
 #ifndef ASSISTGITHASH
-#define ASSISTGITHASH notavailable0000000000000000000000000001 
+#define ASSISTGITHASH notavailable0000000000000000000000000001
 #endif // ASSISTGITHASH
 
-extern const char* assist_build_str;      ///< Date and time build string.
-extern const char* assist_version_str;    ///< Version string.
-extern const char* assist_githash_str;    ///< Current git hash.
+extern const char *assist_build_str;   ///< Date and time build string.
+extern const char *assist_version_str; ///< Version string.
+extern const char *assist_githash_str; ///< Current git hash.
 
-typedef struct {
+typedef struct
+{
     double A1;
     double A2;
-    double A3;        
+    double A3;
 } particle_params;
 
-
 // ENUM to enable/disable different forces
-enum ASSIST_FORCES { 
-    ASSIST_FORCE_NONE               = 0,
-    ASSIST_FORCE_SUN                = 0x01,
-    ASSIST_FORCE_PLANETS            = 0x02,
-    ASSIST_FORCE_ASTEROIDS          = 0x04,
-    ASSIST_FORCE_NON_GRAVITATIONAL  = 0x08, 
-    ASSIST_FORCE_EARTH_HARMONICS    = 0x10,
-    ASSIST_FORCE_SUN_HARMONICS      = 0x20,
-    ASSIST_FORCE_GR_EIH             = 0x40,
-    ASSIST_FORCE_GR_SIMPLE          = 0x80,
-    ASSIST_FORCE_GR_POTENTIAL       = 0x100,
+enum ASSIST_FORCES
+{
+    ASSIST_FORCE_NONE = 0,
+    ASSIST_FORCE_SUN = 0x01,
+    ASSIST_FORCE_PLANETS = 0x02,
+    ASSIST_FORCE_ASTEROIDS = 0x04,
+    ASSIST_FORCE_NON_GRAVITATIONAL = 0x08,
+    ASSIST_FORCE_EARTH_HARMONICS = 0x10,
+    ASSIST_FORCE_SUN_HARMONICS = 0x20,
+    ASSIST_FORCE_GR_EIH = 0x40,
+    ASSIST_FORCE_GR_SIMPLE = 0x80,
+    ASSIST_FORCE_GR_POTENTIAL = 0x100,
 };
 
 // Error code. Corresponding messages are in assist.c
-enum ASSIST_STATUS{
+enum ASSIST_STATUS
+{
     ASSIST_SUCCESS,
     ASSIST_ERROR_EPHEM_FILE,
     ASSIST_ERROR_AST_FILE,
@@ -68,31 +70,34 @@ enum ASSIST_STATUS{
     ASSIST_ERROR_N,
 };
 
-extern const char* assist_error_messages[];
+extern const char *assist_error_messages[];
 
-enum ASSIST_BODY {
-    ASSIST_BODY_SUN         = 0,
-    ASSIST_BODY_MERCURY     = 1,
-    ASSIST_BODY_VENUS       = 2,
-    ASSIST_BODY_EARTH       = 3,
-    ASSIST_BODY_MOON        = 4,
-    ASSIST_BODY_MARS        = 5,
-    ASSIST_BODY_JUPITER     = 6,
-    ASSIST_BODY_SATURN      = 7,
-    ASSIST_BODY_URANUS      = 8,
-    ASSIST_BODY_NEPTUNE     = 9,
-    ASSIST_BODY_PLUTO       = 10,
+enum ASSIST_BODY
+{
+    ASSIST_BODY_SUN = 0,
+    ASSIST_BODY_MERCURY = 1,
+    ASSIST_BODY_VENUS = 2,
+    ASSIST_BODY_EARTH = 3,
+    ASSIST_BODY_MOON = 4,
+    ASSIST_BODY_MARS = 5,
+    ASSIST_BODY_JUPITER = 6,
+    ASSIST_BODY_SATURN = 7,
+    ASSIST_BODY_URANUS = 8,
+    ASSIST_BODY_NEPTUNE = 9,
+    ASSIST_BODY_PLUTO = 10,
 
-    ASSIST_BODY_NPLANETS    = 11,
+    ASSIST_BODY_NPLANETS = 11,
 };
 
-struct assist_ephem {
+struct assist_ephem
+{
     double jd_ref;
-    struct jpl_s* jpl;
-    struct spk_s* spl;
+    struct jpl_s *jpl;
+    struct spk_s *spl;
 };
 
-struct assist_cache_item {
+struct assist_cache_item
+{
     double GM;
     double x;
     double y;
@@ -105,33 +110,34 @@ struct assist_cache_item {
     double az;
 };
 
-
-struct assist_ephem_cache {
-    double* t;
+struct assist_ephem_cache
+{
+    double *t;
     double dt_sign;
-    int* index;
-    struct assist_cache_item* items;
+    int *index;
+    struct assist_cache_item *items;
 };
 
-struct assist_extras {
-    struct reb_simulation* sim;
-    struct assist_ephem* ephem;
-    struct assist_ephem_cache* ephem_cache;
-    int extras_should_free_ephem;   // Internal use only. Set to 1 if extras allocated memory for ephem.
+struct assist_extras
+{
+    struct reb_simulation *sim;
+    struct assist_ephem *ephem;
+    struct assist_ephem_cache *ephem_cache;
+    int extras_should_free_ephem; // Internal use only. Set to 1 if extras allocated memory for ephem.
     int geocentric;
-    struct reb_particle* last_state;
-    struct reb_particle* current_state;
-    //particle_params* particle_params;
-    double* particle_params;
+    struct reb_particle *last_state;
+    struct reb_particle *current_state;
+    // particle_params* particle_params;
+    double *particle_params;
     int steps_done;
     int forces;
     int gr_eih_sources;
     // Parameters for non-gravitational forces. See forces.c
-	double alpha;
-	double nk;
-	double nm;
-	double nn;
-	double r0;
+    double alpha;
+    double nk;
+    double nm;
+    double nn;
+    double r0;
 };
 
 /**
@@ -139,40 +145,39 @@ struct assist_extras {
  * @param sim Pointer to the reb_simulation on which to add ASSIST functionality.
  * @return Pointer to an assist_extras structure.
  */
-struct assist_extras* assist_attach(struct reb_simulation* sim, struct assist_ephem* ephem);
+struct assist_extras *assist_attach(struct reb_simulation *sim, struct assist_ephem *ephem);
 
 /**
  * @brief Frees all memory allocated by ASSIST instance.
  * @details Should be called after simulation is done if memory is a concern.
  * @param assist The assist_extras pointer returned from the initial call to assist_attach.
  */
-void assist_free(struct assist_extras* assist);
+void assist_free(struct assist_extras *assist);
 
-void assist_ephem_free(struct assist_ephem* ephem);
+void assist_ephem_free(struct assist_ephem *ephem);
 
 /**
  * @brief Detaches ASSIST from simulation, resetting all the simulation's function pointers that ASSIST has set.
  * @details This does not free the memory allocated by ASSIST (call assist_free).
  * @param sim Pointer to the simulation from which to remove ASSIST
  */
-void assist_detach(struct reb_simulation* sim, struct assist_extras* assist);
+void assist_detach(struct reb_simulation *sim, struct assist_extras *assist);
 
 /**
  * @brief Output an error message.
- * @details This function should be used if an error occurs rather than simply using print. 
+ * @details This function should be used if an error occurs rather than simply using print.
  *          The message will be passed to python.
  * @param assist The assist_extras pointer.
  * @param msg The error message.
  */
-void assist_error(struct assist_extras* assist, const char* const msg);
+void assist_error(struct assist_extras *assist, const char *const msg);
 
-
-int assist_interpolate_simulation(struct reb_simulation* sim1, struct reb_simulation* sim2, double h);
-struct reb_simulation* assist_create_interpolated_simulation(struct reb_simulationarchive* sa, double t);
-void assist_integrate_or_interpolate(struct assist_extras* ax, double t);
+int assist_interpolate_simulation(struct reb_simulation *sim1, struct reb_simulation *sim2, double h);
+struct reb_simulation *assist_create_interpolated_simulation(struct reb_simulationarchive *sa, double t);
+void assist_integrate_or_interpolate(struct assist_extras *ax, double t);
 
 // Find particle position and velocity based on ephemeris data
-struct reb_particle assist_get_particle(struct assist_ephem* ephem, const int particle_id, const double t);
+struct reb_particle assist_get_particle(struct assist_ephem *ephem, const int particle_id, const double t);
 
 /**
  * @brief Find particle position and velocity based on ephemeris data.
@@ -182,18 +187,17 @@ struct reb_particle assist_get_particle(struct assist_ephem* ephem, const int pa
  * @param t The time at which to find the particle.
  * @param error Pointer to an integer to store the error code.
  */
-struct reb_particle assist_get_particle_with_error(struct assist_ephem* ephem, const int particle_id, const double t, int* error);
+struct reb_particle assist_get_particle_with_error(struct assist_ephem *ephem, const int particle_id, const double t, int *error);
 
 // Functions called from python:
-void assist_init(struct assist_extras* assist, struct reb_simulation* sim, struct assist_ephem* ephem);
-void assist_free_pointers(struct assist_extras* assist);
+void assist_init(struct assist_extras *assist, struct reb_simulation *sim, struct assist_ephem *ephem);
+void assist_free_pointers(struct assist_extras *assist);
 
+void test_vary(struct reb_simulation *sim, FILE *vfile);
 
-void test_vary(struct reb_simulation* sim, FILE *vfile);
+void test_vary_2nd(struct reb_simulation *sim, FILE *vfile);
 
-void test_vary_2nd(struct reb_simulation* sim, FILE *vfile);
-
-struct assist_ephem* assist_ephem_create(char *planets_file_name, char *asteroids_file_name);
+struct assist_ephem *assist_ephem_create(char *planets_file_name, char *asteroids_file_name);
 
 /**
  * @brief Initialize an ASSIST ephemeris structure.
@@ -206,6 +210,6 @@ struct assist_ephem* assist_ephem_create(char *planets_file_name, char *asteroid
  * @return ASSIST_SUCCESS if successful, otherwise an error code.
  */
 ///
-int assist_ephem_init(struct assist_ephem* ephem, char *user_planets_path, char *user_asteroids_path);
+int assist_ephem_init(struct assist_ephem *ephem, char *user_planets_path, char *user_asteroids_path);
 
 #endif
