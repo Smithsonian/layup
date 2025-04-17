@@ -35,6 +35,7 @@ jobs:
         git submodule update --init
         pip install -e .[dev]
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        layup bootstrap
     - name: List dependencies
       run: |
         pip list

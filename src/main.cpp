@@ -33,6 +33,7 @@ PYBIND11_MODULE(_core, m) {
     )pbdoc");
 
     orbit_fit::detection_bindings(m);
+    orbit_fit::gauss_bindings(m);
     orbit_fit::orbit_fit_bindings(m);
     orbit_fit::orbit_fit_result_bindings(m);
 

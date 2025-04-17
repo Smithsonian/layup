@@ -13,8 +13,8 @@ from layup.utilities.file_io.CSVReader import CSVDataReader
 @pytest.mark.parametrize(
     "chunk_size, num_workers",
     [
-        (10_0000, 1),
-        (20_000, 10),
+        (100_000, 1),
+        (20_000, 2),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
@@ -24,14 +24,6 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     output_file_stem = "test_output"
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
 
-    # Create CLI args for the cache directory path
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--ar_data_file_path", type=str, required=True)
-
-    args = parser.parse_args(
-        ["--ar_data_file_path", "cache_dir"],  # TODO use real cache dir
-    )
-
     orbitfit_cli(
         input=get_test_filepath("100_random_mpc_ADES_provIDs.csv"),
         input_file_format="ADES_csv",
@@ -39,7 +31,6 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         output_file_format="csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
-        cli_args=args,
     )
 
     # Verify the orbit fit produced an output file

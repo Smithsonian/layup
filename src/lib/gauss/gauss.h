@@ -1,10 +1,17 @@
 struct gauss_soln {
 
-    gauss_soln() : root(), epoch(), x(), y(), z(), vx(), vy(), vz(){
+gauss_soln() : root(), epoch(), csq(), dof(), iters(), x(), y(), z(), vx(), vy(), vz(), method(), cov(){
     }
 
+    std::string method;
+
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
     double root; 
     double epoch;
+    double csq;
+    int dof;
+    int iters;
+    int flag;    
 
     double x; 
     double y;
@@ -24,7 +31,8 @@ struct gauss_soln {
 	vy = _vy;
 	vz = _vz;
     }    
-
+    
 };
 
-std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, detection &o1_in, detection &o2_in, detection &o3_in, double min_distance, double SPEED_OF_LIGHT);
+std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observation &o1_in, orbit_fit::Observation &o2_in, orbit_fit::Observation &o3_in, double min_distance, double SPEED_OF_LIGHT);
+

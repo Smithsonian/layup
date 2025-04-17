@@ -6,6 +6,7 @@ from typing import Literal
 import numpy as np
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
+import pooch
 
 from layup.routines import Observation, run_from_files
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
@@ -63,8 +64,15 @@ def _orbitfit(data, cache_dir: str):
         )
         for d in data
     ]
+
+    # if cache_dir is not provided, use the default os_cache
+    if cache_dir is None:
+        kernels_loc = pooch.os_cache("layup")
+    else:
+        kernels_loc = cache_dir
+
     # Perform the orbit fitting
-    res = run_from_files(cache_dir, observations)
+    res = run_from_files(str(kernels_loc), observations)
 
     # Populate our output structured array with the orbit fit results
     output = np.array(
@@ -182,7 +190,10 @@ def orbitfit_cli(
 
     chunks = _create_chunks(reader, chunk_size)
 
-    cache_dir = cli_args.ar_data_file_path
+    if cli_args is not None:
+        cache_dir = cli_args.ar_data_file_path
+    else:
+        cache_dir = None
 
     for chunk in chunks:
         data = reader.read_objects(chunk)
@@ -190,7 +201,10 @@ def orbitfit_cli(
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
         fit_orbits = orbitfit(
-            data, cache_dir=cache_dir, num_workers=num_workers, primary_id_column_name=_primary_id_column_name
+            data,
+            cache_dir=cache_dir,
+            num_workers=num_workers,
+            primary_id_column_name=_primary_id_column_name,
         )
 
         if output_file_format == "hdf5":
