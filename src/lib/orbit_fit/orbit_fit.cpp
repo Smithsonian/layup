@@ -55,8 +55,6 @@
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
-//#include "gauss_soln.cpp"
-// #include "../detection.cpp" // need to figure out the dependency tree here...
 #include "orbit_fit_result.cpp"
 
 extern "C"{
@@ -664,7 +662,6 @@ int orbit_fit(struct assist_ephem* ephem,
 	      size_t& iters, // runtime
 	      double& chi2_final, // result
 	      Eigen::MatrixXd& cov,
-	      //Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>& cov, // result
 	      double eps, //constant
 	      size_t iter_max){ // runtime
 
@@ -743,12 +740,6 @@ int orbit_fit(struct assist_ephem* ephem,
 	    lambda *= 2.0;
 	    
 	}
-
-	/*
-	std::cout   << "chi2: " << chi2_d << std::endl;
-	std::cout << "lambda: " << lambda << std::endl;
-	std::cout << "dX\n" << dX << std::endl;
-	*/
 
 	size_t ndof = detections.size()*2 - 6;
 	double thresh = 10;
@@ -964,9 +955,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
 	Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
 	int flag;
-	//size_t iters;
-
-	//struct reb_particle p1;
 
 	p1.x = res.value()[0].x;
 	p1.y = res.value()[0].y;
@@ -1384,8 +1372,6 @@ std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem* ep
 		     );
 	
     dof = 2*detections.size()-6;
-
-    //printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);    
 
     if(flag == 0){
 

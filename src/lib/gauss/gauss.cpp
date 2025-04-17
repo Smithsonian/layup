@@ -32,14 +32,11 @@ namespace py = pybind11;
 #include <complex>
 #include "../detection.cpp"
 
-//#include <chrono>
-
 namespace orbit_fit {
     
 #include "gauss.h"
 
 using namespace Eigen;
-//using std::cout;
 
 // template for gauss
 // pass in three detections
@@ -143,7 +140,6 @@ std::optional<std::vector<gauss_soln>> gauss(double MU_BARY, orbit_fit::Observat
 
     std::vector<gauss_soln> res;
     for (double root : roots) {
-	//std::cout << "root here: " << root << std::endl;
         double root3 = std::pow(root, 3);
 
         // Compute a1
