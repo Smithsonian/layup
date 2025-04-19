@@ -9,6 +9,8 @@ from layup.utilities.layup_configs import LayupConfigs
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 
+AU_M = 149597870700
+AU_KM = AU_M / 1000.0
 
 def process_data(data, n_workers, func, **kwargs):
     """
@@ -142,9 +144,11 @@ class LayupObservatory(SorchaObservatory):
         for row in data:
             obscode = row["stn"]
             coords = self.ObservatoryXYZ.get(obscode, None)
+
             if coords is None or None in coords or np.isnan(coords).any():
                 # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
                 # TODO most of the the time this is a moving observatory, and we should handle that case
+                print('fail:', obscode)
                 if fail_on_missing:
                     raise ValueError(f"Observatory {obscode} does not have a known fixed position.")
                 bary_obs_pos, bary_obs_vel = [np.nan] * 3, [np.nan] * 3
@@ -167,6 +171,8 @@ class LayupObservatory(SorchaObservatory):
                         )
                     bary_obs_pos, bary_obs_vel = [np.nan] * 3, [np.nan] * 3
             # Create a structured array for our barycentric coordinates with appropriate dtypes.
+            bary_obs_pos /= AU_KM
+            bary_obs_vel *= ((24*60*60)/AU_KM)
             x, y, z = bary_obs_pos[0], bary_obs_pos[1], bary_obs_pos[2]
             vx, vy, vz = bary_obs_vel[0], bary_obs_vel[1], bary_obs_vel[2]
             output_dtype = [
@@ -178,6 +184,8 @@ class LayupObservatory(SorchaObservatory):
                 ("vz", "<f8"),
             ]
             res.append(np.array((x, y, z, vx, vy, vz), dtype=output_dtype))
+            #res.append([x, y, z, vx, vy, vz])
 
         # Combine all of our results into a single structured array
         return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
+        #return np.array(res, dtype=float) if len(res) > 1 else np.array(res[0], dtype=float)

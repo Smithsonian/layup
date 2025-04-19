@@ -56,14 +56,16 @@ def _orbitfit(data, cache_dir: str):
     # Convert the astrometry data to a list of Observations
     observations = [
         Observation.from_astrometry(
-            d["ra"],
-            d["dec"],
+            d["ra"]*np.pi/180.,
+            d["dec"]*np.pi/180.,
             spice.j2000() + d["et"] / (24 * 60 * 60),  # Convert ET to JD TDB
             [d["x"], d["y"], d["z"]],  # Barycentric position
             [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
         )
         for d in data
     ]
+
+    print(observations[0].epoch, observations[0].observer_position, data[0]['stn'], observations[0].observation_type)
 
     # if cache_dir is not provided, use the default os_cache
     if cache_dir is None:
@@ -110,10 +112,12 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
 
     layup_observatory = LayupObservatory()
 
-    et_col = np.array([spice.str2et(row["obstime"]) / (24 * 60 * 60) for row in data], dtype="<f8")
+    #et_col = np.array([spice.str2et(row["obstime"]) / (24 * 60 * 60) for row in data], dtype="<f8")
+    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")    
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
+
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
     return process_data_by_id(
@@ -153,6 +157,7 @@ def orbitfit_cli(
     _primary_id_column_name = "provID"
 
     input_file = Path(input)
+
     if output_file_format == "csv":
         output_file = Path(f"{output_file_stem}.{output_file_format.lower()}")
     else:

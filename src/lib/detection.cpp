@@ -4,6 +4,11 @@
 #include <Eigen/Dense>
 #include <cmath>
 
+#include <iostream>
+#include <cstdlib>
+#include <cstdio>
+
+using std::cout;
 #include <pybind11/pybind11.h>
 namespace py = pybind11;
 
@@ -21,6 +26,7 @@ struct AstrometryObservation {
     AstrometryObservation() = default;
     // Constructor: takes ra and dec (in radians) and computes rho_hat.
     AstrometryObservation(double ra, double dec) {
+
         rho_hat.x() = std::cos(dec) * std::cos(ra);
         rho_hat.y() = std::cos(dec) * std::sin(ra);
         rho_hat.z() = std::sin(dec);
@@ -46,6 +52,7 @@ struct AstrometryObservation {
         d_vec.y() = d[1];
         d_vec.z() = d[2];
     }
+
 };
 
 struct StreakObservation {
@@ -155,8 +162,8 @@ public:
     {
         Observation obs(epoch_val, obs_position, obs_velocity);
         obs.observation_type = AstrometryObservation(ra, dec);
-        obs.ra_unc = 1.0;
-        obs.dec_unc = 1.0;
+        obs.ra_unc = 1.0/206265;
+        obs.dec_unc = 1.0/206265;
         return obs;
     }
 
@@ -177,14 +184,16 @@ public:
 };
 
 
-static void detection_bindings(py::module& m) {
+static void detection_bindings(py::module& m) { 
+    // Bind AstrometryObservation type.    
     py::class_<AstrometryObservation>(m, "AstrometryObservation")
         .def(py::init<double, double>(),
              py::arg("ra"), py::arg("dec"))
         .def(py::init<std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
-        .def_readonly("rho_hat", &AstrometryObservation::rho_hat,
-                      "Computed unit direction vector (rho_hat)");
-
+        .def_readwrite("rho_hat", &AstrometryObservation::rho_hat,
+                      "Computed unit direction vector (rho_hat)")
+	.def_readwrite("a_vec", &AstrometryObservation::a_vec, "RA unit vector")
+	.def_readwrite("d_vec", &AstrometryObservation::d_vec, "Dec unit vector");    
 
     // Bind StreakObservation type.
     py::class_<StreakObservation>(m, "StreakObservation")

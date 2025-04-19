@@ -165,10 +165,16 @@ void read_detections(const char *data_file_name,
 	this_det.dec_unc = (ast_unc/206265);	
 
 	// compute A and D vectors, the local tangent plane trick from Danby.
-		  
+
+	/*
 	double Ax =  theta_z;
 	double Ay =  0.0;
 	double Az = -theta_x;
+	*/
+
+	double Ax =  -theta_y;
+	double Ay =   theta_x;
+	double Az =   0.0;
 
 	double A = sqrt(Ax*Ax + Ay*Ay + Az*Az);
 	Ax /= A; Ay /= A; Az /= A;
@@ -177,9 +183,26 @@ void read_detections(const char *data_file_name,
 	this_det.Ay = Ay;
 	this_det.Az = Az;	
 
+	/*
 	double Dx = -theta_x*theta_y;
 	double Dy =  theta_x*theta_x + theta_z*theta_z;
 	double Dz = -theta_z*theta_y;
+	*/
+
+	double sd = theta_z;
+	double cd = sqrt(1-theta_z*theta_z);
+	double ca = theta_x/cd;
+	double sa = theta_y/cd;
+
+	double Dx = -sd*ca;
+	double Dy = -sd*sa;
+	double Dz = cd;
+
+	/*
+	double Dx = -theta_x*theta_y;
+	double Dy =  theta_x*theta_x + theta_z*theta_z;
+	double Dz = -theta_z*theta_y;
+	*/
 		  
 	double D = sqrt(Dx*Dx + Dy*Dy + Dz*Dz);
 	Dx /= D; Dy /= D; Dz /= D;
@@ -886,7 +909,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 
     // This should be a little more clever and flexible
     // First find a triple of detections in the full data set.
-    std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);    
+    std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 5, start_i);    
 
     int success=0;
     size_t iters;
@@ -907,6 +930,10 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	Observation d0 = detections_full[id0];
 	Observation d1 = detections_full[id1];
 	Observation d2 = detections_full[id2];
+
+	//printf("%lf %lf %lf\n", d0.epoch, d1.epoch, d2.epoch);
+	AstrometryObservation ast_obs = std::get<AstrometryObservation>(d0.observation_type);
+	//std::cout << ast_obs.a_vec << ast_obs.d_vec << std::endl;
 
 	// Put this in a better place
 	double GMtotal = 0.00029630927487993194;
@@ -954,7 +981,6 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	std::vector<double>::const_iterator last_t = times_full.begin() + end_index;
 	std::vector<double> times(first_t, last_t);
 
-
 	std::vector<residuals> resid_vec(detections.size());
 	std::vector<partials> partials_vec(detections.size());
 
@@ -974,6 +1000,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	p1.vx = res.value()[0].vx;
 	p1.vy = res.value()[0].vy;
 	p1.vz = res.value()[0].vz;
+	print_initial_condition(p1, res.value()[0].epoch);	
 
 	flag = orbit_fit(
 		ephem,
