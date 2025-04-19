@@ -65,8 +65,6 @@ def _orbitfit(data, cache_dir: str):
         for d in data
     ]
 
-    print(observations[0].epoch, observations[0].observer_position, data[0]['stn'], observations[0].observation_type)
-
     # if cache_dir is not provided, use the default os_cache
     if cache_dir is None:
         kernels_loc = pooch.os_cache("layup")

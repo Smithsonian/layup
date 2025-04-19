@@ -1019,7 +1019,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	dof = 2*detections.size()-6;
 
 	if(flag == 0){
-	    printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
+	    printf("stage 2 flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
 	    print_initial_condition(p1, res.value()[0].epoch);
 	}else{
 	    printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
@@ -1078,7 +1078,7 @@ struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observatio
 	);
 
 	if(flag == 0){
-	    printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
+	    printf("stage 3 flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
 	    Eigen::MatrixXd obs_cov2(6, 6);
 	    predict(
 			ephem,
