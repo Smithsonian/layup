@@ -15,6 +15,30 @@ namespace py = pybind11;
 // --- Observation Variant Types ---
 // Each variant computes a unit direction vector (rho_hat) from the provided ra and dec.
 
+
+/*
+	double Ax =  -theta_y;
+	double Ay =   theta_x;
+	double Az =   0.0;
+
+	double A = sqrt(Ax*Ax + Ay*Ay + Az*Az);
+	Ax /= A; Ay /= A; Az /= A;
+
+	this_det.Ax = Ax;
+	this_det.Ay = Ay;
+	this_det.Az = Az;	
+
+	double sd = theta_z;
+	double cd = sqrt(1-theta_z*theta_z);
+	double ca = theta_x/cd;
+	double sa = theta_y/cd;
+
+	double Dx = -sd*ca;
+	double Dy = -sd*sa;
+	double Dz = cd;
+*/
+
+
 namespace orbit_fit {
 
 struct AstrometryObservation {

@@ -171,8 +171,11 @@ class LayupObservatory(SorchaObservatory):
                         )
                     bary_obs_pos, bary_obs_vel = [np.nan] * 3, [np.nan] * 3
             # Create a structured array for our barycentric coordinates with appropriate dtypes.
+
+            # Needed to adjust the units here.
             bary_obs_pos /= AU_KM
             bary_obs_vel *= ((24*60*60)/AU_KM)
+            
             x, y, z = bary_obs_pos[0], bary_obs_pos[1], bary_obs_pos[2]
             vx, vy, vz = bary_obs_vel[0], bary_obs_vel[1], bary_obs_vel[2]
             output_dtype = [
@@ -184,8 +187,10 @@ class LayupObservatory(SorchaObservatory):
                 ("vz", "<f8"),
             ]
             res.append(np.array((x, y, z, vx, vy, vz), dtype=output_dtype))
+            # I found this confusing.  We might revisit.
             #res.append([x, y, z, vx, vy, vz])
 
         # Combine all of our results into a single structured array
         return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
+        # I also found this confusing.  We might revisit.
         #return np.array(res, dtype=float) if len(res) > 1 else np.array(res[0], dtype=float)

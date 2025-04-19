@@ -54,6 +54,9 @@ def _orbitfit(data, cache_dir: str):
         return np.array([], dtype=result_dtype)
 
     # Convert the astrometry data to a list of Observations
+    # Reminder to label the units.  Within an Observation struct,
+    # and internal to the C++ code in general, we are using
+    # radians.
     observations = [
         Observation.from_astrometry(
             d["ra"]*np.pi/180.,
@@ -110,6 +113,7 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
 
     layup_observatory = LayupObservatory()
 
+    # The units of et are seconds (from J2000).
     #et_col = np.array([spice.str2et(row["obstime"]) / (24 * 60 * 60) for row in data], dtype="<f8")
     et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")    
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
