@@ -54,10 +54,13 @@ def _orbitfit(data, cache_dir: str):
         return np.array([], dtype=result_dtype)
 
     # Convert the astrometry data to a list of Observations
+    # Reminder to label the units.  Within an Observation struct,
+    # and internal to the C++ code in general, we are using
+    # radians.
     observations = [
         Observation.from_astrometry(
-            d["ra"],
-            d["dec"],
+            d["ra"]*np.pi/180.,
+            d["dec"]*np.pi/180.,
             spice.j2000() + d["et"] / (24 * 60 * 60),  # Convert ET to JD TDB
             [d["x"], d["y"], d["z"]],  # Barycentric position
             [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
@@ -110,7 +113,8 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
 
     layup_observatory = LayupObservatory()
 
-    et_col = np.array([spice.str2et(row["obstime"]) / (24 * 60 * 60) for row in data], dtype="<f8")
+    # The units of et are seconds (from J2000).
+    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8") 
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
