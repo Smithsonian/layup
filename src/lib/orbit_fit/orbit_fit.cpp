@@ -852,30 +852,7 @@ namespace orbit_fit
     // radar: range and doppler
     // shift+stack
 
-    std::optional<struct assist_ephem *> get_ephem(std::string cache_dir)
-    {
-
-        std::string ephem_kernel = cache_dir + "linux_p1550p2650.440";
-        std::string small_bodies_kernel = cache_dir + "sb441-n16.bsp";
-
-        char *ephem_kernel_char = new char[ephem_kernel.length()];
-        std::strcpy(ephem_kernel_char, ephem_kernel.c_str());
-        char *small_bodies_kernel_char = new char[small_bodies_kernel.length()];
-        std::strcpy(small_bodies_kernel_char, small_bodies_kernel.c_str());
-
-        struct assist_ephem *ephem = assist_ephem_create(ephem_kernel_char, small_bodies_kernel_char);
-        if (!ephem)
-        {
-            printf("Cannot create ephemeris structure.\n");
-            return std::nullopt;
-        }
-        else
-        {
-            return ephem;
-        }
-    }
-
-    struct OrbfitResult run_from_files(std::string cache_dir, std::vector<Observation> &detections_full)
+    struct assist_ephem * get_ephem(std::string cache_dir)
     {
         std::string ephem_kernel = cache_dir + "/linux_p1550p2650.440";
         std::string small_bodies_kernel = cache_dir + "/sb441-n16.bsp";
@@ -895,6 +872,12 @@ namespace orbit_fit
             printf("Cannot create ephemeris structure.\n");
             exit(-1);
         }
+        return ephem;
+    }
+
+    struct OrbfitResult run_from_cache(std::string cache_dir, std::vector<Observation> &detections_full)
+    {
+        struct assist_ephem *ephem = get_ephem(cache_dir);
 
         std::vector<double> times_full(detections_full.size());
         for (int i = 0; i < times_full.size(); i++)
@@ -1376,9 +1359,8 @@ namespace orbit_fit
         return result;
     }
 
-    std::optional<struct gauss_soln> run_from_vector_with_ic(struct assist_ephem *ephem, gauss_soln soln, std::vector<Observation> &detections)
+    std::optional<struct gauss_soln> run_from_vector_with_initial_guess(struct assist_ephem *ephem, gauss_soln initial_guess, std::vector<Observation> &detections)
     {
-
         int success = 0;
         size_t iters;
         double chi2_final;
@@ -1396,13 +1378,13 @@ namespace orbit_fit
 
         reb_particle p1;
 
-        p1.x = soln.x;
-        p1.y = soln.y;
-        p1.z = soln.z;
-        p1.vx = soln.vx;
-        p1.vy = soln.vy;
-        p1.vz = soln.vz;
-        double epoch = soln.epoch;
+        p1.x = initial_guess.x;
+        p1.y = initial_guess.y;
+        p1.z = initial_guess.z;
+        p1.vx = initial_guess.vx;
+        p1.vy = initial_guess.vy;
+        p1.vz = initial_guess.vz;
+        double epoch = initial_guess.epoch;
 
         flag = orbit_fit(
             ephem,
@@ -1476,11 +1458,20 @@ namespace orbit_fit
         py::class_<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>>(m, "MatrixXd")
             .def(py::init<>());
         py::class_<assist_ephem>(m, "assist_ephem");
-        m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Main function)pbdoc");
+        m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Core orbit fit function.)pbdoc");
         m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");
-        m.def("run_from_files", &orbit_fit::run_from_files, R"pbdoc(Runner function)pbdoc");
-        m.def("run_from_vector", &orbit_fit::run_from_vector, R"pbdoc(Runner function v2)pbdoc");
-        m.def("run_from_vector_with_ic", &orbit_fit::run_from_vector_with_ic, R"pbdoc(Runner function ic version)pbdoc");
+        m.def("run_from_cache", &orbit_fit::run_from_cache, R"pbdoc(
+                Creates an ASSIST Objects from the kernel files in the provided
+                cache directory and runs orbit fit from the provided list of detections.
+                **POSSIBLY TO BE DEPRECATED**
+            )pbdoc");
+        m.def("run_from_vector", &orbit_fit::run_from_vector, R"pbdoc(
+                Takes an assist_ephem object and a vector of observations and runs orbit fit.
+            )pbdoc");
+        m.def("run_from_vector_with_initial_guess", &orbit_fit::run_from_vector_with_initial_guess, R"pbdoc(
+                Takes an assist_ephem object, a vector of observations and an initial guess
+                and runs orbit fit.
+            )pbdoc");
         m.def("predict", &orbit_fit::predict, R"pbdoc(predict)pbdoc");
     }
 #endif /* Py_PYTHON_H */

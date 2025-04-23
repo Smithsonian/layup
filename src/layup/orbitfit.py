@@ -8,7 +8,7 @@ import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 import pooch
 
-from layup.routines import Observation, run_from_files
+from layup.routines import Observation, run_from_vector, get_ephem
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -67,12 +67,12 @@ def _orbitfit(data, cache_dir: str):
 
     # if cache_dir is not provided, use the default os_cache
     if cache_dir is None:
-        kernels_loc = pooch.os_cache("layup")
+        kernels_loc = str(pooch.os_cache("layup"))
     else:
-        kernels_loc = cache_dir
+        kernels_loc = str(cache_dir)
 
     # Perform the orbit fitting
-    res = run_from_files(str(kernels_loc), observations)
+    res = run_from_vector(get_ephem(kernels_loc), observations)
 
     # Populate our output structured array with the orbit fit results
     output = np.array(
