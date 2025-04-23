@@ -10,6 +10,27 @@ namespace py = pybind11;
 // --- Observation Variant Types ---
 // Each variant computes a unit direction vector (rho_hat) from the provided ra and dec.
 
+
+/*
+    // This is the old code for the tangent plane vectors.
+    // It is not used in the new code, but is kept here for reference.
+    double Ax =  -theta_y;
+    double Ay =   theta_x;
+    double Az =   0.0;
+    double A = sqrt(Ax*Ax + Ay*Ay + Az*Az);
+    Ax /= A; Ay /= A; Az /= A;
+    this_det.Ax = Ax;
+    this_det.Ay = Ay;
+    this_det.Az = Az;
+    double sd = theta_z;
+    double cd = sqrt(1-theta_z*theta_z);
+    double ca = theta_x/cd;
+    double sa = theta_y/cd;
+    double Dx = -sd*ca;
+    double Dy = -sd*sa;
+    double Dz = cd;
+*/
+
 namespace orbit_fit
 {
 
@@ -162,8 +183,8 @@ namespace orbit_fit
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
             obs.observation_type = AstrometryObservation(ra, dec);
-            obs.ra_unc = 1.0;
-            obs.dec_unc = 1.0;
+            obs.ra_unc = 1.0/206265;
+            obs.dec_unc = 1.0/206265;
             return obs;
         }
 
@@ -188,8 +209,10 @@ namespace orbit_fit
             .def(py::init<double, double>(),
                  py::arg("ra"), py::arg("dec"))
             .def(py::init<std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
-            .def_readonly("rho_hat", &AstrometryObservation::rho_hat,
-                          "Computed unit direction vector (rho_hat)");
+            .def_readwrite("rho_hat", &AstrometryObservation::rho_hat,
+                "Computed unit direction vector (rho_hat)")
+            .def_readwrite("a_vec", &AstrometryObservation::a_vec, "RA unit vector")
+            .def_readwrite("d_vec", &AstrometryObservation::d_vec, "Dec unit vector");
 
         // Bind StreakObservation type.
         py::class_<StreakObservation>(m, "StreakObservation")

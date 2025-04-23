@@ -167,9 +167,9 @@ namespace orbit_fit
 
             // compute A and D vectors, the local tangent plane trick from Danby.
 
-            double Ax = theta_z;
-            double Ay = 0.0;
-            double Az = -theta_x;
+            double Ax =  -theta_y;
+            double Ay =   theta_x;
+            double Az =   0.0;
 
             double A = sqrt(Ax * Ax + Ay * Ay + Az * Az);
             Ax /= A;
@@ -180,9 +180,14 @@ namespace orbit_fit
             this_det.Ay = Ay;
             this_det.Az = Az;
 
-            double Dx = -theta_x * theta_y;
-            double Dy = theta_x * theta_x + theta_z * theta_z;
-            double Dz = -theta_z * theta_y;
+            double sd = theta_z;
+            double cd = sqrt(1-theta_z*theta_z);
+            double ca = theta_x/cd;
+            double sa = theta_y/cd;
+        
+            double Dx = -sd*ca;
+            double Dy = -sd*sa;
+            double Dz = cd;        
 
             double D = sqrt(Dx * Dx + Dy * Dy + Dz * Dz);
             Dx /= D;
@@ -890,7 +895,7 @@ namespace orbit_fit
 
         // This should be a little more clever and flexible
         // First find a triple of detections in the full data set.
-        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);
+        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 5, start_i);
 
         int success = 0;
         size_t iters;
@@ -1001,7 +1006,7 @@ namespace orbit_fit
 
             if (flag == 0)
             {
-                printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
+                printf("stage 2 flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
                 print_initial_condition(p1, res.value()[0].epoch);
             }
             else
@@ -1059,7 +1064,7 @@ namespace orbit_fit
 
             if (flag == 0)
             {
-                printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
+                printf("stage 3 flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
                 Eigen::MatrixXd obs_cov2(6, 6);
                 predict(
                     ephem,
