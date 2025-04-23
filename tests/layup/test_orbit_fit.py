@@ -25,7 +25,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
 
     orbitfit_cli(
-        input=get_test_filepath("100_random_mpc_ADES_provIDs.csv"),
+        input=get_test_filepath("100_random_mpc_ADES_provIDs_no_sats.csv"),
         input_file_format="ADES_csv",
         output_file_stem=output_file_stem,
         output_file_format="csv",
