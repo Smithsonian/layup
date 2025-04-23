@@ -17,7 +17,6 @@ classifiers = [
 dynamic = ["version"]
 requires-python = ">=3.11"
 dependencies = [
-    "psutil",
     "numpy",
     "astropy",
     "pooch",
