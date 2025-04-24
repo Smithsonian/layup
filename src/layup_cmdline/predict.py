@@ -113,12 +113,12 @@ def main():
     optional.add_argument(
         "-s",
         "--start-date",
-        help="start date mjd_UTC. If not specified default wil be current date",
+        help="start date as jd_TDB or date string YYYY-mm-dd that will be converted to jd_TDB. If not specified default wil be current date",
         dest="s",
         type=str,
         default=str(
-            Time(datetime.now(timezone.utc), format="datetime", scale="utc").mjd
-        ),  # gives current time in mjd_UTC
+            Time(datetime.now(timezone.utc), format="datetime", scale="utc").tdb.jd
+        ),  # gives current time in jd_TDB
         required=False,
     )
 
@@ -137,12 +137,56 @@ def main():
     return execute(args)
 
 
+def convert_input_to_jd_TDB(input_str: str) -> float:
+    """
+    Convert a string to a jd_TDB date. The string can be in the format of a
+    Julian date TDB for or a date string in the format YYYY-mm-dd.
+
+    Parameters
+    ----------
+    input_str : str
+        The input string to convert.
+
+    Raises
+    ------
+    ValueError
+        If the input string is not in the expected format, YYYY-mm-dd
+
+    Returns
+    -------
+    float
+        The converted jd_TDB date.
+    """
+    import spiceypy as spice
+
+    try:
+        # Assume that input is a jd_TDB float that was converted to string. Attempt
+        # to convert it back to a float.
+        start_time = float(input_str)
+        start_time = spice.j2000() + start_time / (24 * 60 * 60)
+    except ValueError:
+        # If conversion to float fails, assume that the input was a date string
+        # with a format like YYYY-mm-dd. Convert that to a datetime and then to
+        # a float representation of a jd_TDB date.
+        try:
+            start_time = Time(datetime.strptime(input_str, "%Y-%m-%d"), format="datetime", scale="utc").tdb.jd
+        except ValueError:
+            # If the date string is not in the expected format, raise an error.
+            raise ValueError(f"Invalid date string format: {input_str}. Expected format is YYYY-mm-dd.")
+
+    return start_time
+
+
 def execute(args):
     import astropy.units as u
     import re
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
     import sys
+
+    start_time = convert_input_to_jd_TDB(args.s)
+
+    end_time = convert_input_to_jd_TDB(args.e) if args.e else start_time + args.days
 
     # check input exists
     find_file_or_exit(args.input, "input")
