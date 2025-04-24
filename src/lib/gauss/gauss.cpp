@@ -69,9 +69,9 @@ namespace orbit_fit
 
         // this will need to be generalized better and not assume it's astrometry
         // could we make ObservationType a parent class?
-        Eigen::Vector3d rho1 = std::get<orbit_fit::AstrometryObservation>(triplet[0].observation_type).rho_hat;
-        Eigen::Vector3d rho2 = std::get<orbit_fit::AstrometryObservation>(triplet[1].observation_type).rho_hat;
-        Eigen::Vector3d rho3 = std::get<orbit_fit::AstrometryObservation>(triplet[2].observation_type).rho_hat;
+        Eigen::Vector3d rho1 = triplet[0].rho_hat;
+        Eigen::Vector3d rho2 = triplet[1].rho_hat;
+        Eigen::Vector3d rho3 = triplet[2].rho_hat;
 
         double t1 = triplet[0].epoch;
         double t2 = triplet[1].epoch;
