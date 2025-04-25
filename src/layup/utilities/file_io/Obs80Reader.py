@@ -6,6 +6,18 @@ from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
 
+__OUTPUT_DTYPE = [
+    ("ObjID", "U10"),
+    ("isotime", "U25"),
+    ("raDeg", "f8"),
+    ("decDeg", "f8"),
+    ("mag", "f4"),
+    ("filt", "U1"),
+    ("obsCode", "U3"),
+    ("cat", "U1"),
+    ("prg", "U1"),
+]
+
 
 # This routine checks the 80-character input line to see if it contains a special character (S, R, or V) that indicates a 2-line
 # record.
@@ -145,13 +157,9 @@ def convertObs80(line, digits=4):
     filt = line[70:71]
     obsCode = line[77:80]
 
-    cat = line[71]
-    if cat == " ":
-        cat = None
+    cat = line[71].strip()
 
-    prg = line[13]
-    if prg == " ":
-        prg = None
+    prg = line[13].strip()
 
     if objName.strip() != "":
         objID = objName
@@ -274,32 +282,25 @@ class Obs80DataReader(ObjectDataReader):
         with open(self.filename_merge, "r") as file:
             lines = file.readlines()[block_start : block_start + block_size]
         for line in lines:
-            objID, isotime, raDeg, decDeg, mag, filt, obsCode = convertObs80(line[0:80])
+            objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line[0:80])
             records.append(
                 (
                     objID,
-                    isotime,
+                    iso_time,
                     raDeg,
                     decDeg,
                     mag,
                     filt,
                     obsCode,
+                    cat,
+                    prg,
                 )
             )
 
         for i in records[0]:
             print(i, type(i))
 
-        output_dtype = [
-            ("objID", "U10"),
-            ("isotime", "U25"),
-            ("raDeg", "f8"),
-            ("decDeg", "f8"),
-            ("mag", "f4"),
-            ("filt", "U1"),
-            ("obsCode", "U3"),
-        ]
-        return np.array(records, dtype=output_dtype)
+        return np.array(records, dtype=_OUTPUT_DTYPE)
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
@@ -342,15 +343,26 @@ class Obs80DataReader(ObjectDataReader):
         skipped_row = ~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids)
         print(skipped_row)
 
+        records = []
         with open(self.filename_merge, "r") as file:
             lines = file.readlines()
             for line, sr in zip(lines, skipped_row, strict=False):
                 if not sr:
-                    objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line)
-                    print(objID, iso_time)
-
-        records = res_df.to_records(index=False)
-        return np.array(records, dtype=records.dtype.descr)
+                    objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line[0:80])
+                    records.append(
+                        (
+                            objID,
+                            iso_time,
+                            raDeg,
+                            decDeg,
+                            mag,
+                            filt,
+                            obsCode,
+                            cat,
+                            prg,
+                        )
+                    )
+        return np.array(records, dtype=_OUTPUT_DTYPE)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.
