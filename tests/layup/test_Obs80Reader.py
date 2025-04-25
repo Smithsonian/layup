@@ -18,8 +18,6 @@ def test_read_rows():
 
 
 def test_read_objects():
-    # bad_object_ids = ["03666", "03667"]
-
     object_ids = ["03666"]
 
     reader = Obs80DataReader(get_test_filepath("03666.txt"), sep="csv")

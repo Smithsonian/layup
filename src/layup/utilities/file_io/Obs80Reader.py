@@ -1,14 +1,11 @@
 import numpy as np
-import spiceypy as spice
 
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
-# Characters we remove from column names.
-_INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
-
+# The output data type for the structured array of the obs80 reader
 _OUTPUT_DTYPE = [
     ("ObjID", "U10"),
-    ("isotime", "U25"),
+    ("obstime", "U25"),
     ("raDeg", "f8"),
     ("decDeg", "f8"),
     ("mag", "f4"),
@@ -22,34 +19,10 @@ _OUTPUT_DTYPE = [
 ]
 
 
-# This routine checks the 80-character input line to see if it contains a special character (S, R, or V) that indicates a 2-line
-# record.
-def is_two_line(line):
+def is_two_line_row(line):
+    """Checks if the line is the first line of a two-line row format."""
     note2 = line[14]
-    obsCode = line[77:80]
     return note2 == "S" or note2 == "R" or note2 == "V"
-
-
-# This routine opens and reads filename, separating the records into those in the 1-line and 2-line formats.
-# The 2-line format lines are merged into single 160-character records for processing line-by-line.
-def merge_MPC_file(filename, new_filename, comment_char="#"):
-    with open(new_filename, "w") as f1_out:
-        line1 = None
-        with open(filename, "r") as f:
-            print("opened ", filename)
-            for line in f:
-                if line.startswith(comment_char):
-                    continue
-                if is_two_line(line):
-                    line1 = line
-                    continue
-                if line1 != None:
-                    merged_lines = line1.rstrip("\n") + line
-                    f1_out.write(merged_lines)
-                    line1 = None
-                else:
-                    f1_out.write(line)
-                    line1 = None
 
 
 # These routines convert the RA and Dec strings to floats.
@@ -127,13 +100,10 @@ def mpctime2isotime(mpctimeStr, digits=4):
     return isoStr
 
 
-def mpctime2et(mpctimeStr, digits=4):
-    isoStr = mpctime2isotime(mpctimeStr, digits=digits)
-    return spice.str2et(isoStr)
-
-
 # Grab a line of obs80 data and return the designations.
 def get_obs80_id(line):
+    # TODO revisit if we should cast as string
+    # TODO should we strip directly when reading in
     objName = line[0:5]
     provDesig = line[5:12]
     if objName.strip() != "":
@@ -142,7 +112,7 @@ def get_obs80_id(line):
         objID = provDesig
     else:
         raise Exception("No object identifier" + objName + provDesig)
-    return objID
+    return str(objID)
 
 
 # Grab a line of obs80 data and convert it to values
@@ -184,9 +154,9 @@ def convertObs80(line, digits=4):
             raise ValueError(
                 f"Observatory position line is too short for {objID} and line of lenght {len(second_line)} {second_line}"
             )
-        if second_line[77:81].rstrip() != obsCode:
+        if second_line[77:80].rstrip() != obsCode:
             raise ValueError(
-                f"Observatory codes do not match in the seond line provided for the observatory position. {obsCode} and {second_line[77:81].rstrip()}"
+                f"Observatory codes do not match in the seond line provided for the observatory position. {obsCode} and {second_line[77:80].rstrip()}"
             )
         flag = second_line[32:34]
         if flag == "1 " or flag == "2 ":
@@ -195,17 +165,6 @@ def convertObs80(line, digits=4):
             obs_geo_z = float(second_line[58] + second_line[59:69].strip())
 
     return objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg, obs_geo_x, obs_geo_y, obs_geo_z
-
-
-# From google
-from pathlib import Path
-
-
-def append_to_filename(filepath, text_to_append):
-    path = Path(filepath)
-    new_filename = f"{path.stem}{path.suffix}{text_to_append}"
-    new_filepath = path.with_name(new_filename)
-    return new_filepath
 
 
 class Obs80DataReader(ObjectDataReader):
@@ -233,18 +192,6 @@ class Obs80DataReader(ObjectDataReader):
         """
         super().__init__(**kwargs)
         self.filename = filename
-        print(filename)
-
-        self.filename_merge = append_to_filename(filename, "_merge")
-
-        merge_MPC_file(filename, self.filename_merge)
-
-        # Header lines for obs80 data are about observational
-        # circumstances.  We identify and skip those lines.
-
-        # To pre-validation the header information.
-        # self._validate_header_line()
-        self.header_row = 0  # The header row is always the first row
 
         # A table holding just the object ID for each row. Only populated
         # if we try to read data for specific object IDs.
@@ -266,7 +213,6 @@ class Obs80DataReader(ObjectDataReader):
         return f"Obs80DataReader:{self.filename}"
 
     def get_row_count(self):
-        # Should this be the count of observation lines?
         """Return the total number of rows in the file.
 
         Returns
@@ -274,9 +220,13 @@ class Obs80DataReader(ObjectDataReader):
         int
             Total rows in the file.
         """
-        with open(self.filename_merge, "r") as file:
-            data = file.readlines()
-        return len(data)
+        row_cnt = 0
+        with open(self.filename, "r") as f:
+            for line in f:
+                if line.strip() != "" and not is_two_line_row(line):
+                    row_cnt += 1
+
+        return row_cnt
 
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input.
@@ -302,17 +252,25 @@ class Obs80DataReader(ObjectDataReader):
         res : numpy structured array
             The data read in from the file.
         """
-        lines, records = [], []
-        with open(self.filename_merge, "r") as file:
-            if block_size is not None:
-                lines = file.readlines()[block_start : block_start + block_size]
-            else:
-                lines = file.readlines()[block_start:]
-        for line in lines:
-            objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg, obs_geo_x, obs_geo_y, obs_geo_z = (
-                convertObs80(line)
-            )
-            records.append(
+        records = []
+        with open(self.filename, "r") as f:
+            curr_block = block_start
+            block_end = block_start + block_size if block_size is not None else None
+            prev_line = None
+            for curr_line in f:
+                if block_end is not None and curr_block >= block_end:
+                    # We have read enough rows from the file.
+                    break
+                if is_two_line_row(curr_line):
+                    # We have a two-line row. We will save our current line
+                    # and wait for the next line to merge them as a single row to process.
+                    prev_line = curr_line
+                    continue
+                row_to_process = curr_line
+                if prev_line is not None:
+                    row_to_process = prev_line.rstrip("\n") + curr_line
+                    prev_line = None
+
                 (
                     objID,
                     iso_time,
@@ -326,11 +284,24 @@ class Obs80DataReader(ObjectDataReader):
                     obs_geo_x,
                     obs_geo_y,
                     obs_geo_z,
+                ) = convertObs80(row_to_process)
+                records.append(
+                    (
+                        objID,
+                        iso_time,
+                        raDeg,
+                        decDeg,
+                        mag,
+                        filt,
+                        obsCode,
+                        cat,
+                        prg,
+                        obs_geo_x,
+                        obs_geo_y,
+                        obs_geo_z,
+                    )
                 )
-            )
-
-        for i in records[0]:
-            print(i, type(i))
+                curr_block += 1
 
         return np.array(records, dtype=_OUTPUT_DTYPE)
 
@@ -340,18 +311,19 @@ class Obs80DataReader(ObjectDataReader):
         if self.obj_id_table is not None:
             return
 
-        with open(self.filename_merge, "r") as file:
-            lines = file.readlines()
-            print(len(lines))
-            objIDs = [get_obs80_id(line) for line in lines]
-            data_type = np.dtype([("ObjID", "U10")])
-            objIDs = np.array(objIDs, dtype=data_type)
-            self.obj_id_table = objIDs
-            self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
+        objIDs = []
+        with open(self.filename, "r") as f:
+            for curr_line in f:
+                if is_two_line_row(curr_line):
+                    # We have a two-line row, so skip it and only
+                    # add the object ID from the final row.
+                    continue
+                objID = get_obs80_id(curr_line)
+                objIDs.append(objID)
+                self.obj_id_counts[objID] = self.obj_id_counts.get(objID, 0) + 1
 
-        # Create a dictionary of the object ID counts.
-        for i in self.obj_id_table[self._primary_id_column_name]:
-            self.obj_id_counts[i] = self.obj_id_counts.get(str(i), 0) + 1
+        self.obj_id_table = np.array(objIDs, dtype=np.dtype([("ObjID", "U10")]))
+        self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
     def _read_objects_internal(self, obj_ids, **kwargs):
         """Read in a chunk of data for given object IDs.
@@ -376,10 +348,38 @@ class Obs80DataReader(ObjectDataReader):
         print(skipped_row)
 
         records = []
-        with open(self.filename_merge, "r") as file:
-            lines = file.readlines()
-            for line, sr in zip(lines, skipped_row, strict=False):
-                if not sr:
+        curr_row_idx = -1
+        prev_line = None
+        with open(self.filename, "r") as f:
+            for curr_line in f:
+                if is_two_line_row(curr_line):
+                    # We have a two-line row. We will save our current line
+                    # and wait for the next line to merge them as a single row to process.
+                    prev_line = curr_line
+                    continue
+                curr_row_idx += 1
+                if skipped_row[curr_row_idx]:
+                    continue
+                row_to_process = curr_line
+                if prev_line is not None:
+                    row_to_process = prev_line.rstrip("\n") + curr_line
+                    prev_line = None
+
+                (
+                    objID,
+                    iso_time,
+                    raDeg,
+                    decDeg,
+                    mag,
+                    filt,
+                    obsCode,
+                    cat,
+                    prg,
+                    obs_geo_x,
+                    obs_geo_y,
+                    obs_geo_z,
+                ) = convertObs80(row_to_process)
+                records.append(
                     (
                         objID,
                         iso_time,
@@ -393,23 +393,8 @@ class Obs80DataReader(ObjectDataReader):
                         obs_geo_x,
                         obs_geo_y,
                         obs_geo_z,
-                    ) = convertObs80(line)
-                    records.append(
-                        (
-                            objID,
-                            iso_time,
-                            raDeg,
-                            decDeg,
-                            mag,
-                            filt,
-                            obsCode,
-                            cat,
-                            prg,
-                            obs_geo_x,
-                            obs_geo_y,
-                            obs_geo_z,
-                        )
                     )
+                )
         return np.array(records, dtype=_OUTPUT_DTYPE)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
