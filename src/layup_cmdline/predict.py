@@ -2,6 +2,8 @@
 # The `layup predict` subcommand implementation
 #
 import argparse
+import os
+from pathlib import Path
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 from astropy.time import Time
 import astropy.units as u
@@ -28,6 +30,8 @@ UNIT_DICT = {
     "days": u.day,
     "d": u.day,
 }  # used to convert unit_str to an astropy.unit
+
+SEC_PER_DAY = 24 * 60 * 60
 
 
 def main():
@@ -143,6 +147,16 @@ def main():
     )
 
     optional.add_argument(
+        "-st",
+        "--station",
+        type=str,
+        dest="station",
+        default="X05",  # Rubin observatory
+        help="Station code for the observatory. Default is X05 (Rubin observatory). See https://www.minorplanetcenter.net/iau/lists/ObsCodes.html",
+        required=False,
+    )
+
+    optional.add_argument(
         "-t",
         "--timestep",
         help="Timestep for predict. Must be string consisting of float followed by the unit (d=day, h=hour, m=minute, s=second) e.g. 1.3h or 30m",
@@ -157,7 +171,7 @@ def main():
     return execute(args)
 
 
-def convert_input_to_JD_TDB(input_str: str) -> float:
+def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
     """
     Convert a string to a JD_TDB date. The string can be in the format of a
     Julian date TDB for or a date string in the format YYYY-mm-dd.
@@ -166,6 +180,9 @@ def convert_input_to_JD_TDB(input_str: str) -> float:
     ----------
     input_str : str
         The input string to convert.
+    cache_path : Path, optional
+        The path to the cache directory. If not provided, the default cache
+        directory will be used.
 
     Raises
     ------
@@ -177,21 +194,35 @@ def convert_input_to_JD_TDB(input_str: str) -> float:
     float
         The converted JD_TDB date.
     """
+    import spiceypy as spice
+
+    spice_kernel_loaded = False
+    if os.path.exists(cache_path / "naif0012.tls"):
+        # If the file exists, load it
+        spice.furnsh(str(cache_path / "naif0012.tls"))
+        spice_kernel_loaded = True
+
     try:
         # Assume that input is a JD_TDB float that was converted to string. Attempt
         # to convert it back to a float.
         date_JD_TDB = float(input_str)
     except ValueError:
-        # If conversion to float fails, assume that the input was a date string
-        # with a format like YYYY-mm-dd. Convert that to a datetime and then to
+        # If conversion to float fails, assume that the input was a date string.
+        # If the spice kernel was loaded, we'll attempt to parse the date using
+        # spiceypy. Otherwise, we'll use assume that the input is a date string
+        # formatted as YYYY-mm-dd. We convert that to a datetime and then to
         # a float representation of a JD_TDB date.
-        try:
-            date_JD_TDB = Time(
-                datetime.strptime(input_str, "%Y-%m-%d"), format="datetime", scale="tdb"
-            ).tdb.jd
-        except ValueError:
-            # If the date string is not in the expected format, raise an error.
-            raise ValueError(f"Invalid date string format: {input_str}. Expected format is YYYY-mm-dd.")
+        if spice_kernel_loaded:
+            et = spice.str2et(input_str)
+            date_JD_TDB = spice.j2000() + et / SEC_PER_DAY
+        else:
+            try:
+                date_JD_TDB = Time(
+                    datetime.strptime(input_str, "%Y-%m-%d"), format="datetime", scale="tdb"
+                ).tdb.jd
+            except ValueError:
+                # If the date string is not in the expected format, raise an error.
+                raise ValueError(f"Invalid date string format: {input_str}. Expected format is YYYY-mm-dd.")
 
     return date_JD_TDB
 
@@ -202,16 +233,13 @@ def execute(args):
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
     import sys
-
-    start_date = convert_input_to_JD_TDB(args.s)
-
-    end_date = convert_input_to_JD_TDB(args.e) if args.e else start_date + args.days
+    import pooch
 
     # check input exists
     find_file_or_exit(args.input, "input")
 
     # Check that output directory exists
-    find_directory_or_exit(args.o, "-o, --")
+    find_directory_or_exit(args.o, "-o, --output")
 
     # check for overwriting output file
     warn_or_remove_file(str(args.o), args.force, logger)
@@ -219,6 +247,13 @@ def execute(args):
     # check ar directory exists if specified
     if args.ar_data_file_path:
         find_directory_or_exit(args.ar_data_file_path, "-ar, --ar_data_path")
+        cache_dir = Path(args.ar_data_file_path)
+    else:
+        cache_dir = Path(pooch.os_cache("layup"))
+
+    start_date = convert_input_to_JD_TDB(args.s, cache_dir)
+
+    end_date = convert_input_to_JD_TDB(args.e, cache_dir) if args.e else start_date + args.days
 
     # check format of input file
     if args.i.lower() == "csv":
