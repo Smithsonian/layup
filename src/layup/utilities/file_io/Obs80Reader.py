@@ -35,6 +35,119 @@ def merge_MPC_file(filename, new_filename, comment_char="#"):
                     f1_out.write(line)
                     line1 = None
 
+# These routines convert the RA and Dec strings to floats.
+def RA2degRA(RA):
+    hr = RA[0:2]
+    if hr.strip() == '':
+        hr = 0.0
+    else:
+        hr = float(hr)
+    mn = RA[3:5]
+    if mn.strip == '':
+        mn = 0.0
+    else:
+        mn = float(mn)
+    sc = RA[6:]
+    if sc.strip() == '':
+        sc = 0.0
+    else:
+        sc = float(sc)
+    degRA = 15.0*(hr + 1./60. * (mn + 1./60. * sc))
+    return degRA
+
+def Dec2degDec(Dec):
+    s = Dec[0]
+    dg = Dec[1:3]
+    if dg.strip()=='':
+        dg = 0.0
+    else:
+        dg = float(dg)
+    mn = Dec[4:6]
+    if mn.strip()=='':
+        mn = 0.0
+    else:
+        mn = float(mn)
+    sc = Dec[7:]
+    if sc.strip() == '':
+        sc = 0.0
+    else:
+        sc = float(sc)
+    degDec = dg + 1./60. * (mn + 1./60. * sc)
+    if s == '-':
+        degDec = -degDec
+    return degDec
+
+# Parses the date string from the 80-character record
+def parseDate(dateObs):
+    yr = dateObs[0:4]
+    mn = dateObs[5:7]
+    dy = dateObs[8:]
+    return yr, mn, dy
+
+def mpctime2isotime(mpctimeStr, digits=4):
+    yr, mn, dy = parseDate(mpctimeStr)
+    dy = float(dy)
+    frac_day, day = np.modf(dy)
+    frac_hrs, hrs = np.modf(frac_day * 24)
+    frac_mins, mins = np.modf(frac_hrs * 60)
+    secs = frac_mins * 60
+    if np.round(secs, digits) >= 60.0:
+        secs = np.round(secs, digits) - 60
+        if secs < 0.0:
+            secs = 0.0
+        mins += 1
+    if mins >= 60:
+        mins -= 60
+        hrs += 1
+    if hrs >= 24:
+        hrs -= 24
+        day += 1  # Could mess up the number of days in the month
+    formatStr = "%4s-%2s-%02dT%02d:%02d:%02." + str(digits) + "f"
+    isoStr = formatStr % (yr, mn, day, hrs, mins, secs)
+    return isoStr
+
+def mpctime2et(mpctimeStr, digits=4):
+    isoStr = mpctime2isotime(mpctimeStr, digits=digits)
+    return spice.str2et(isoStr)
+
+# Grab a line of obs80 data and return the designations.
+def get_obs80_id(line):
+    objName = line[0:5]
+    provDesig = line[5:12]
+    if objName.strip() != "":
+        objID = objName
+    elif provDesig.strip() != "":
+        objID = provDesig
+    else:
+        raise Exception("No object identifier" + objName + provDesig)
+    return objID
+
+# Grab a line of obs80 data and convert it to values
+# this assumes the object is numbered.
+def convertObs80(line):
+    objName = line[0:5]
+    provDesig = line[5:12]
+    disAst = line[12:13]
+    note1 = line[13:14]
+    note2 = line[14:15]
+    dateObs = line[15:32]
+    RA = line[32:44]
+    Dec = line[44:56]
+    mag = line[65:70]
+    filt = line[70:71]
+    obsCode = line[77:80]
+
+    if objName.strip() != "":
+        objID = objName
+    elif provDesig.strip() != "":
+        objID = provDesig
+    else:
+        raise Exception("No object identifier" + objName + provDesig)
+    t = mpctime2et(dateObs)
+    jd_tdb = spice.j2000() + t / (24 * 60 * 60)
+    raDeg, decDeg = RA2degRA(RA), Dec2degDec(Dec)
+    return objID, jd_tdb, raDeg, decDeg, mag, filt, 0.0, 0.0, 0.0, obsCode, 0.0
+                    
 
 # From google
 from pathlib import Path
@@ -197,17 +310,21 @@ class Obs80DataReader(ObjectDataReader):
             lines = file.readlines()[self.header_row + block_start]
         lines = file.readlines()[block_start:block_start + block_size]             
 
-        print(len(lines))
         return np.array(records, dtype=records.dtype.descr)
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
+
         if self.obj_id_table is not None:
             return
 
         with open(self.filename_merge, 'r') as file:
             lines = file.readlines()
             print(len(lines))
+
+            for i, line in enumerate(lines):
+                objID = get_obs80_id(line)
+                print(i, objID)
 
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
