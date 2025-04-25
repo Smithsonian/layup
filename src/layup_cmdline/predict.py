@@ -92,7 +92,7 @@ def main():
     optional.add_argument(
         "-e",
         "--end-date",
-        help="End date as JD_TDB float or date string YYYY-mm-dd that will be converted to JD_TDB. Only required if not specifying the number of days",
+        help="End date as JD_TDB float or date string YYYY-mm-ddTDB that will be converted to JD_TDB. Only required if not specifying the number of days",
         dest="e",
         type=str,
         default=None,
@@ -139,7 +139,7 @@ def main():
     optional.add_argument(
         "-s",
         "--start-date",
-        help="Start date as JD_TDB float or date string YYYY-mm-dd that will be converted to JD_TDB. Defaults to current UTC date",
+        help="Start date as JD_TDB float or date string YYYY-mm-ddTDB that will be converted to JD_TDB. Defaults to current UTC date.",
         dest="s",
         type=str,
         default=str(datetime.now(timezone.utc).date()),  # current UTC date as YYYY-mm-dd
@@ -195,34 +195,31 @@ def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
         The converted JD_TDB date.
     """
     import spiceypy as spice
+    from spiceypy.utils.exceptions import SpiceUNPARSEDTIME
 
-    spice_kernel_loaded = False
     if os.path.exists(cache_path / "naif0012.tls"):
-        # If the file exists, load it
         spice.furnsh(str(cache_path / "naif0012.tls"))
-        spice_kernel_loaded = True
+    else:
+        raise FileNotFoundError(
+            f"SPICE kernel file not found cache directory: {cache_path}. Run `layup bootstrap` to download the required files."
+        )
 
     try:
         # Assume that input is a JD_TDB float that was converted to string. Attempt
         # to convert it back to a float.
         date_JD_TDB = float(input_str)
     except ValueError:
-        # If conversion to float fails, assume that the input was a date string.
-        # If the spice kernel was loaded, we'll attempt to parse the date using
-        # spiceypy. Otherwise, we'll use assume that the input is a date string
-        # formatted as YYYY-mm-dd. We convert that to a datetime and then to
-        # a float representation of a JD_TDB date.
-        if spice_kernel_loaded:
+        try:
+            # If conversion to float fails, assume that the input was a date string
+            # in the format YYYY-mm-ddTDB.
             et = spice.str2et(input_str)
             date_JD_TDB = spice.j2000() + et / SEC_PER_DAY
-        else:
-            try:
-                date_JD_TDB = Time(
-                    datetime.strptime(input_str, "%Y-%m-%d"), format="datetime", scale="tdb"
-                ).tdb.jd
-            except ValueError:
-                # If the date string is not in the expected format, raise an error.
-                raise ValueError(f"Invalid date string format: {input_str}. Expected format is YYYY-mm-dd.")
+        except:
+            # Several different exceptions can be raised here, but they all allude
+            # to the fact that the input string is not in the expected format.
+            raise ValueError(
+                f"Could not parse input date string '{input_str}'. Try the format YYYY-mm-ddTDB."
+            )
 
     return date_JD_TDB
 
