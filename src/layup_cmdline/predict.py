@@ -52,7 +52,7 @@ def main():
     optional = parser.add_argument_group("Optional arguments")
 
     optional.add_argument(
-        "--ar",
+        "-ar",
         "--ar-data-path",
         help="Directory path where Assist+Rebound data files were stored when running `layup bootstrap` from the command line.",
         type=str,
