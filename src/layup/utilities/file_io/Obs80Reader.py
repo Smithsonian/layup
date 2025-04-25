@@ -160,6 +160,7 @@ def convertObs80(line, digits=4):
     else:
         raise Exception("No object identifier" + objName + provDesig)
     iso_time = mpctime2isotime(dateObs, digits=digits)
+    mag = float(mag) if mag.strip() != "" else 0.0
     raDeg, decDeg = RA2degRA(RA), Dec2degDec(Dec)
     return objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg
 
