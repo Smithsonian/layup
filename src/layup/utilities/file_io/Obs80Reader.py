@@ -6,7 +6,7 @@ from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
 
-__OUTPUT_DTYPE = [
+_OUTPUT_DTYPE = [
     ("ObjID", "U10"),
     ("isotime", "U25"),
     ("raDeg", "f8"),
