@@ -15,3 +15,18 @@ def test_read_rows():
 
     data = reader.read_rows()
     assert len(data) == reader.get_row_count()
+
+
+def test_read_objects():
+    # bad_object_ids = ["03666", "03667"]
+
+    object_ids = ["03666"]
+
+    reader = Obs80DataReader(get_test_filepath("03666.txt"), sep="csv")
+    full_data = reader.read_rows()
+
+    # Because test file is only one object, we expect the same data.
+    data = reader.read_objects(object_ids)
+    assert len(data) == len(full_data)
+
+    assert data["ObjID"][0] == object_ids[0]

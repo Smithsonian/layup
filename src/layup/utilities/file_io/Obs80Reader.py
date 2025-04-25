@@ -344,7 +344,7 @@ class Obs80DataReader(ObjectDataReader):
             lines = file.readlines()
             print(len(lines))
             objIDs = [get_obs80_id(line) for line in lines]
-            data_type = np.dtype([("provID", "U10")])
+            data_type = np.dtype([("ObjID", "U10")])
             objIDs = np.array(objIDs, dtype=data_type)
             self.obj_id_table = objIDs
             self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
@@ -380,7 +380,20 @@ class Obs80DataReader(ObjectDataReader):
             lines = file.readlines()
             for line, sr in zip(lines, skipped_row, strict=False):
                 if not sr:
-                    objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line)
+                    (
+                        objID,
+                        iso_time,
+                        raDeg,
+                        decDeg,
+                        mag,
+                        filt,
+                        obsCode,
+                        cat,
+                        prg,
+                        obs_geo_x,
+                        obs_geo_y,
+                        obs_geo_z,
+                    ) = convertObs80(line)
                     records.append(
                         (
                             objID,
