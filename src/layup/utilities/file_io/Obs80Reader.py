@@ -27,6 +27,42 @@ def is_two_line(line):
     return note2 == "S" or note2 == "R" or note2 == "V"
 
 
+def satellite_pos(second_line):
+    obsCode = second_line[77:81].rstrip()
+    flag = second_line[32:34]
+    if flag == "1 " or flag == "2 ":
+        pos = [
+            float(second_line[34] + second_line[35:45].strip()),
+            float(second_line[46] + second_line[47:57].strip()),
+            float(second_line[58] + second_line[59:69].strip()),
+        ]
+        pos = np.array(pos)
+    else:
+        pos = None
+    return obsCode, pos
+
+'''
+    et = (jd_tdb - spice.j2000()) * 24 * 60 * 60
+
+    if len(line.strip()) > 80:
+        obsCode_test, geoc_pos = satellite_pos(line[80:])
+        if obsCode_test != obsCode:
+            print("obs codes not the same", "x", obsCode_test, "x", obsCode, "x")
+    else:
+        geoc_pos = tr.geocentricObservatory(et, obsCode)
+
+    # Get the barycentric position of Earth
+    if baryhelio == "bary":
+        pos, _ = spice.spkpos("EARTH", et, "J2000", "NONE", "SSB")
+    elif baryhelio == "helio":
+        pos, _ = spice.spkpos("EARTH", et, "J2000", "NONE", "SUN")
+
+    observatory_pos = pos + geoc_pos
+
+    observatory_pos /= au_km
+'''
+
+
 # This routine opens and reads filename, separating the records into those in the 1-line and 2-line formats.
 # The 2-line format lines are merged into single 160-character records for processing line-by-line.
 def merge_MPC_file(filename, new_filename, comment_char="#"):
