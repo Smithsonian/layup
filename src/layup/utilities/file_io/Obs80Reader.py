@@ -2,6 +2,7 @@ import numpy as np
 import logging
 import sys
 import pandas as pd
+import spiceypy as spice
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 # Characters we remove from column names.
@@ -146,7 +147,7 @@ def convertObs80(line):
     t = mpctime2et(dateObs)
     jd_tdb = spice.j2000() + t / (24 * 60 * 60)
     raDeg, decDeg = RA2degRA(RA), Dec2degDec(Dec)
-    return objID, jd_tdb, raDeg, decDeg, mag, filt, 0.0, 0.0, 0.0, obsCode, 0.0
+    return objID, jd_tdb, raDeg, decDeg, mag, filt, obsCode
                     
 
 # From google
@@ -227,57 +228,6 @@ class Obs80DataReader(ObjectDataReader):
             data = file.readlines()
         return len(data)
 
-    def _validate_header_line(self):
-        """Read and validate the header line (first line of the file)"""
-        logger = logging.getLogger(__name__)
-        with open(self.filename) as fh:
-            line = fh.readline()
-            logger.info(f"Reading the first line of {self.filename} as header:\n{line}")
-            self._check_header_line(line)
-            return
-
-        # If we reach here, we did not find a valid header line.
-        error_str = (
-            f"ERROR: CSVReader: column headings not found in the first lines of {self.filename}. "
-            f"Ensure column headings exist in input files and first column is {self._primary_id_column_name}."
-        )
-        logger.error(error_str)
-        sys.exit(error_str)
-
-    def _check_header_line(self, header_line):
-        """Check that a given header line is valid and exit if it is invalid.
-
-        Parameters
-        ----------
-        header_line : str
-            The proposed header line.
-        """
-        logger = logging.getLogger(__name__)
-
-        if self.sep == "csv" or self.sep == "comma":
-            column_names = header_line.split(",")
-        elif self.sep == "whitespace":
-            column_names = header_line.split()
-        else:
-            logger.error(f"ERROR: Unrecognized delimiter ({self.sep})")
-            sys.exit(f"ERROR: Unrecognized delimiter ({self.sep})")
-
-        if len(column_names) < 2:
-            error_str = (
-                f"ERROR: {self.filename} header has {len(column_names)} column(s) but requires >= 2. "
-                "Confirm that you using the correct delimiter."
-            )
-            logger.error(error_str)
-            sys.exit(error_str)
-
-        if self._primary_id_column_name not in column_names:
-            error_str = (
-                f"ERROR: {self.filename} header does not have '{self._primary_id_column_name}' column. "
-                "Confirm that you using the correct delimiter."
-            )
-            logger.error(error_str)
-            sys.exit(error_str)
-
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input.
 
@@ -321,12 +271,12 @@ class Obs80DataReader(ObjectDataReader):
         with open(self.filename_merge, 'r') as file:
             lines = file.readlines()
             print(len(lines))
+            objIDs = [get_obs80_id(line) for line in lines]
+            data_type = np.dtype([('provID', 'U10')])
+            objIDs = np.array(objIDs, dtype=data_type)
+            self.obj_id_table = objIDs
+            self.obj_id_table = self._validate_object_id_column(self.obj_id_table)            
 
-            for i, line in enumerate(lines):
-                objID = get_obs80_id(line)
-                print(i, objID)
-
-        self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
         # Create a dictionary of the object ID counts.
         for i in self.obj_id_table[self._primary_id_column_name]:
@@ -349,11 +299,17 @@ class Obs80DataReader(ObjectDataReader):
             The data read in from the file.
         """
         self._build_id_map()
+        print(self.obj_id_table)
 
-        # Create list of only the matching rows for these object IDs and the header row.
-        skipped_row = [True] * self.header_row  # skip the pre-header
-        skipped_row.extend([False])  # Keep the the column header
-        skipped_row.extend(~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids))
+        skipped_row =~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids)
+        print(skipped_row)
+
+        with open(self.filename_merge, 'r') as file:
+            lines = file.readlines()
+            for line, sr in zip(lines, skipped_row):
+                objID, jd_tdb, raDeg, decDeg, mag, filt, obsCode = convertObs80(line)
+                print(sr, objID, jd_tdb)
+        
 
         # Read in the data from self.filename, extracting the header row, and skipping in all of
         # block_size rows, skipping all of the skip_rows.
