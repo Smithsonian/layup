@@ -16,6 +16,9 @@ _OUTPUT_DTYPE = [
     ("obsCode", "U3"),
     ("cat", "U1"),
     ("prg", "U1"),
+    ("obs_geo_x", "f8"),
+    ("obs_geo_y", "f8"),
+    ("obs_geo_z", "f8"),
 ]
 
 
@@ -25,42 +28,6 @@ def is_two_line(line):
     note2 = line[14]
     obsCode = line[77:80]
     return note2 == "S" or note2 == "R" or note2 == "V"
-
-
-def satellite_pos(second_line):
-    obsCode = second_line[77:81].rstrip()
-    flag = second_line[32:34]
-    if flag == "1 " or flag == "2 ":
-        pos = [
-            float(second_line[34] + second_line[35:45].strip()),
-            float(second_line[46] + second_line[47:57].strip()),
-            float(second_line[58] + second_line[59:69].strip()),
-        ]
-        pos = np.array(pos)
-    else:
-        pos = None
-    return obsCode, pos
-
-'''
-    et = (jd_tdb - spice.j2000()) * 24 * 60 * 60
-
-    if len(line.strip()) > 80:
-        obsCode_test, geoc_pos = satellite_pos(line[80:])
-        if obsCode_test != obsCode:
-            print("obs codes not the same", "x", obsCode_test, "x", obsCode, "x")
-    else:
-        geoc_pos = tr.geocentricObservatory(et, obsCode)
-
-    # Get the barycentric position of Earth
-    if baryhelio == "bary":
-        pos, _ = spice.spkpos("EARTH", et, "J2000", "NONE", "SSB")
-    elif baryhelio == "helio":
-        pos, _ = spice.spkpos("EARTH", et, "J2000", "NONE", "SUN")
-
-    observatory_pos = pos + geoc_pos
-
-    observatory_pos /= au_km
-'''
 
 
 # This routine opens and reads filename, separating the records into those in the 1-line and 2-line formats.
@@ -206,7 +173,28 @@ def convertObs80(line, digits=4):
     iso_time = mpctime2isotime(dateObs, digits=digits)
     mag = float(mag) if mag.strip() != "" else 0.0
     raDeg, decDeg = RA2degRA(RA), Dec2degDec(Dec)
-    return objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg
+
+    # The geo position of the observatory is not always provided in the obs80 file.
+    obs_geo_x, obs_geo_y, obs_geo_z = np.nan, np.nan, np.nan
+    if len(line.rstrip()) > 80:
+        # We process the observatory positions which were mereged in from a second line
+        # TODO revisit
+        second_line = line[80:]
+        if len(second_line) < 80:
+            raise ValueError(
+                f"Observatory position line is too short for {objID} and line of lenght {len(second_line)} {second_line}"
+            )
+        if second_line[77:81].rstrip() != obsCode:
+            raise ValueError(
+                f"Observatory codes do not match in the seond line provided for the observatory position. {obsCode} and {second_line[77:81].rstrip()}"
+            )
+        flag = second_line[32:34]
+        if flag == "1 " or flag == "2 ":
+            obs_geo_x = float(second_line[34] + second_line[35:45].strip())
+            obs_geo_y = float(second_line[46] + second_line[47:57].strip())
+            obs_geo_z = float(second_line[58] + second_line[59:69].strip())
+
+    return objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg, obs_geo_x, obs_geo_y, obs_geo_z
 
 
 # From google
@@ -316,9 +304,14 @@ class Obs80DataReader(ObjectDataReader):
         """
         lines, records = [], []
         with open(self.filename_merge, "r") as file:
-            lines = file.readlines()[block_start : block_start + block_size]
+            if block_size is not None:
+                lines = file.readlines()[block_start : block_start + block_size]
+            else:
+                lines = file.readlines()[block_start:]
         for line in lines:
-            objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line[0:80])
+            objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg, obs_geo_x, obs_geo_y, obs_geo_z = (
+                convertObs80(line)
+            )
             records.append(
                 (
                     objID,
@@ -330,6 +323,9 @@ class Obs80DataReader(ObjectDataReader):
                     obsCode,
                     cat,
                     prg,
+                    obs_geo_x,
+                    obs_geo_y,
+                    obs_geo_z,
                 )
             )
 
@@ -384,7 +380,7 @@ class Obs80DataReader(ObjectDataReader):
             lines = file.readlines()
             for line, sr in zip(lines, skipped_row, strict=False):
                 if not sr:
-                    objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line[0:80])
+                    objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line)
                     records.append(
                         (
                             objID,
@@ -396,6 +392,9 @@ class Obs80DataReader(ObjectDataReader):
                             obsCode,
                             cat,
                             prg,
+                            obs_geo_x,
+                            obs_geo_y,
+                            obs_geo_z,
                         )
                     )
         return np.array(records, dtype=_OUTPUT_DTYPE)
