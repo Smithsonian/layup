@@ -125,7 +125,7 @@ def get_obs80_id(line):
 
 # Grab a line of obs80 data and convert it to values
 # this assumes the object is numbered.
-def convertObs80(line):
+def convertObs80(line, digits=4):
     objName = line[0:5]
     provDesig = line[5:12]
     disAst = line[12:13]
@@ -138,16 +138,23 @@ def convertObs80(line):
     filt = line[70:71]
     obsCode = line[77:80]
 
+    cat = line[71]
+    if cat == " ":
+        cat = None
+
+    prg = line[13]
+    if prg == " ":
+        prg = None
+
     if objName.strip() != "":
         objID = objName
     elif provDesig.strip() != "":
         objID = provDesig
     else:
         raise Exception("No object identifier" + objName + provDesig)
-    t = mpctime2et(dateObs)
-    jd_tdb = spice.j2000() + t / (24 * 60 * 60)
+    iso_time = mpctime2isotime(dateObs, digits=digits)    
     raDeg, decDeg = RA2degRA(RA), Dec2degDec(Dec)
-    return objID, jd_tdb, raDeg, decDeg, mag, filt, obsCode
+    return objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg
                     
 
 # From google
@@ -307,24 +314,9 @@ class Obs80DataReader(ObjectDataReader):
         with open(self.filename_merge, 'r') as file:
             lines = file.readlines()
             for line, sr in zip(lines, skipped_row):
-                objID, jd_tdb, raDeg, decDeg, mag, filt, obsCode = convertObs80(line)
-                print(sr, objID, jd_tdb)
-        
-
-        # Read in the data from self.filename, extracting the header row, and skipping in all of
-        # block_size rows, skipping all of the skip_rows.
-        if self.sep == "whitespace":
-            res_df = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                skiprows=(lambda x: skipped_row[x]),
-            )
-        else:
-            res_df = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                skiprows=(lambda x: skipped_row[x]),
-            )
+                if not sr:
+                    objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line)
+                    print(objID, iso_time)
 
         records = res_df.to_records(index=False)
         return np.array(records, dtype=records.dtype.descr)
