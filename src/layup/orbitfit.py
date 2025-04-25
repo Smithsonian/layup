@@ -10,13 +10,13 @@ import pooch
 
 from layup.routines import Observation, run_from_vector, get_ephem
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
-from layup.utilities.file_io import CSVDataReader, HDF5DataReader
+from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
 
 INPUT_FORMAT_READERS = {
-    "MPC80col": None,
+    "MPC80col": Obs80DataReader,
     "ADES_csv": CSVDataReader,
     "ADES_psv": None,
     "ADES_xml": None,
@@ -189,6 +189,8 @@ def orbitfit_cli(
     reader_class = INPUT_FORMAT_READERS[input_file_format]
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
+
+    print(reader_class)
 
     reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name)
 

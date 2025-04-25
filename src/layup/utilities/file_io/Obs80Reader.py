@@ -7,6 +7,45 @@ from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
 
+# This routine checks the 80-character input line to see if it contains a special character (S, R, or V) that indicates a 2-line
+# record.
+def is_two_line(line):
+    note2 = line[14]
+    obsCode = line[77:80]
+    return note2 == "S" or note2 == "R" or note2 == "V"
+
+# This routine opens and reads filename, separating the records into those in the 1-line and 2-line formats.
+# The 2-line format lines are merged into single 160-character records for processing line-by-line.
+def merge_MPC_file(filename, new_filename, comment_char="#"):
+    with open(new_filename, "w") as f1_out:
+        line1 = None
+        with open(filename, "r") as f:
+            print('opened ', filename)
+            for line in f:
+                if line.startswith(comment_char):
+                    continue
+                if is_two_line(line):
+                    line1 = line
+                    continue
+                if line1 != None:
+                    merged_lines = line1.rstrip("\n") + line
+                    f1_out.write(merged_lines)
+                    line1 = None
+                else:
+                    f1_out.write(line)
+                    line1 = None
+
+
+# From google
+from pathlib import Path
+import os
+def append_to_filename(filepath, text_to_append):
+    path = Path(filepath)
+    
+    new_filename = f"{path.stem}{text_to_append}{path.suffix}"
+    new_filepath = path.with_name(new_filename)
+    
+    return new_filepath
 
 class Obs80DataReader(ObjectDataReader):
     """A class to read in object data files stored in the MPC's obs80
@@ -33,12 +72,17 @@ class Obs80DataReader(ObjectDataReader):
         """
         super().__init__(**kwargs)
         self.filename = filename
+        print(filename)
+
+        self.filename_merge = append_to_filename(filename, "._merge")
+        
+        merge_MPC_file(filename, self.filename_merge)        
 
         # Header lines for obs80 data are about observational
         # circumstances.  We identify and skip those lines.
 
         # To pre-validation the header information.
-        self._validate_header_line()
+        #self._validate_header_line()
         self.header_row = 0  # The header row is always the first row
 
         # A table holding just the object ID for each row. Only populated
@@ -69,17 +113,8 @@ class Obs80DataReader(ObjectDataReader):
         int
             Total rows in the file.
         """
-        data = np.genfromtxt(
-            self.filename,
-            delimiter="," if self.sep != "whitespace" else None,
-            names=True,
-            dtype=None,
-            encoding="utf8",
-            deletechars=_INVALID_COL_CHARS,
-            ndmin=1,  # Ensure we always get a structured array even with a single result
-            usecols=(0,),  # Only read in the first column, self._primary_id_column_name
-        )
-
+        with open(self.filename_merge, 'r') as file:
+            data = file.readlines()
         return len(data)
 
     def _validate_header_line(self):
