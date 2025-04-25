@@ -38,13 +38,10 @@ def merge_MPC_file(filename, new_filename, comment_char="#"):
 
 # From google
 from pathlib import Path
-import os
 def append_to_filename(filepath, text_to_append):
     path = Path(filepath)
-    
-    new_filename = f"{path.stem}{text_to_append}{path.suffix}"
+    new_filename = f"{path.stem}{path.suffix}{text_to_append}"    
     new_filepath = path.with_name(new_filename)
-    
     return new_filepath
 
 class Obs80DataReader(ObjectDataReader):
@@ -74,7 +71,7 @@ class Obs80DataReader(ObjectDataReader):
         self.filename = filename
         print(filename)
 
-        self.filename_merge = append_to_filename(filename, "._merge")
+        self.filename_merge = append_to_filename(filename, "_merge")
         
         merge_MPC_file(filename, self.filename_merge)        
 
@@ -192,28 +189,15 @@ class Obs80DataReader(ObjectDataReader):
         res : numpy structured array
             The data read in from the file.
         """
-        # Skip the rows before the header and then begin_loc rows after the header.
-        skip_rows = []
-        if block_start > 0:
-            skip_rows.extend([i for i in range(self.header_row + 1, self.header_row + 1 + block_start)])
 
-        # Read in the data from self.filename, extracting the header row, and skipping in all of
-        # block_size rows, skipping all of the skip_rows.
-        if self.sep == "whitespace":
-            res_df = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                skiprows=skip_rows,
-                nrows=block_size,
-            )
-        else:
-            res_df = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                skiprows=skip_rows,
-                nrows=block_size,
-            )
-        records = res_df.to_records(index=False)
+        objName, jd_tdb, raDeg, decDeg, mag, filt, RA_sig, Dec_sig, mag_sig, obsCode, prob = readfunc(line[0:80])
+
+        # Skip the rows before the header and then begin_loc rows after the header.        
+        with open(self.filename_merge, 'r') as file:
+            lines = file.readlines()[self.header_row + block_start]
+        lines = file.readlines()[block_start:block_start + block_size]             
+
+        print(len(lines))
         return np.array(records, dtype=records.dtype.descr)
 
     def _build_id_map(self):
@@ -221,20 +205,9 @@ class Obs80DataReader(ObjectDataReader):
         if self.obj_id_table is not None:
             return
 
-        if self.sep == "whitespace":
-            self.obj_id_table = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                usecols=[self._primary_id_column_name],
-                header=self.header_row,
-            )
-        else:
-            self.obj_id_table = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                usecols=[self._primary_id_column_name],
-                header=self.header_row,
-            )
+        with open(self.filename_merge, 'r') as file:
+            lines = file.readlines()
+            print(len(lines))
 
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
