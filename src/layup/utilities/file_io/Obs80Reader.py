@@ -1,12 +1,11 @@
 import numpy as np
-import logging
-import sys
-import pandas as pd
 import spiceypy as spice
+
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
+
 
 # This routine checks the 80-character input line to see if it contains a special character (S, R, or V) that indicates a 2-line
 # record.
@@ -15,13 +14,14 @@ def is_two_line(line):
     obsCode = line[77:80]
     return note2 == "S" or note2 == "R" or note2 == "V"
 
+
 # This routine opens and reads filename, separating the records into those in the 1-line and 2-line formats.
 # The 2-line format lines are merged into single 160-character records for processing line-by-line.
 def merge_MPC_file(filename, new_filename, comment_char="#"):
     with open(new_filename, "w") as f1_out:
         line1 = None
         with open(filename, "r") as f:
-            print('opened ', filename)
+            print("opened ", filename)
             for line in f:
                 if line.startswith(comment_char):
                     continue
@@ -36,47 +36,50 @@ def merge_MPC_file(filename, new_filename, comment_char="#"):
                     f1_out.write(line)
                     line1 = None
 
+
 # These routines convert the RA and Dec strings to floats.
 def RA2degRA(RA):
     hr = RA[0:2]
-    if hr.strip() == '':
+    if hr.strip() == "":
         hr = 0.0
     else:
         hr = float(hr)
     mn = RA[3:5]
-    if mn.strip == '':
+    if mn.strip == "":
         mn = 0.0
     else:
         mn = float(mn)
     sc = RA[6:]
-    if sc.strip() == '':
+    if sc.strip() == "":
         sc = 0.0
     else:
         sc = float(sc)
-    degRA = 15.0*(hr + 1./60. * (mn + 1./60. * sc))
+    degRA = 15.0 * (hr + 1.0 / 60.0 * (mn + 1.0 / 60.0 * sc))
     return degRA
+
 
 def Dec2degDec(Dec):
     s = Dec[0]
     dg = Dec[1:3]
-    if dg.strip()=='':
+    if dg.strip() == "":
         dg = 0.0
     else:
         dg = float(dg)
     mn = Dec[4:6]
-    if mn.strip()=='':
+    if mn.strip() == "":
         mn = 0.0
     else:
         mn = float(mn)
     sc = Dec[7:]
-    if sc.strip() == '':
+    if sc.strip() == "":
         sc = 0.0
     else:
         sc = float(sc)
-    degDec = dg + 1./60. * (mn + 1./60. * sc)
-    if s == '-':
+    degDec = dg + 1.0 / 60.0 * (mn + 1.0 / 60.0 * sc)
+    if s == "-":
         degDec = -degDec
     return degDec
+
 
 # Parses the date string from the 80-character record
 def parseDate(dateObs):
@@ -84,6 +87,7 @@ def parseDate(dateObs):
     mn = dateObs[5:7]
     dy = dateObs[8:]
     return yr, mn, dy
+
 
 def mpctime2isotime(mpctimeStr, digits=4):
     yr, mn, dy = parseDate(mpctimeStr)
@@ -107,9 +111,11 @@ def mpctime2isotime(mpctimeStr, digits=4):
     isoStr = formatStr % (yr, mn, day, hrs, mins, secs)
     return isoStr
 
+
 def mpctime2et(mpctimeStr, digits=4):
     isoStr = mpctime2isotime(mpctimeStr, digits=digits)
     return spice.str2et(isoStr)
+
 
 # Grab a line of obs80 data and return the designations.
 def get_obs80_id(line):
@@ -122,6 +128,7 @@ def get_obs80_id(line):
     else:
         raise Exception("No object identifier" + objName + provDesig)
     return objID
+
 
 # Grab a line of obs80 data and convert it to values
 # this assumes the object is numbered.
@@ -152,18 +159,21 @@ def convertObs80(line, digits=4):
         objID = provDesig
     else:
         raise Exception("No object identifier" + objName + provDesig)
-    iso_time = mpctime2isotime(dateObs, digits=digits)    
+    iso_time = mpctime2isotime(dateObs, digits=digits)
     raDeg, decDeg = RA2degRA(RA), Dec2degDec(Dec)
     return objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg
-                    
+
 
 # From google
 from pathlib import Path
+
+
 def append_to_filename(filepath, text_to_append):
     path = Path(filepath)
-    new_filename = f"{path.stem}{path.suffix}{text_to_append}"    
+    new_filename = f"{path.stem}{path.suffix}{text_to_append}"
     new_filepath = path.with_name(new_filename)
     return new_filepath
+
 
 class Obs80DataReader(ObjectDataReader):
     """A class to read in object data files stored in the MPC's obs80
@@ -193,14 +203,14 @@ class Obs80DataReader(ObjectDataReader):
         print(filename)
 
         self.filename_merge = append_to_filename(filename, "_merge")
-        
-        merge_MPC_file(filename, self.filename_merge)        
+
+        merge_MPC_file(filename, self.filename_merge)
 
         # Header lines for obs80 data are about observational
         # circumstances.  We identify and skip those lines.
 
         # To pre-validation the header information.
-        #self._validate_header_line()
+        # self._validate_header_line()
         self.header_row = 0  # The header row is always the first row
 
         # A table holding just the object ID for each row. Only populated
@@ -224,14 +234,14 @@ class Obs80DataReader(ObjectDataReader):
 
     def get_row_count(self):
         # Should this be the count of observation lines?
-        """Return the total number of rows in the file.  
+        """Return the total number of rows in the file.
 
         Returns
         -------
         int
             Total rows in the file.
         """
-        with open(self.filename_merge, 'r') as file:
+        with open(self.filename_merge, "r") as file:
             data = file.readlines()
         return len(data)
 
@@ -259,15 +269,36 @@ class Obs80DataReader(ObjectDataReader):
         res : numpy structured array
             The data read in from the file.
         """
+        lines, records = [], []
+        with open(self.filename_merge, "r") as file:
+            lines = file.readlines()[block_start : block_start + block_size]
+        for line in lines:
+            objID, isotime, raDeg, decDeg, mag, filt, obsCode = convertObs80(line[0:80])
+            records.append(
+                (
+                    objID,
+                    isotime,
+                    raDeg,
+                    decDeg,
+                    mag,
+                    filt,
+                    obsCode,
+                )
+            )
 
-        objName, jd_tdb, raDeg, decDeg, mag, filt, RA_sig, Dec_sig, mag_sig, obsCode, prob = readfunc(line[0:80])
+        for i in records[0]:
+            print(i, type(i))
 
-        # Skip the rows before the header and then begin_loc rows after the header.        
-        with open(self.filename_merge, 'r') as file:
-            lines = file.readlines()[self.header_row + block_start]
-        lines = file.readlines()[block_start:block_start + block_size]             
-
-        return np.array(records, dtype=records.dtype.descr)
+        output_dtype = [
+            ("objID", "U10"),
+            ("isotime", "U25"),
+            ("raDeg", "f8"),
+            ("decDeg", "f8"),
+            ("mag", "f4"),
+            ("filt", "U1"),
+            ("obsCode", "U3"),
+        ]
+        return np.array(records, dtype=output_dtype)
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
@@ -275,15 +306,14 @@ class Obs80DataReader(ObjectDataReader):
         if self.obj_id_table is not None:
             return
 
-        with open(self.filename_merge, 'r') as file:
+        with open(self.filename_merge, "r") as file:
             lines = file.readlines()
             print(len(lines))
             objIDs = [get_obs80_id(line) for line in lines]
-            data_type = np.dtype([('provID', 'U10')])
+            data_type = np.dtype([("provID", "U10")])
             objIDs = np.array(objIDs, dtype=data_type)
             self.obj_id_table = objIDs
-            self.obj_id_table = self._validate_object_id_column(self.obj_id_table)            
-
+            self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
         # Create a dictionary of the object ID counts.
         for i in self.obj_id_table[self._primary_id_column_name]:
@@ -308,12 +338,12 @@ class Obs80DataReader(ObjectDataReader):
         self._build_id_map()
         print(self.obj_id_table)
 
-        skipped_row =~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids)
+        skipped_row = ~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids)
         print(skipped_row)
 
-        with open(self.filename_merge, 'r') as file:
+        with open(self.filename_merge, "r") as file:
             lines = file.readlines()
-            for line, sr in zip(lines, skipped_row):
+            for line, sr in zip(lines, skipped_row, strict=False):
                 if not sr:
                     objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg = convertObs80(line)
                     print(objID, iso_time)
