@@ -271,36 +271,7 @@ class Obs80DataReader(ObjectDataReader):
                     row_to_process = prev_line.rstrip("\n") + curr_line
                     prev_line = None
 
-                (
-                    objID,
-                    iso_time,
-                    raDeg,
-                    decDeg,
-                    mag,
-                    filt,
-                    obsCode,
-                    cat,
-                    prg,
-                    obs_geo_x,
-                    obs_geo_y,
-                    obs_geo_z,
-                ) = convertObs80(row_to_process)
-                records.append(
-                    (
-                        objID,
-                        iso_time,
-                        raDeg,
-                        decDeg,
-                        mag,
-                        filt,
-                        obsCode,
-                        cat,
-                        prg,
-                        obs_geo_x,
-                        obs_geo_y,
-                        obs_geo_z,
-                    )
-                )
+                records.append(convertObs80(row_to_process))
                 curr_block += 1
 
         return np.array(records, dtype=_OUTPUT_DTYPE)
@@ -365,36 +336,7 @@ class Obs80DataReader(ObjectDataReader):
                     row_to_process = prev_line.rstrip("\n") + curr_line
                     prev_line = None
 
-                (
-                    objID,
-                    iso_time,
-                    raDeg,
-                    decDeg,
-                    mag,
-                    filt,
-                    obsCode,
-                    cat,
-                    prg,
-                    obs_geo_x,
-                    obs_geo_y,
-                    obs_geo_z,
-                ) = convertObs80(row_to_process)
-                records.append(
-                    (
-                        objID,
-                        iso_time,
-                        raDeg,
-                        decDeg,
-                        mag,
-                        filt,
-                        obsCode,
-                        cat,
-                        prg,
-                        obs_geo_x,
-                        obs_geo_y,
-                        obs_geo_z,
-                    )
-                )
+                records.append(convertObs80(row_to_process))
         return np.array(records, dtype=_OUTPUT_DTYPE)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
