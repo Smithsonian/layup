@@ -33,86 +33,46 @@ namespace py = pybind11;
 
 namespace orbit_fit
 {
+    Eigen::Vector3d rho_hat_from_ra_dec(double ra, double dec)
+    {
+        Eigen::Vector3d rho_hat;
+        rho_hat.x() = std::cos(dec) * std::cos(ra);
+        rho_hat.y() = std::cos(dec) * std::sin(ra);
+        rho_hat.z() = std::sin(dec);
+        return rho_hat;
+    }
 
+    Eigen::Vector3d a_vec_from_rho_hat(const Eigen::Vector3d &rho_hat)
+    {
+        Eigen::Vector3d a_vec;
+        a_vec.x() = rho_hat.z();
+        a_vec.y() = 0.0;
+        a_vec.z() = -rho_hat.x();
+        return a_vec;
+    }
+
+    Eigen::Vector3d d_vec_from_rho_hat(const Eigen::Vector3d &rho_hat)
+    {
+        Eigen::Vector3d d_vec;
+        d_vec.x() = -rho_hat.x() * rho_hat.y();
+        d_vec.y() = rho_hat.x() * rho_hat.x() + rho_hat.z() * rho_hat.z();
+        d_vec.z() = -rho_hat.z() * rho_hat.y();
+        return d_vec;
+    }  
     struct AstrometryObservation
     {
-        Eigen::Vector3d rho_hat; // Computed unit direction vector
-        // tangent plane vectors
-        Eigen::Vector3d a_vec;
-        Eigen::Vector3d d_vec;
-
         AstrometryObservation() = default;
         // Constructor: takes ra and dec (in radians) and computes rho_hat.
-        AstrometryObservation(double ra, double dec)
-        {
-            rho_hat.x() = std::cos(dec) * std::cos(ra);
-            rho_hat.y() = std::cos(dec) * std::sin(ra);
-            rho_hat.z() = std::sin(dec);
-
-            // danby trick ?
-            a_vec.x() = rho_hat.z();
-            a_vec.y() = 0.0;
-            a_vec.z() = -rho_hat.x();
-
-            d_vec.x() = -rho_hat.x() * rho_hat.y();
-            d_vec.y() = rho_hat.x() * rho_hat.x() + rho_hat.z() * rho_hat.z();
-            d_vec.z() = -rho_hat.z() * rho_hat.y();
-        }
-        AstrometryObservation(std::array<double, 3> rho, std::array<double, 3> a, std::array<double, 3> d)
-        {
-            // constructor for if unit vectors have been precomputed
-            rho_hat.x() = rho[0];
-            rho_hat.y() = rho[1];
-            rho_hat.z() = rho[2];
-            a_vec.x() = a[0];
-            a_vec.y() = a[1];
-            a_vec.z() = a[2];
-            d_vec.x() = d[0];
-            d_vec.y() = d[1];
-            d_vec.z() = d[2];
-        }
     };
 
     struct StreakObservation
     {
         double ra_rate;
         double dec_rate;
-        Eigen::Vector3d rho_hat;
-        // tangent plane vectors
-        Eigen::Vector3d a_vec;
-        Eigen::Vector3d d_vec;
 
         StreakObservation() = default;
         // Constructor: takes ra, dec and the corresponding rates, and computes rho_hat.
-        StreakObservation(double ra, double dec, double ra_rate, double dec_rate)
-            : ra_rate(ra_rate), dec_rate(dec_rate)
-        {
-            rho_hat.x() = std::cos(dec) * std::cos(ra);
-            rho_hat.y() = std::cos(dec) * std::sin(ra);
-            rho_hat.z() = std::sin(dec);
-
-            // danby trick ?
-            a_vec.x() = rho_hat.z();
-            a_vec.y() = 0.0;
-            a_vec.z() = -rho_hat.x();
-
-            d_vec.x() = -rho_hat.x() * rho_hat.y();
-            d_vec.y() = rho_hat.x() * rho_hat.x() + rho_hat.z() * rho_hat.z();
-            d_vec.z() = -rho_hat.z() * rho_hat.y();
-        }
-        StreakObservation(std::array<double, 3> rho, std::array<double, 3> a, std::array<double, 3> d)
-        {
-            // constructor for if unit vectors have been precomputed
-            rho_hat.x() = rho[0];
-            rho_hat.y() = rho[1];
-            rho_hat.z() = rho[2];
-            a_vec.x() = a[0];
-            a_vec.y() = a[1];
-            a_vec.z() = a[2];
-            d_vec.x() = d[0];
-            d_vec.y() = d[1];
-            d_vec.z() = d[2];
-        }
+        StreakObservation(double ra_rate, double dec_rate) : ra_rate(ra_rate), dec_rate(dec_rate){}
     };
 
     using ObservationType = std::variant<AstrometryObservation, StreakObservation>;
@@ -125,6 +85,13 @@ namespace orbit_fit
         ObservationType observation_type;
         std::array<double, 3> observer_position;
         std::array<double, 3> observer_velocity;
+
+        // Computed unit direction vector
+        Eigen::Vector3d rho_hat;
+        // tangent plane vectors
+        Eigen::Vector3d a_vec;
+        Eigen::Vector3d d_vec;
+
         std::optional<Eigen::MatrixXd> inverse_covariance;
         std::optional<double> mag;
         std::optional<double> mag_err;
@@ -149,13 +116,28 @@ namespace orbit_fit
             std::array<double, 3> obs_position,
             std::array<double, 3> obs_velocity,
             std::array<double, 3> rho,
-            std::array<double, 3> a_vec,
-            std::array<double, 3> d_vec)
+            std::array<double, 3> avec,
+            std::array<double, 3> dvec)
         {
             epoch = ep;
             observer_position = obs_position;
             observer_velocity = obs_velocity;
-            observation_type = AstrometryObservation(rho, a_vec, d_vec);
+            observation_type = AstrometryObservation();
+
+            rho_hat.x() = rho[0];
+            rho_hat.y() = rho[1];
+            rho_hat.z() = rho[2];
+
+            a_vec.x() = avec[0];
+            a_vec.y() = avec[1];
+            a_vec.z() = avec[2];
+
+            d_vec.x() = dvec[0];
+            d_vec.y() = dvec[1];
+            d_vec.z() = dvec[2];
+
+            ra_unc = 1.0 / 206265;
+            dec_unc = 1.0 / 206265;
         }
 
         Observation(
@@ -163,15 +145,28 @@ namespace orbit_fit
             std::array<double, 3> obs_position,
             std::array<double, 3> obs_velocity,
             std::array<double, 3> rho,
-            std::array<double, 3> a_vec,
-            std::array<double, 3> d_vec,
+            std::array<double, 3> avec,
+            std::array<double, 3> dvec,
             double ra_uncy,
             double dec_uncy)
         {
             epoch = ep;
             observer_position = obs_position;
             observer_velocity = obs_velocity;
-            observation_type = AstrometryObservation(rho, a_vec, d_vec);
+            observation_type = AstrometryObservation();
+
+            rho_hat.x() = rho[0];
+            rho_hat.y() = rho[1];
+            rho_hat.z() = rho[2];
+
+            a_vec.x() = avec[0];
+            a_vec.y() = avec[1];
+            a_vec.z() = avec[2];
+
+            d_vec.x() = dvec[0];
+            d_vec.y() = dvec[1];
+            d_vec.z() = dvec[2];
+
             ra_unc = ra_uncy;
             dec_unc = dec_uncy;
         }
@@ -182,9 +177,12 @@ namespace orbit_fit
                                            const std::array<double, 3> &obs_velocity)
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
-            obs.observation_type = AstrometryObservation(ra, dec);
+            obs.observation_type = AstrometryObservation();
             obs.ra_unc = 1.0/206265;
             obs.dec_unc = 1.0/206265;
+            obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
+            obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
+            obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
             return obs;
         }
 
@@ -195,7 +193,12 @@ namespace orbit_fit
                                        const std::array<double, 3> &obs_velocity)
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
-            obs.observation_type = StreakObservation(ra, dec, ra_rate, dec_rate);
+            obs.observation_type = StreakObservation(ra_rate, dec_rate);
+            obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
+            obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
+            obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
+            obs.ra_unc = 1.0/206265;
+            obs.dec_unc = 1.0/206265;
             return obs;
         }
 
@@ -206,23 +209,14 @@ namespace orbit_fit
     static void detection_bindings(py::module &m)
     {
         py::class_<AstrometryObservation>(m, "AstrometryObservation")
-            .def(py::init<double, double>(),
-                 py::arg("ra"), py::arg("dec"))
-            .def(py::init<std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
-            .def_readwrite("rho_hat", &AstrometryObservation::rho_hat,
-                "Computed unit direction vector (rho_hat)")
-            .def_readwrite("a_vec", &AstrometryObservation::a_vec, "RA unit vector")
-            .def_readwrite("d_vec", &AstrometryObservation::d_vec, "Dec unit vector");
+            .def(py::init<>());
 
         // Bind StreakObservation type.
         py::class_<StreakObservation>(m, "StreakObservation")
-            .def(py::init<double, double, double, double>(),
-                 py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"))
-            .def(py::init<std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
+            .def(py::init<double, double>(),
+                 py::arg("ra_rate"), py::arg("dec_rate"))
             .def_readonly("ra_rate", &StreakObservation::ra_rate)
-            .def_readonly("dec_rate", &StreakObservation::dec_rate)
-            .def_readonly("rho_hat", &StreakObservation::rho_hat,
-                          "Computed unit direction vector (rho_hat)");
+            .def_readonly("dec_rate", &StreakObservation::dec_rate);
 
         // Bind the main Observation type with multiple overloaded constructors.
         py::class_<Observation>(m, "Observation")
@@ -245,6 +239,9 @@ namespace orbit_fit
             .def_readonly("observation_type", &Observation::observation_type, "Variant holding the observation data")
             .def_readonly("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
             .def_readonly("observer_velocity", &Observation::observer_velocity, "Observer velocity as a 3D vector")
+            .def_readonly("rho_hat", &Observation::rho_hat, "Unit direction vector")
+            .def_readonly("a_vec", &Observation::a_vec, "Tangent plane vector A")
+            .def_readonly("d_vec", &Observation::d_vec, "Tangent plane vector D")
             .def_readonly("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")
             .def_readonly("ra_unc", &Observation::ra_unc, "RA uncertainty")
             .def_readonly("dec_unc", &Observation::dec_unc, "Dec uncertainty")

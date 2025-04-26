@@ -248,8 +248,8 @@ namespace orbit_fit
         double ye = this_det.observer_position[1];
         double ze = this_det.observer_position[2];
 
-        Eigen::Vector3d Av = std::get<AstrometryObservation>(this_det.observation_type).a_vec;
-        Eigen::Vector3d Dv = std::get<AstrometryObservation>(this_det.observation_type).d_vec;
+        Eigen::Vector3d Av = this_det.a_vec;
+        Eigen::Vector3d Dv = this_det.d_vec;
 
         double Ax = Av.x();
         double Ay = Av.y();
@@ -368,8 +368,8 @@ namespace orbit_fit
         double ye = this_det.observer_position[1];
         double ze = this_det.observer_position[2];
 
-        Eigen::Vector3d Av = std::get<AstrometryObservation>(this_det.observation_type).a_vec;
-        Eigen::Vector3d Dv = std::get<AstrometryObservation>(this_det.observation_type).d_vec;
+        Eigen::Vector3d Av = this_det.a_vec;
+        Eigen::Vector3d Dv = this_det.d_vec;
 
         double Ax = Av.x();
         double Ay = Av.y();
