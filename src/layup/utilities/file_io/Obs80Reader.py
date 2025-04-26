@@ -20,141 +20,142 @@ _OUTPUT_DTYPE = [
 
 
 def is_two_line_row(line):
-    """Checks if the line is the first line of a two-line row format."""
+    """Checks if the MPC Obs80 line is the first line of a two-line row format."""
     note2 = line[14]
     return note2 == "S" or note2 == "R" or note2 == "V"
 
 
-# These routines convert the RA and Dec strings to floats.
-def RA2degRA(RA):
-    hr = RA[0:2]
-    if hr.strip() == "":
-        hr = 0.0
-    else:
-        hr = float(hr)
-    mn = RA[3:5]
-    if mn.strip == "":
-        mn = 0.0
-    else:
-        mn = float(mn)
-    sc = RA[6:]
-    if sc.strip() == "":
-        sc = 0.0
-    else:
-        sc = float(sc)
-    degRA = 15.0 * (hr + 1.0 / 60.0 * (mn + 1.0 / 60.0 * sc))
-    return degRA
+def ra_to_deg_ra(ra):
+    """Converts the Obs80 RA string to degrees."""
+    hr = ra[0:2].strip()
+    hr = float(hr) if hr != "" else 0.0
+
+    mn = ra[3:5].strip()
+    mn = float(mn) if mn != "" else 0.0
+
+    sc = ra[6:].strip()
+    sc = float(sc) if sc != "" else 0.0
+
+    deg_ra = 15.0 * (hr + 1.0 / 60.0 * (mn + 1.0 / 60.0 * sc))
+    return deg_ra
 
 
-def Dec2degDec(Dec):
-    s = Dec[0]
-    dg = Dec[1:3]
-    if dg.strip() == "":
-        dg = 0.0
-    else:
-        dg = float(dg)
-    mn = Dec[4:6]
-    if mn.strip() == "":
-        mn = 0.0
-    else:
-        mn = float(mn)
-    sc = Dec[7:]
-    if sc.strip() == "":
-        sc = 0.0
-    else:
-        sc = float(sc)
-    degDec = dg + 1.0 / 60.0 * (mn + 1.0 / 60.0 * sc)
-    if s == "-":
-        degDec = -degDec
-    return degDec
+def dec_to_deg_dec(dec):
+    """Converts the Obs80 Dec string to degrees."""
+    dg = dec[1:3].strip()
+    dg = float(dg) if dg != "" else 0.0
+
+    mn = dec[4:6].strip()
+    mn = float(mn) if mn != "" else 0.0
+
+    sc = dec[7:].strip()
+    sc = float(sc) if sc != "" else 0.0
+
+    deg_dec = dg + 1.0 / 60.0 * (mn + 1.0 / 60.0 * sc)
+
+    sign = dec[0]
+    if sign == "-":
+        deg_dec = -deg_dec
+    return deg_dec
 
 
-# Parses the date string from the 80-character record
-def parseDate(dateObs):
-    yr = dateObs[0:4]
-    mn = dateObs[5:7]
-    dy = dateObs[8:]
-    return yr, mn, dy
+def mpctime_to_isotime(mpc_time):
+    """Converts from the MPC time formatted string to ISO time format."""
+    yr = mpc_time[0:4]
+    mn = mpc_time[5:7]
+    dy = float(mpc_time[8:])
 
-
-def mpctime2isotime(mpctimeStr, digits=4):
-    yr, mn, dy = parseDate(mpctimeStr)
-    dy = float(dy)
     frac_day, day = np.modf(dy)
     frac_hrs, hrs = np.modf(frac_day * 24)
     frac_mins, mins = np.modf(frac_hrs * 60)
     secs = frac_mins * 60
-    if np.round(secs, digits) >= 60.0:
-        secs = np.round(secs, digits) - 60
+
+    if np.round(secs, 4) >= 60.0:
+        secs = np.round(secs, 4) - 60
         if secs < 0.0:
             secs = 0.0
         mins += 1
+
     if mins >= 60:
         mins -= 60
         hrs += 1
+
     if hrs >= 24:
         hrs -= 24
         day += 1  # Could mess up the number of days in the month
-    formatStr = "%4s-%2s-%02dT%02d:%02d:%02." + str(digits) + "f"
-    isoStr = formatStr % (yr, mn, day, hrs, mins, secs)
-    return isoStr
+
+    format_string = "%4s-%2s-%02dT%02d:%02d:%02." + str(4) + "f"
+    return format_string % (yr, mn, day, hrs, mins, secs)
 
 
-# Grab a line of obs80 data and return the designations.
 def get_obs80_id(line):
-    # TODO revisit if we should cast as string
-    # TODO should we strip directly when reading in
-    objName = line[0:5]
-    provDesig = line[5:12]
-    if objName.strip() != "":
-        objID = objName
-    elif provDesig.strip() != "":
-        objID = provDesig
+    """Get the object ID from the Obs80 line. Using the object name if provided,
+    otherwise using the provisional ID."""
+    obj_name = line[0:5].strip()
+    prov_id = line[5:12].strip()
+    if obj_name != "":
+        obj_id = obj_name
+    elif prov_id != "":
+        obj_id = prov_id
     else:
-        raise Exception("No object identifier" + objName + provDesig)
-    return str(objID)
+        raise Exception(f"No object identifier: Name was {obj_name} and provId was {prov_id}")
+    return obj_id
 
 
-# Grab a line of obs80 data and convert it to values
-# this assumes the object is numbered.
-def convertObs80(line, digits=4):
-    objName = line[0:5]
-    provDesig = line[5:12]
-    disAst = line[12:13]
-    note1 = line[13:14]
-    note2 = line[14:15]
-    dateObs = line[15:32]
-    RA = line[32:44]
-    Dec = line[44:56]
-    mag = line[65:70]
-    filt = line[70:71]
-    obsCode = line[77:80]
+def convert_obs80(line, second_line=None):
+    """
+    Converts a row of obs80 data to a tuple of values.
+    The second line is optional and may contain the observatory position.
 
+    Parameters
+    ----------
+    line : str
+        The line of obs80 data to convert.
+    second_line : str, optional
+        The optional second line of obs80 data to convert. Default is None.
+
+    Returns
+    -------
+    tuple
+        A tuple of values containing the object ID, ISO time, RA in degrees,
+        Dec in degrees, magnitude, filter, observatory code, catalog, program,
+        and observatory position (x, y, z).
+    """
+    # Extract the relevant fields from the first mpc obs80 line.
+    obj_name = line[0:5].strip()
+    prov_id = line[5:12].strip()
+    obstime = line[15:32].strip()
+    ra = line[32:44].strip()
+    dec = line[44:56].strip()
+    mag = line[65:70].strip()
+    filt = line[70:71].strip()
+    obs_code = line[77:80].strip()
     cat = line[71].strip()
-
     prg = line[13].strip()
 
-    if objName.strip() != "":
-        objID = objName
-    elif provDesig.strip() != "":
-        objID = provDesig
+    # Use the object name as object ID if provided, otherwise use the provisional ID.
+    if obj_name != "":
+        obj_id = obj_name
+    elif prov_id != "":
+        obj_id = prov_id
     else:
-        raise Exception("No object identifier" + objName + provDesig)
-    iso_time = mpctime2isotime(dateObs, digits=digits)
-    mag = float(mag) if mag.strip() != "" else 0.0
-    raDeg, decDeg = RA2degRA(RA), Dec2degDec(Dec)
+        raise Exception(f"No object identifier: Name was {obj_name} and provId was {prov_id}")
 
-    # The geo position of the observatory is not always provided in the obs80 file.
+    # Do any unit and type conversions. Note that various layup verbs will likely
+    # convert these values again to their internal formats.
+    iso_time = mpctime_to_isotime(obstime)
+    ra_deg, dec_deg = ra_to_deg_ra(ra), dec_to_deg_dec(dec)
+    mag = float(mag) if "" else 0.0
+
+    # Process the observatory position if provided.
     obs_geo_x, obs_geo_y, obs_geo_z = np.nan, np.nan, np.nan
-    if len(line.rstrip()) > 80:
-        # We process the observatory positions which were mereged in from a second line
-        # TODO revisit
-        second_line = line[80:]
+    if second_line is not None:
+        # Check that the second line is long enough to contain the observatory position.
         if len(second_line) < 80:
             raise ValueError(
-                f"Observatory position line is too short for {objID} and line of lenght {len(second_line)} {second_line}"
+                f"Observatory position line is too short for {obj_id} and line (with length {len(second_line)}: {second_line}"
             )
-        if second_line[77:80].rstrip() != obsCode:
+        if second_line[77:80].strip() != obs_code:
             raise ValueError(
                 f"Observatory codes do not match in the seond line provided for the observatory position. {obsCode} and {second_line[77:80].rstrip()}"
             )
@@ -164,7 +165,7 @@ def convertObs80(line, digits=4):
             obs_geo_y = float(second_line[46] + second_line[47:57].strip())
             obs_geo_z = float(second_line[58] + second_line[59:69].strip())
 
-    return objID, iso_time, raDeg, decDeg, mag, filt, obsCode, cat, prg, obs_geo_x, obs_geo_y, obs_geo_z
+    return obj_id, iso_time, ra_deg, dec_deg, mag, filt, obs_code, cat, prg, obs_geo_x, obs_geo_y, obs_geo_z
 
 
 class Obs80DataReader(ObjectDataReader):
@@ -215,6 +216,9 @@ class Obs80DataReader(ObjectDataReader):
     def get_row_count(self):
         """Return the total number of rows in the file.
 
+        Note that the obs 80 format allows for two-line rows, so the number of
+        lines used to store the data is not the same as the number of rows.
+
         Returns
         -------
         int
@@ -225,7 +229,6 @@ class Obs80DataReader(ObjectDataReader):
             for line in f:
                 if line.strip() != "" and not is_two_line_row(line):
                     row_cnt += 1
-
         return row_cnt
 
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
@@ -266,12 +269,16 @@ class Obs80DataReader(ObjectDataReader):
                     # and wait for the next line to merge them as a single row to process.
                     prev_line = curr_line
                     continue
-                row_to_process = curr_line
-                if prev_line is not None:
-                    row_to_process = prev_line.rstrip("\n") + curr_line
-                    prev_line = None
 
-                records.append(convertObs80(row_to_process))
+                # Process our current MPC Obs80 row.
+                if prev_line is not None:
+                    # We have a two-line row to process.
+                    records.append(convert_obs80(prev_line, second_line=curr_line))
+                    # Remove the previous line so we don't process it again.
+                    prev_line = None
+                else:
+                    # We have a single line to process.
+                    records.append(convert_obs80(curr_line))
                 curr_block += 1
 
         return np.array(records, dtype=_OUTPUT_DTYPE)
@@ -282,18 +289,19 @@ class Obs80DataReader(ObjectDataReader):
         if self.obj_id_table is not None:
             return
 
-        objIDs = []
+        obj_ids = []
         with open(self.filename, "r") as f:
             for curr_line in f:
                 if is_two_line_row(curr_line):
                     # We have a two-line row, so skip it and only
                     # add the object ID from the final row.
                     continue
-                objID = get_obs80_id(curr_line)
-                objIDs.append(objID)
-                self.obj_id_counts[objID] = self.obj_id_counts.get(objID, 0) + 1
+                obj_id = get_obs80_id(curr_line)
+                obj_ids.append(obj_id)
+                # Count the number of times we see this object ID.
+                self.obj_id_counts[obj_id] = self.obj_id_counts.get(obj_id, 0) + 1
 
-        self.obj_id_table = np.array(objIDs, dtype=np.dtype([("ObjID", "U10")]))
+        self.obj_id_table = np.array(obj_ids, dtype=np.dtype([("ObjID", "U10")]))
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
     def _read_objects_internal(self, obj_ids, **kwargs):
@@ -313,12 +321,13 @@ class Obs80DataReader(ObjectDataReader):
             The data read in from the file.
         """
         self._build_id_map()
-        print(self.obj_id_table)
 
-        skipped_row = ~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids)
-        print(skipped_row)
+        # Find which rows map to the requested object ID list
+        skipped_rows = ~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids)
 
         records = []
+        # The index of the current row we are processing to check against skipped_rows.
+        # We start at -1 because we will increment it before processing the first row.
         curr_row_idx = -1
         prev_line = None
         with open(self.filename, "r") as f:
@@ -328,15 +337,20 @@ class Obs80DataReader(ObjectDataReader):
                     # and wait for the next line to merge them as a single row to process.
                     prev_line = curr_line
                     continue
-                curr_row_idx += 1
-                if skipped_row[curr_row_idx]:
-                    continue
-                row_to_process = curr_line
-                if prev_line is not None:
-                    row_to_process = prev_line.rstrip("\n") + curr_line
-                    prev_line = None
 
-                records.append(convertObs80(row_to_process))
+                # We're at a potentially processable row, so increment our index.
+                curr_row_idx += 1
+                if skipped_rows[curr_row_idx]:
+                    continue
+
+                # Process our current MPC Obs80 row.
+                if prev_line is not None:
+                    records.append(convert_obs80(prev_line, curr_line))
+                    # Remove the previous line so we don't process it again.
+                    prev_line = None
+                else:
+                    # Our row is a single line to process.
+                    records.append(convert_obs80(curr_line))
         return np.array(records, dtype=_OUTPUT_DTYPE)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
