@@ -64,7 +64,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         "vz",
         "epoch",
         "niter",
-        "format",
+        "FORMAT",
         "cov_00",
         "cov_01",
         "cov_02",
@@ -105,7 +105,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     assert set(output_data.dtype.names) == set(expected_cols)
 
     # Verify that all of the output data is in the default BCART format
-    assert np.all(output_data["format"] == "BCART")
+    assert np.all(output_data["FORMAT"] == "BCART")
 
 
 def test_orbit_fit_mixed_inputs():

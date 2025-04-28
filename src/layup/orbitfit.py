@@ -37,16 +37,10 @@ _RESULT_DTYPES = np.dtype(
         ("vz", "f8"),  # The last of 6 state vector elements
         ("epoch", "f8"),  # Epoch
         ("niter", "i4"),  # Number of iterations
-        ("format", "O"),  # Orbit format
+        ("FORMAT", "O"),  # Orbit format
     ]
-    + [
-        (f"cov_0{i}", "f8")
-        for i in range(10)  # Flat covariance matrix (first 10 elements)
-    ]
-    + [
-        (f"cov_{i}", "f8")
-        for i in range(10, 36)  # Flat covariance matrix (remaining 26 elements)
-    ]
+    + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
+    + [(f"cov_{i}", "f8") for i in range(10, 36)]  # Flat covariance matrix (remaining 26 elements)
 )
 
 
