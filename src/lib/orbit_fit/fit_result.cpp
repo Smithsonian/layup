@@ -18,8 +18,8 @@ namespace orbit_fit
         double epoch;                  // Epoch
         double root;                   // Root value (gauss)
         std::array<double, 6> state;   // State vector
-        std::array<std::array<double, 6>, 6> cov; // Covariance matrix
-        int niter;                    // Number of iterations
+        std::array<double, 36> cov;    // Covariance matrix
+        int niter;                     // Number of iterations
         std::string method;            // Method used for fitting
         int flag;                      // Flag indicating the success of the fit
     };

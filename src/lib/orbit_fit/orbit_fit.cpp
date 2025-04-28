@@ -1210,7 +1210,8 @@ namespace orbit_fit
             {
                 for(int j = 0; j < 6; j++)
                 {
-                    result.cov[i][j] = cov(i,j);
+                    // flatten the covariance matrix
+                    result.cov[(i * 6) + j] = cov(i,j);
                 }
             }
 
