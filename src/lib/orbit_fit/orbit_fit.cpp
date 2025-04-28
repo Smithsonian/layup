@@ -1103,6 +1103,9 @@ namespace orbit_fit
 
         struct FitResult result;
 
+        result.method = "orbit_fit";
+        result.flag = success;
+
         result.epoch = result_epoch;
         result.csq = chi2_final;
         result.ndof = dof;
