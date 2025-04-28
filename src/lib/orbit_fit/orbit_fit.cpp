@@ -54,6 +54,7 @@
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
+#include "predict_result.cpp"
 
 extern "C"
 {
@@ -333,7 +334,7 @@ namespace orbit_fit
         }
     }
 
-    void predict(struct assist_ephem *ephem,
+    PredictResult predict(struct assist_ephem *ephem,
                  struct reb_particle p0, double epoch,
                  Observation this_det,
                  Eigen::MatrixXd &cov,
@@ -449,6 +450,47 @@ namespace orbit_fit
 
         assist_free(ax);
         reb_simulation_free(r);
+
+        PredictResult result;
+        result.rho[0] = rho_x;
+        result.rho[1] = rho_y;
+        result.rho[2] = rho_z;
+        result.obs_cov[0] = obs_cov(0, 0);
+        result.obs_cov[1] = obs_cov(0, 1);
+        result.obs_cov[2] = obs_cov(1, 0);
+        result.obs_cov[3] = obs_cov(1, 1);
+        result.epoch = epoch;
+
+        return result;
+    }
+
+    std::vector<PredictResult> predict_sequence(struct assist_ephem *ephem,
+                                                std::array<double, 6> object_state,
+                                                std::vector<Observation> &detections,
+                                                Eigen::MatrixXd &cov)
+    {
+        std::vector<PredictResult> results;
+
+        // Set up the initial conditions for the particle
+        struct reb_particle particle;
+        particle.x = object_state[0];
+        particle.y = object_state[1];
+        particle.z = object_state[2];
+        particle.vx = object_state[3];
+        particle.vy = object_state[4];
+        particle.vz = object_state[5];
+
+        Eigen::MatrixXd obs_cov(6, 6);
+
+        for (int i = 0; i < detections.size(); i++)
+        {
+            double this_epoch = detections[i].epoch;
+            Observation this_det = detections[i];
+            PredictResult this_result = predict(ephem, particle, this_epoch, this_det, cov, obs_cov);
+            results.push_back(this_result);
+        }
+
+        return results;
     }
 
     // This routine requires that resid_vec and partials_vec are
@@ -1016,7 +1058,7 @@ namespace orbit_fit
             }
 
             Eigen::MatrixXd obs_cov(6, 6);
-            predict(
+            PredictResult pred_first = predict(
                 ephem,
                 p1,
                 res.value()[0].epoch,
@@ -1025,7 +1067,7 @@ namespace orbit_fit
                 obs_cov);
 
             size_t last = detections_full.size() - 1;
-            predict(
+            PredictResult pred_last = predict(
                 ephem,
                 p1,
                 res.value()[0].epoch,
@@ -1067,7 +1109,7 @@ namespace orbit_fit
                 printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
                 Eigen::MatrixXd obs_cov2(6, 6);
                 result_epoch = res.value()[0].epoch;
-                predict(
+                PredictResult pred_first2 = predict(
                     ephem,
                     p1,
                     res.value()[0].epoch,
@@ -1076,7 +1118,7 @@ namespace orbit_fit
                     obs_cov2);
 
                 last = detections_full.size() - 1;
-                predict(
+                PredictResult pred_last2 = predict(
                     ephem,
                     p1,
                     res.value()[0].epoch,
