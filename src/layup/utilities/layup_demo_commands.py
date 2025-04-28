@@ -16,7 +16,7 @@ def print_demo_command(verb, printall=True):
     """
     if verb == "orbitfit":
 
-        current_demo_command = "layup orbitfit cmd (demo not created yet)"
+        current_demo_command = "layup orbitfit holman_data_working.csv ADES_csv -o demo_orbitfit_output"
     elif verb == "convert":
 
         current_demo_command = "layup convert cmd (demo not created yet)"
@@ -39,11 +39,11 @@ def print_demo_command(verb, printall=True):
     if printall:
         print("You can copy the demo files into your working directory by running:\n")
 
-        print("    \033[1;38;2;255;165;0mlayup demo prepare -v " + verb + "\033[0m\n")
+        print("    \033[1;38;2;255;165;0mlayup demo prepare " + verb + "\033[0m\n")
 
         print("Or, to copy them into a directory of your choice, run:\n")
 
-        print("    \033[1;38;2;255;165;0mlayup demo prepare -v " + verb + " -p /path/to/files \033[0m\n")
+        print("    \033[1;38;2;255;165;0mlayup demo prepare " + verb + " -p /path/to/files \033[0m\n")
 
     print(
         "If copying into a directory of your choice, you will need to modify the demo command to path to your files.\n"

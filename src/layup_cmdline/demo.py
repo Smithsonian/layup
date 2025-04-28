@@ -23,11 +23,11 @@ def cmd_demo_prepare(args):  # pragma: no cover
     if args.verb == "orbitfit":
         print("creating demo files")
 
-        # from layup.utilities.layup_copy_demo_files import copy_demo_files
-        # import os
+        from layup.utilities.layup_copy_demo_files import copy_demo_files
+        import os
 
-        # copy_location = os.path.abspath(args.path)
-        # copy_demo_files(copy_location, args.force)
+        copy_location = os.path.abspath(args.path)
+        copy_demo_files(args.verb,copy_location, args.force)
 
     else:
         print(f"Demo not yet created for {args.verb}")
@@ -56,7 +56,6 @@ def cmd_demo_howto(args):  # pragma: no cover
     return print_demo_command(args.verb)
 
 
-
 #
 # layup demo
 #
@@ -78,10 +77,8 @@ def main():
     )
     demo_prepare_parser.set_defaults(func=cmd_demo_prepare)
     demo_prepare_parser.add_argument(
-        "-v",
-        "--verb",
+        dest="verb",
         type=str,
-        required=True,
         help="which verb to prepare from ['comet', 'convert', 'demo','orbitfit', 'predict', 'visualize']",
     )
     demo_prepare_parser.add_argument(
@@ -103,11 +100,9 @@ def main():
     demo_howto_parser = subparsers.add_parser("howto", help="Show the command to run the layup demo")
     demo_howto_parser.set_defaults(func=cmd_demo_howto)
     demo_howto_parser.add_argument(
-        "-v",
-        "--verb",
+        dest="verb",
         type=str,
-        required=True,
-        help="which verb to prepare from ['comet', 'convert', 'demo', 'orbitfit', 'predict', 'visualize']",
+        help="which verb to prepare from ['comet', 'convert', 'demo','orbitfit', 'predict', 'visualize']",
     )
     # Parse the command-line arguments
     args = parser.parse_args()
@@ -121,3 +116,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
