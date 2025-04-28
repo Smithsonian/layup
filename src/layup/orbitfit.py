@@ -38,7 +38,7 @@ _RESULT_DTYPES = np.dtype(
         ("epoch", "f8"),  # Epoch
         ("niter", "i4"),  # Number of iterations
         ("method", "O"),  # Method used for orbit fitting
-        ("flag", "U1"),  # Single-character flag indicating success of the fit
+        ("flag", "i4"),  # Single-character flag indicating success of the fit
         ("FORMAT", "O"),  # Orbit format
     ]
     + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
