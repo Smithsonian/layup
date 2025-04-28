@@ -16,15 +16,12 @@ def cmd_demo_prepare(args):  # pragma: no cover
     #       is poor user experience.
     #
 
-
     import sys
-    
-    if args.verb not in ['comet', 'convert', 'demo', 'orbitfit', 'predict', 'visualize']:
-        sys.exit("not a layup verb try ['comet', 'convert', 'demo', 'orbitfit', 'predict', 'visualize']")
+
+    if args.verb not in ["comet", "convert", "orbitfit", "predict", "visualize"]:
+        sys.exit("not a layup verb try ['comet', 'convert', 'orbitfit', 'predict', 'visualize']")
     if args.verb == "orbitfit":
         print("creating demo files")
-
-
 
         # from layup.utilities.layup_copy_demo_files import copy_demo_files
         # import os
@@ -32,11 +29,9 @@ def cmd_demo_prepare(args):  # pragma: no cover
         # copy_location = os.path.abspath(args.path)
         # copy_demo_files(copy_location, args.force)
 
-    else: 
-        print(f'Demo not yet created for {args.verb}')
-    
-    
-    
+    else:
+        print(f"Demo not yet created for {args.verb}")
+
 
 #
 # layup demo howto
@@ -52,15 +47,15 @@ def cmd_demo_howto(args):  # pragma: no cover
     #       is poor user experience.
     #
     import sys
-    
-    if args.verb not in ['comet', 'convert', 'demo', 'orbitfit', 'predict', 'visualize']:
-        sys.exit("not a layup verb try ['comet', 'convert', 'demo', 'orbitfit', 'predict', 'visualize']")
-    if args.verb == "orbitfit":
-        from layup.utilities.layup_demo_commands import print_demo_command
 
-        return print_demo_command(args.verb)
-    else: 
-        print(f'Demo not yet created for {args.verb}')
+    if args.verb not in ["comet", "convert", "orbitfit", "predict", "visualize"]:
+        sys.exit("not a layup verb try ['comet', 'convert', 'orbitfit', 'predict', 'visualize']")
+
+    from layup.utilities.layup_demo_commands import print_demo_command
+
+    return print_demo_command(args.verb)
+
+
 
 #
 # layup demo
@@ -69,9 +64,7 @@ def cmd_demo_howto(args):  # pragma: no cover
 
 def main():
     # Create the top-level parser
-    parser = LayupArgumentParser(
-        prog="layup demo", description="Prepare and explain how to run layup demos"
-    )
+    parser = LayupArgumentParser(prog="layup demo", description="Prepare and explain how to run layup demos")
     subparsers = parser.add_subparsers(
         title="commands",
         description="Available commands",
@@ -88,7 +81,7 @@ def main():
         "-v",
         "--verb",
         type=str,
-        required = True,
+        required=True,
         help="which verb to prepare from ['comet', 'convert', 'demo','orbitfit', 'predict', 'visualize']",
     )
     demo_prepare_parser.add_argument(
@@ -113,7 +106,7 @@ def main():
         "-v",
         "--verb",
         type=str,
-        required = True,
+        required=True,
         help="which verb to prepare from ['comet', 'convert', 'demo', 'orbitfit', 'predict', 'visualize']",
     )
     # Parse the command-line arguments
