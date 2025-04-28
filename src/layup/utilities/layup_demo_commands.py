@@ -19,7 +19,7 @@ def print_demo_command(verb, printall=True):
         current_demo_command = "layup orbitfit holman_data_working.csv ADES_csv -o demo_orbitfit_output"
     elif verb == "convert":
 
-        current_demo_command = "layup convert cent_orbs_kep.csv BCART -o cent_orbs_BCART.csv"
+        current_demo_command = "layup convert cent_orbs_kep.csv BCART -o cent_orbs_bcart.csv"
     elif verb == "predict":
 
         current_demo_command = "layup predict cmd (demo not created yet)"

@@ -20,7 +20,7 @@ def cmd_demo_prepare(args):  # pragma: no cover
 
     if args.verb not in ["comet", "convert", "orbitfit", "predict", "visualize"]:
         sys.exit("not a layup verb try ['comet', 'convert', 'orbitfit', 'predict', 'visualize']")
-    if args.verb == "orbitfit"or args.verb == "convert":
+    if args.verb == "orbitfit" or args.verb == "convert":
         print("creating demo files")
 
         from layup.utilities.layup_copy_demo_files import copy_demo_files
