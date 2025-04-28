@@ -64,6 +64,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         "vz",
         "epoch",
         "niter",
+        "method",
+        "flag",
         "FORMAT",
         "cov_00",
         "cov_01",

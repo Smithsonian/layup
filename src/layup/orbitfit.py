@@ -37,6 +37,8 @@ _RESULT_DTYPES = np.dtype(
         ("vz", "f8"),  # The last of 6 state vector elements
         ("epoch", "f8"),  # Epoch
         ("niter", "i4"),  # Number of iterations
+        ("method", "O"),  # Method used for orbit fitting
+        ("flag", "U1"),  # Single-character flag indicating success of the fit
         ("FORMAT", "O"),  # Orbit format
     ]
     + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
@@ -97,6 +99,8 @@ def _orbitfit(data, cache_dir: str):
             + (
                 res.epoch,
                 res.niter,
+                res.method,
+                res.flag,
                 "BCART",  # The base format returned by the C++ code
             )
             + tuple(res.cov[i] for i in range(36))  # Flat covariance matrix
