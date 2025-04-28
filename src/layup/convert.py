@@ -215,7 +215,7 @@ def convert_cli(
     num_workers : int, optional (default=-1)
         The number of workers to use for parallel processing of the individual
         chunk. If -1, the number of workers will be set to the number of CPUs on
-        the system. The default is 1 worker.
+        the system.
     cli_args : argparse, optional (default=None)
         The argparse object that was created when running from the CLI.
     """
