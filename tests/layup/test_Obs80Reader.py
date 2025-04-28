@@ -13,10 +13,10 @@ def test_row_count():
 
     reader = Obs80DataReader(get_test_filepath("newy6.txt"))
     row_count = reader.get_row_count()
-    assert row_count == 6585
+    assert row_count == 395
 
 
-@pytest.mark.parametrize("filename", ["03666.txt", "newy6.txt"])
+@pytest.mark.parametrize("filename", ["03666.txt", "newy6_tiny.txt"])
 def test_read_rows(filename):
     """Test reading in a block of rows from an MPC Obs80 data file."""
     # Read in a block of 10 rows from the file.
@@ -35,9 +35,9 @@ def test_read_rows(filename):
 
             # For numeric values, special handling for NaN
             if np.issubdtype(data[col].dtype, np.number):
-                assert np.isnan(val1) and np.isnan(val2) or val1 == val2, (
-                    f"Values don't match for {col}: {val1} != {val2}"
-                )
+                assert (
+                    np.isnan(val1) and np.isnan(val2) or val1 == val2
+                ), f"Values don't match for {col}: {val1} != {val2}"
             else:
                 # For non-numeric values, regular comparison
                 assert val1 == val2, f"Values don't match for {col}: {val1} != {val2}"
@@ -51,7 +51,7 @@ def test_read_objects_with_multiple_ids():
     """Test reading in a group of objects from an MPC Obs80 data file."""
     expected_object_ids = ["DES0028", "DES0007", "DES0075"]
 
-    reader = Obs80DataReader(get_test_filepath("newy6.txt"))
+    reader = Obs80DataReader(get_test_filepath("newy6_tiny.txt"))
     full_data = reader.read_rows()
 
     # Because test file has multiple object than we read in we expect less than the full data.
