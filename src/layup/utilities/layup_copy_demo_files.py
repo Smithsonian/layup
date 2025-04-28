@@ -9,7 +9,7 @@ from layup.utilities.file_access_utils import find_directory_or_exit
 from layup.utilities.layup_demo_commands import print_demo_command
 
 
-def copy_demo_files(verb,copy_location, force_overwrite):
+def copy_demo_files(verb, copy_location, force_overwrite):
     """
     Copies the files needed to run the Sorcha demo to a user-specified location.
 
@@ -29,7 +29,7 @@ def copy_demo_files(verb,copy_location, force_overwrite):
 
     _ = find_directory_or_exit(copy_location, "filepath")
 
-    # add verb demo specific files here and create the directorys 
+    # add verb demo specific files here and create the directorys
     if verb == "orbitfit":
         demo_data_root = files("layup.data.demo.orbitfit")
 
@@ -40,31 +40,23 @@ def copy_demo_files(verb,copy_location, force_overwrite):
         demo_data_root = files("layup.data.demo.convert")
 
         demo_files = [
-            
+            "cent_orbs_kep.csv",
         ]
-       
+
     elif verb == "predict":
         demo_data_root = files("layup.data.demo.predict")
 
-        demo_files = [
-           
-        ]
-       
+        demo_files = []
+
     elif verb == "comet":
         demo_data_root = files("layup.data.demo.comet")
 
-        demo_files = [
-            
-        ]
-        
+        demo_files = []
+
     elif verb == "visualize":
         demo_data_root = files("layup.data.demo.visualise")
 
-        demo_files = [
-            
-        ]
-      
-
+        demo_files = []
 
     for fn in demo_files:
         if not force_overwrite and os.path.isfile(os.path.join(copy_location, fn)):
@@ -77,4 +69,4 @@ def copy_demo_files(verb,copy_location, force_overwrite):
 
     print("Demo files {} copied to {}.".format(demo_files, copy_location))
 
-    print_demo_command(verb,printall=False)
+    print_demo_command(verb, printall=False)
