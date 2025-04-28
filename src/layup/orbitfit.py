@@ -190,8 +190,6 @@ def orbitfit_cli(
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
-    print(reader_class)
-
     reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name)
 
     chunks = _create_chunks(reader, chunk_size)
