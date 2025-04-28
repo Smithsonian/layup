@@ -100,13 +100,6 @@ def execute(args):
 
     if args.b not in ["matplot", "plotly"]:
         sys.exit("ERROR: -b --backend must be 'matplot' or 'plotly'")
-    # visualize_cli(
-    #     input = args.input,
-    #     num = args.n,
-    #     dimensions = args.d,
-    #     backend = args.b,
-    #     output = output_file,
-    # )
 
 
 if __name__ == "__main__":
