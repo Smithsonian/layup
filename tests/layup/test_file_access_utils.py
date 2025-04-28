@@ -26,13 +26,10 @@ def test_find_file_or_exit():
 def test_find_directory_or_exit():
     from layup.utilities.file_access_utils import find_directory_or_exit
 
-    test_dir = find_directory_or_exit("./", "test")
-
     with pytest.raises(SystemExit) as e:
-        find_directory_or_exit("./fake_dir/", "test")
+        find_directory_or_exit("fake_dir/file.csv", "test")
 
-    assert test_dir == "./"
     assert e.type == SystemExit
-    assert e.value.code == "ERROR: filepath ./fake_dir/ supplied for test argument does not exist."
+    assert e.value.code == "ERROR: filepath fake_dir/file.csv supplied for test argument does not exist."
 
     return

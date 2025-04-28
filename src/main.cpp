@@ -7,14 +7,16 @@
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
 
-std::string hello_world() {
+std::string hello_world()
+{
+    std::cout << "Hello hello" << std::endl;
     return "Hello, World!";
 }
 
 namespace py = pybind11;
 
-
-PYBIND11_MODULE(_core, m) {
+PYBIND11_MODULE(_core, m)
+{
     m.doc() = R"pbdoc(
         Pybind11 example plugin
         -----------------------
@@ -32,9 +34,9 @@ PYBIND11_MODULE(_core, m) {
     )pbdoc");
 
     orbit_fit::detection_bindings(m);
+    orbit_fit::gauss_bindings(m);
     orbit_fit::orbit_fit_bindings(m);
     orbit_fit::orbit_fit_result_bindings(m);
-
 
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);

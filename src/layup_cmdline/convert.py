@@ -3,6 +3,10 @@
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
+import logging
+import sys
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -29,7 +33,7 @@ def main():
     optional.add_argument(
         "--ar",
         "--ar-data-path",
-        help="Directory path where Assist+Rebound data files where stored when running bootstrap_sorcha_data_files from the command line.",
+        help="Directory path where Assist+Rebound data files were stored when running `layup bootstrap` from the command line.",
         type=str,
         dest="ar_data_file_path",
         required=False,
@@ -93,7 +97,36 @@ def main():
 
 def execute(args):
     from layup.convert import convert_cli
+    from layup.utilities.cli_utilities import warn_or_remove_file
+    from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
 
+    # check ar directory exists if specified
+    if args.ar_data_file_path:
+        find_directory_or_exit(args.ar_data_file_path, "-ar, --ar_data_path")
+
+    # check input exists
+    find_file_or_exit(args.input, "input")
+
+    # Check that output directory exists
+    find_directory_or_exit(args.o, "-o, --")
+    # check format of input file
+    if args.i.lower() == "csv":
+        output_file = args.o + ".csv"
+    elif args.i.lower() == "hdf5":
+        output_file = args.o + ".h5"
+    else:
+        sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
+
+    # check for overwriting output file
+    warn_or_remove_file(str(output_file), args.force, logger)
+
+    # Check that the conversion type is valid
+    if args.orbit_type not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        logger.error("ERROR: Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
+
+    # Check that chunk size is a positive integer
+    if not isinstance(args.chunk, int) or args.chunk <= 0:
+        logger.error("ERROR: Chunk size must be a positive integer")
     convert_cli(
         input=args.input,
         output_file_stem=args.o,

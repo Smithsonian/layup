@@ -142,6 +142,9 @@ tmp/
 # Mac OS
 .DS_Store
 
+# layup output files if run from root directory
+output.csv
+
 # Airspeed Velocity performance results
 _results/
 _html/
