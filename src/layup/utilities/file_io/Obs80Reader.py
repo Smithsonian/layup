@@ -4,13 +4,13 @@ from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 # The output data type for the structured array of the obs80 reader
 _OUTPUT_DTYPE = [
-    ("ObjID", "U10"),
+    ("provID", "U10"),
     ("obstime", "U25"),
-    ("raDeg", "f8"),
-    ("decDeg", "f8"),
+    ("ra", "f8"),
+    ("dec", "f8"),
     ("mag", "f4"),
     ("filt", "U1"),
-    ("obsCode", "U3"),
+    ("stn", "U3"),
     ("cat", "U1"),
     ("prg", "U1"),
     ("obs_geo_x", "f8"),
@@ -134,10 +134,10 @@ def convert_obs80(line, second_line=None):
     prg = line[13].strip()
 
     # Use the object name as object ID if provided, otherwise use the provisional ID.
-    if obj_name != "":
-        obj_id = obj_name
-    elif prov_id != "":
+    if prov_id != "":
         obj_id = prov_id
+    elif obj_name != "":
+        obj_id = obj_name
     else:
         raise Exception(f"No object identifier: Name was {obj_name} and provId was {prov_id}")
 
@@ -194,6 +194,8 @@ class Obs80DataReader(ObjectDataReader):
         super().__init__(**kwargs)
         self.filename = filename
 
+        self._primary_id_column_name = "provID"
+
         # A table holding just the object ID for each row. Only populated
         # if we try to read data for specific object IDs.
         self.obj_id_table = None
@@ -201,6 +203,23 @@ class Obs80DataReader(ObjectDataReader):
         # A dictionary to hold the number of rows for each object ID. Only populated
         # if we try to read data for specific object IDs.
         self.obj_id_counts = {}
+
+    def _is_header_row(self, line):
+        """Check if the line is a header row.
+
+        Parameters
+        ----------
+        line : str
+            The line to check.
+
+        Returns
+        -------
+        bool
+            True if the line is a header row, False otherwise.
+        """
+        # We know a line is a header row if it starts with an all-caps 3 letter code
+        # followed by a space.
+        return line[0:3].isupper() and line[3] == " "
 
     def get_reader_info(self):
         """Return a string identifying the current reader name
@@ -227,7 +246,7 @@ class Obs80DataReader(ObjectDataReader):
         row_cnt = 0
         with open(self.filename, "r") as f:
             for line in f:
-                if line.strip() != "" and not is_two_line_row(line):
+                if line.strip() != "" and not self._is_header_row(line) and not is_two_line_row(line):
                     row_cnt += 1
         return row_cnt
 
@@ -257,10 +276,15 @@ class Obs80DataReader(ObjectDataReader):
         """
         records = []
         with open(self.filename, "r") as f:
-            curr_block = block_start
+            curr_block = 0
             block_end = block_start + block_size if block_size is not None else None
             prev_line = None
+            check_header = True
             for curr_line in f:
+                if check_header and self._is_header_row(curr_line):
+                    continue
+                else:
+                    check_header = False
                 if block_end is not None and curr_block >= block_end:
                     # We have read enough rows from the file.
                     break
@@ -271,14 +295,15 @@ class Obs80DataReader(ObjectDataReader):
                     continue
 
                 # Process our current MPC Obs80 row.
-                if prev_line is not None:
-                    # We have a two-line row to process.
-                    records.append(convert_obs80(prev_line, second_line=curr_line))
-                    # Remove the previous line so we don't process it again.
-                    prev_line = None
-                else:
-                    # We have a single line to process.
-                    records.append(convert_obs80(curr_line))
+                if curr_block >= block_start:
+                    if prev_line is not None:
+                        # We have a two-line row to process.
+                        records.append(convert_obs80(prev_line, second_line=curr_line))
+                        # Remove the previous line so we don't process it again.
+                        prev_line = None
+                    else:
+                        # We have a single line to process.
+                        records.append(convert_obs80(curr_line))
                 curr_block += 1
 
         return np.array(records, dtype=_OUTPUT_DTYPE)
@@ -291,7 +316,12 @@ class Obs80DataReader(ObjectDataReader):
 
         obj_ids = []
         with open(self.filename, "r") as f:
+            check_header = True
             for curr_line in f:
+                if check_header and self._is_header_row(curr_line):
+                    continue
+                else:
+                    check_header = False
                 if is_two_line_row(curr_line):
                     # We have a two-line row, so skip it and only
                     # add the object ID from the final row.
@@ -301,7 +331,7 @@ class Obs80DataReader(ObjectDataReader):
                 # Count the number of times we see this object ID.
                 self.obj_id_counts[obj_id] = self.obj_id_counts.get(obj_id, 0) + 1
 
-        self.obj_id_table = np.array(obj_ids, dtype=np.dtype([("ObjID", "U10")]))
+        self.obj_id_table = np.array(obj_ids, dtype=np.dtype([("provID", "U10")]))
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
     def _read_objects_internal(self, obj_ids, **kwargs):
@@ -330,8 +360,13 @@ class Obs80DataReader(ObjectDataReader):
         # We start at -1 because we will increment it before processing the first row.
         curr_row_idx = -1
         prev_line = None
+        check_header = True
         with open(self.filename, "r") as f:
             for curr_line in f:
+                if check_header and self._is_header_row(curr_line):
+                    continue
+                else:
+                    check_header = False
                 if is_two_line_row(curr_line):
                     # We have a two-line row. We will save our current line
                     # and wait for the next line to merge them as a single row to process.
