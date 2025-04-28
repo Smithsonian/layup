@@ -879,7 +879,7 @@ namespace orbit_fit
         return ephem;
     }
 
-    struct FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
+    FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
     {
 
         std::vector<double> times_full(detections_full.size());
@@ -1101,7 +1101,7 @@ namespace orbit_fit
             fflush(stdout);
         }
 
-        struct FitResult result;
+        FitResult result;
 
         result.method = "orbit_fit";
         result.flag = success;
@@ -1128,7 +1128,7 @@ namespace orbit_fit
         return result;
     }
 
-    std::optional<struct FitResult> run_from_vector_with_initial_guess(struct assist_ephem *ephem, struct FitResult initial_guess, std::vector<Observation> &detections)
+    std::optional<FitResult> run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
     {
         int success = 0;
         size_t iters;
@@ -1195,7 +1195,7 @@ namespace orbit_fit
             std::cout << "obs_cov: \n"
                       << obs_cov << std::endl;
 
-            struct FitResult result;
+            FitResult result;
 
             result.niter = iters;
             result.csq = chi2_final;

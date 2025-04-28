@@ -42,7 +42,7 @@ namespace orbit_fit
 
     // template for gauss
     // pass in three detections
-    std::optional<std::vector<struct FitResult>> gauss(double MU_BARY, orbit_fit::Observation &o1_in, orbit_fit::Observation &o2_in, orbit_fit::Observation &o3_in, double min_distance, double SPEED_OF_LIGHT)
+    std::optional<std::vector<FitResult>> gauss(double MU_BARY, orbit_fit::Observation &o1_in, orbit_fit::Observation &o2_in, orbit_fit::Observation &o3_in, double min_distance, double SPEED_OF_LIGHT)
     {
         // Create a vector of pointers to observations for sorting by epoch
         std::vector<orbit_fit::Observation> triplet = {o1_in, o2_in, o3_in};
@@ -149,7 +149,7 @@ namespace orbit_fit
         std::sort(roots.begin(), roots.end(), [](const double a, const double b)
                   { return a > b; });
 
-        std::vector<struct FitResult> res;
+        std::vector<FitResult> res;
         for (double root : roots)
         {
             double root3 = std::pow(root, 3);
@@ -194,7 +194,7 @@ namespace orbit_fit
             double corrected_t = triplet[1].epoch;
             corrected_t -= ltt;
 
-            struct FitResult soln;
+            FitResult soln;
             soln.root = root;
             soln.epoch = corrected_t;
             soln.state = {x, y, z, vx, vy, vz};

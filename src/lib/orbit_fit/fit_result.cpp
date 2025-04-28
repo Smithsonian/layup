@@ -11,7 +11,7 @@ namespace orbit_fit
 {
     using namespace Eigen;
 
-    struct FitResult
+    typedef struct
     {
         double csq;                    // Chi-square value
         int ndof;                      // Number of degrees of freedom
@@ -22,7 +22,7 @@ namespace orbit_fit
         int niter;                     // Number of iterations
         std::string method;            // Method used for fitting
         int flag;                      // Flag indicating the success of the fit
-    };
+    } FitResult;
 
     static void orbit_fit_result_bindings(py::module &m)
     {
