@@ -74,20 +74,26 @@ namespace orbit_fit
     int integrate_light_time(struct assist_extras *ax, int np, double t, reb_vec3d r_obs, double lt0, size_t iter, double speed_of_light)
     {
 
+	printf("start integrate_light_time\n");
         struct reb_simulation *r = ax->sim;
         double lt = lt0;
         // Performs the light travel time correction between object and observatory iteratively for the object at a given reference time
         for (int i = 0; i < iter; i++)
         {
+	    printf("okay t: %lf, lt: %lf\n", t, lt);	    
             assist_integrate_or_interpolate(ax, t - lt);
 
 	    if(r->status == REB_STATUS_GENERIC_ERROR){
-		printf("t: %lf, lt: %lf\n", t, lt);
+		printf("barf t: %lf, lt: %lf\n", t, lt);
 		return 1;
 	    }
             double dx = r->particles[np].x - r_obs.x;
             double dy = r->particles[np].y - r_obs.y;
             double dz = r->particles[np].z - r_obs.z;
+	    printf("%le %le %le %le %le %le\n",
+		   r->particles[np].x, r_obs.x,
+		   r->particles[np].y, r_obs.y,
+		   r->particles[np].z, r_obs.z);
             double rho_mag = sqrt(dx * dx + dy * dy + dz * dz);
             lt = rho_mag / speed_of_light;
         }
@@ -276,6 +282,7 @@ namespace orbit_fit
         // rho and its components, since those are
         // already computed for the light time iteration.
 
+	printf("residuals\n");
         integrate_light_time(ax, j, t_obs, r_obs, 0.0, 4, SPEED_OF_LIGHT);
 
         double rho_x = r->particles[j].x - xe;
