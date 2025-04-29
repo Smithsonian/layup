@@ -203,7 +203,7 @@ def orbitfit_cli(
     if output_file_format.lower() not in ["csv", "hdf5"]:
         logger.error("File format must be 'csv' or 'hdf5'")
 
-    reader_class, separate = INPUT_FORMAT_READERS[input_file_format]
+    reader_class, separator = INPUT_FORMAT_READERS[input_file_format]
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
