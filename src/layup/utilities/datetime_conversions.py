@@ -34,7 +34,7 @@ def convert_tdb_date_to_julian_date(input_tdb_date: str, spice_kernel_dir: str =
         load_kernel = True
         for i in range(spice.ktotal("ALL")):
             this_kernel = spice.kdata(i, "ALL")
-            if this_kernel[0] == kernel_file:
+            if this_kernel[0] == str(kernel_file):
                 load_kernel = False
                 break
 

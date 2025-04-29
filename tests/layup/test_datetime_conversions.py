@@ -1,5 +1,5 @@
 import pytest
-from layup.utilities.datetime_conversions import *
+from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 
 
 def test_convert_tdb_date_to_julian_date():
