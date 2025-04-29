@@ -218,13 +218,13 @@ class CSVDataReader(ObjectDataReader):
                 skiprows=skip_rows,
                 nrows=block_size,
             )
-        elif self.sep == "pipe":
+        elif self.sep == "pipe" or self.sep == "psv" or self.sep == "|":
             res_df = pd.read_csv(
                 self.filename,
                 sep="|",
                 skiprows=skip_rows,
                 nrows=block_size,
-                skipinitialspace=True,
+                # This dtype will only work if the spaces are removed from the column names.
                 dtype={self._primary_id_column_name: str},
             )
         else:
@@ -241,7 +241,6 @@ class CSVDataReader(ObjectDataReader):
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
-        #! TODO - I think we need to account for pre-header comment lines here!!!
         if self.obj_id_table is not None:
             return
 
@@ -291,7 +290,6 @@ class CSVDataReader(ObjectDataReader):
         res : numpy structured array
             The data read in from the file.
         """
-        #! TODO - Write tests for the PSV changes here!!!
         self._build_id_map()
 
         # Create list of only the matching rows for these object IDs and the header row.
