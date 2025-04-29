@@ -117,7 +117,7 @@ class LayupObservatory(SorchaObservatory):
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
 
-    def obscodes_to_barycentric(self, data, fail_on_missing=False):
+    def obscodes_to_barycentric(self, data, fail_on_missing=True):
         """
         Takes a structured array of observations and returns the barycentric positions and velocites
         of the observatories.
@@ -147,28 +147,36 @@ class LayupObservatory(SorchaObservatory):
             coords = self.ObservatoryXYZ.get(obscode, None)
             if coords is None or None in coords or np.isnan(coords).any():
                 # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
-                # TODO most of the the time this is a moving observatory, and we should handle that case
-                if fail_on_missing:
-                    raise ValueError(f"Observatory {obscode} does not have a known fixed position.")
-                bary_obs_pos, bary_obs_vel = np.array([np.nan] * 3), np.array([np.nan] * 3)
-            else:
-                # Since the observatory has a known position, we can calculate the barycentric coordinates
-                # at the observed epoch
-                et = row["et"]
-                if obscode not in self.cached_obs:
-                    self.cached_obs[obscode] = {}
-                try:
-                    # Calculate the barycentric position and velocity of the observatory or fetch
-                    # it from the cache if it has already been calculated
-                    bary_obs_pos, bary_obs_vel = self.cached_obs[obscode].setdefault(
-                        et, barycentricObservatoryRates(et, obscode, self)
+                if "obs_geo_x" not in row.dtype.names:
+                    raise ValueError(
+                        f"The data must have a 'obs_geo_x' field for non-fixed position observatory {obscode}."
                     )
-                except Exception as e:
-                    if fail_on_missing:
-                        raise ValueError(
-                            f"Error calculating barycentric coordinates for {obscode} at et: {et} from obstime: {row['obstime']} {e} "
-                        )
-                    bary_obs_pos, bary_obs_vel = np.array([np.nan] * 3), np.array([np.nan] * 3)
+                if "obs_geo_y" not in row.dtype.names:
+                    raise ValueError(
+                        f"The data must have a 'obs_geo_y' field for non-fixed position observatory {obscode}."
+                    )
+                if "obs_geo_z" not in row.dtype.names:
+                    raise ValueError(
+                        f"The data must have a 'obs_geo_z' field for non-fixed postion observatory {obscode}."
+                    )
+                coords = np.array([row["obs_geo_x"], row["obs_geo_y"], row["obs_geo_z"]])
+                self.ObservatoryXYZ[row["stn"]] = coords
+            # Use the observatory position to calculate the barycentric coordinates at the observed epoch
+            et = row["et"]
+            if obscode not in self.cached_obs:
+                self.cached_obs[obscode] = {}
+            try:
+                # Calculate the barycentric position and velocity of the observatory or fetch
+                # it from the cache if it has already been calculated
+                bary_obs_pos, bary_obs_vel = self.cached_obs[obscode].setdefault(
+                    et, barycentricObservatoryRates(et, obscode, self)
+                )
+            except Exception as e:
+                if fail_on_missing:
+                    raise ValueError(
+                        f"Error calculating barycentric coordinates for {obscode} at et: {et} from obstime: {row['obstime']} {e} "
+                    )
+                bary_obs_pos, bary_obs_vel = np.array([np.nan] * 3), np.array([np.nan] * 3)
             # Create a structured array for our barycentric coordinates with appropriate dtypes.
             # Needed to adjust the units here.
             bary_obs_pos /= AU_KM
