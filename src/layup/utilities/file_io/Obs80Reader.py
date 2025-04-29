@@ -19,7 +19,7 @@ _OUTPUT_DTYPE = [
 ]
 
 
-def is_two_line_row(line):
+def two_line_row_start(line):
     """Checks if the MPC Obs80 line is the first line of a two-line row format."""
     note2 = line[14]
     return note2 == "S" or note2 == "R" or note2 == "V"
@@ -124,14 +124,14 @@ def convert_obs80(line, second_line=None):
     # Extract the relevant fields from the first mpc obs80 line.
     obj_name = line[0:5].strip()
     prov_id = line[5:12].strip()
+    prg = line[13].strip()
     obstime = line[15:32].strip()
     ra = line[32:44].strip()
     dec = line[44:56].strip()
     mag = line[65:70].strip()
     filt = line[70:71].strip()
-    obs_code = line[77:80].strip()
     cat = line[71].strip()
-    prg = line[13].strip()
+    obs_code = line[77:80].strip()
 
     # Use the object name as object ID if provided, otherwise use the provisional ID.
     if prov_id != "":
@@ -145,7 +145,7 @@ def convert_obs80(line, second_line=None):
     # convert these values again to their internal formats.
     iso_time = mpctime_to_isotime(obstime)
     ra_deg, dec_deg = ra_to_deg_ra(ra), dec_to_deg_dec(dec)
-    mag = float(mag) if "" else 0.0
+    mag = float(mag) if mag != "" else 0.0
 
     # Process the observatory position if provided.
     obs_geo_x, obs_geo_y, obs_geo_z = np.nan, np.nan, np.nan
@@ -157,10 +157,11 @@ def convert_obs80(line, second_line=None):
             )
         if second_line[77:80].strip() != obs_code:
             raise ValueError(
-                f"Observatory codes do not match in the seond line provided for the observatory position. {obsCode} and {second_line[77:80].rstrip()}"
+                f"Observatory codes do not match in the second line provided for the observatory position. {obsCode} and {second_line[77:80].rstrip()}"
             )
-        flag = second_line[32:34]
-        if flag == "1 " or flag == "2 ":
+        flag = second_line[32:34].strip()
+        if flag in ["1", "2"]:
+            # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
             obs_geo_x = float(second_line[34] + second_line[35:45].strip())
             obs_geo_y = float(second_line[46] + second_line[47:57].strip())
             obs_geo_z = float(second_line[58] + second_line[59:69].strip())
@@ -183,10 +184,6 @@ class Obs80DataReader(ObjectDataReader):
         ----------
         filename : string
             Location/name of the data file.
-
-        sep : string, optional
-            Format of input file ("whitespace"/"comma"/"csv").
-            Default = csv
 
         **kwargs: dictionary, optional
             Extra arguments
@@ -246,7 +243,8 @@ class Obs80DataReader(ObjectDataReader):
         row_cnt = 0
         with open(self.filename, "r") as f:
             for line in f:
-                if line.strip() != "" and not self._is_header_row(line) and not is_two_line_row(line):
+                # Skip empty lines, header rows, and the starting line of two-line rows.
+                if line.strip() != "" and not self._is_header_row(line) and not two_line_row_start(line):
                     row_cnt += 1
         return row_cnt
 
@@ -288,7 +286,7 @@ class Obs80DataReader(ObjectDataReader):
                 if block_end is not None and curr_block >= block_end:
                     # We have read enough rows from the file.
                     break
-                if is_two_line_row(curr_line):
+                if two_line_row_start(curr_line):
                     # We have a two-line row. We will save our current line
                     # and wait for the next line to merge them as a single row to process.
                     prev_line = curr_line
@@ -322,7 +320,7 @@ class Obs80DataReader(ObjectDataReader):
                     continue
                 else:
                     check_header = False
-                if is_two_line_row(curr_line):
+                if two_line_row_start(curr_line):
                     # We have a two-line row, so skip it and only
                     # add the object ID from the final row.
                     continue
@@ -367,7 +365,7 @@ class Obs80DataReader(ObjectDataReader):
                     continue
                 else:
                     check_header = False
-                if is_two_line_row(curr_line):
+                if two_line_row_start(curr_line):
                     # We have a two-line row. We will save our current line
                     # and wait for the next line to merge them as a single row to process.
                     prev_line = curr_line
