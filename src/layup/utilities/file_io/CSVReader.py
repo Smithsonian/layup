@@ -7,6 +7,12 @@ from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
 
+VALID_FILE_FORMATS = ["csv", "comma", "whitespace", "pipe", "psv", "|"]
+
+# Any pre-header line that starts with one of these strings will be ignored.
+# CAUTION! - Avoid adding a character that would exclude the column header line.
+PRE_HEADER_COMMENT_AND_EXCLUDE_STRINGS = ("#", "!")
+
 
 class CSVDataReader(ObjectDataReader):
     """A class to read in object data files stored as CSV or whitespace
@@ -24,7 +30,10 @@ class CSVDataReader(ObjectDataReader):
             Location/name of the data file.
 
         sep : string, optional
-            Format of input file ("whitespace"/"comma"/"csv").
+            Format of input file. The following are supported:
+            - "whitespace" for text files
+            - "comma", "csv" for CSV files
+            - "pipe", "psv", "|" for pipe-separated values (PSV) files
             Default = csv
 
         **kwargs: dictionary, optional
@@ -33,15 +42,19 @@ class CSVDataReader(ObjectDataReader):
         super().__init__(**kwargs)
         self.filename = filename
 
-        if sep not in ["whitespace", "csv", "comma"]:
+        if sep not in VALID_FILE_FORMATS:
             logger = logging.getLogger(__name__)
             logger.error(f"ERROR: Unrecognized delimiter ({sep})")
             sys.exit(f"ERROR: Unrecognized delimiter ({sep})")
         self.sep = sep
 
+        # Number of lines of comments before the header line.
+        self.num_pre_header_lines = 0
+        # The header row is always the first row after the pre-header lines.
+        self.header_row_index = 0
+
         # To pre-validation the header information.
         self._validate_header_line()
-        self.header_row = 0  # The header row is always the first row
 
         # A table holding just the object ID for each row. Only populated
         # if we try to read data for specific object IDs.
@@ -63,22 +76,31 @@ class CSVDataReader(ObjectDataReader):
         return f"CSVDataReader:{self.filename}"
 
     def get_row_count(self):
-        """Return the total number of rows in the first key of the input HDF5 file.
+        """Return the total number of rows in the [C|P|W]SV file.
 
         Returns
         -------
         int
-            Total rows in the first key of the input HDF5 file.
+            Total rows in the first key of the input [C|P|W]SV file.
         """
+
+        if self.sep == "csv" or self.sep == "comma":
+            delimiter = ","
+        elif self.sep == "psv" or self.sep == "pipe" or self.sep == "|":
+            delimiter = "|"
+        elif self.sep == "whitespace":
+            delimiter = None
+
         data = np.genfromtxt(
             self.filename,
-            delimiter="," if self.sep != "whitespace" else None,
+            delimiter=delimiter,
             names=True,
             dtype=None,
             encoding="utf8",
             deletechars=_INVALID_COL_CHARS,
             ndmin=1,  # Ensure we always get a structured array even with a single result
             usecols=(0,),  # Only read in the first column, self._primary_id_column_name
+            skip_header=self.num_pre_header_lines,
         )
 
         return len(data)
@@ -87,10 +109,26 @@ class CSVDataReader(ObjectDataReader):
         """Read and validate the header line (first line of the file)"""
         logger = logging.getLogger(__name__)
         with open(self.filename) as fh:
-            line = fh.readline()
-            logger.info(f"Reading the first line of {self.filename} as header:\n{line}")
-            self._check_header_line(line)
-            return
+            for i, line in enumerate(fh):
+                # If the line starts with a comment character, increment the pre-header line count
+                if line.startswith(PRE_HEADER_COMMENT_AND_EXCLUDE_STRINGS):
+                    # Skip comment lines
+                    self.num_pre_header_lines += 1
+                else:
+                    logger.info(f"Reading the first line of {self.filename} as header:\n{line}")
+                    self._check_header_line(line)
+                    # Note - header row INDEX is 0-indexed.
+                    self.header_row_index = self.num_pre_header_lines
+                    return
+
+                if i >= 100:
+                    # If we have read 100 lines and not found a valid header line, exit.
+                    error_str = (
+                        f"ERROR: CSVReader: column headings not found in the first 100 lines of {self.filename}. "
+                        f"Ensure column headings exist in input files and first column is {self._primary_id_column_name}."
+                    )
+                    logger.error(error_str)
+                    sys.exit(error_str)
 
         # If we reach here, we did not find a valid header line.
         error_str = (
@@ -111,7 +149,9 @@ class CSVDataReader(ObjectDataReader):
         logger = logging.getLogger(__name__)
 
         if self.sep == "csv" or self.sep == "comma":
-            column_names = header_line.split(",")
+            column_names = [col.strip() for col in header_line.split(",")]
+        elif self.sep == "psv" or self.sep == "pipe" or self.sep == "|":
+            column_names = [col.strip() for col in header_line.split("|")]
         elif self.sep == "whitespace":
             column_names = header_line.split()
         else:
@@ -133,6 +173,8 @@ class CSVDataReader(ObjectDataReader):
             )
             logger.error(error_str)
             sys.exit(error_str)
+
+        self._primary_id_col_index = column_names.index(self._primary_id_column_name)
 
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input.
@@ -160,8 +202,12 @@ class CSVDataReader(ObjectDataReader):
         """
         # Skip the rows before the header and then begin_loc rows after the header.
         skip_rows = []
+        if self.header_row_index > 0:
+            skip_rows = [i for i in range(0, self.header_row_index)]
         if block_start > 0:
-            skip_rows.extend([i for i in range(self.header_row + 1, self.header_row + 1 + block_start)])
+            skip_rows.extend(
+                [i for i in range(self.header_row_index + 1, self.header_row_index + 1 + block_start)]
+            )
 
         # Read in the data from self.filename, extracting the header row, and skipping in all of
         # block_size rows, skipping all of the skip_rows.
@@ -172,6 +218,15 @@ class CSVDataReader(ObjectDataReader):
                 skiprows=skip_rows,
                 nrows=block_size,
             )
+        elif self.sep == "pipe":
+            res_df = pd.read_csv(
+                self.filename,
+                sep="|",
+                skiprows=skip_rows,
+                nrows=block_size,
+                skipinitialspace=True,
+                dtype={self._primary_id_column_name: str},
+            )
         else:
             res_df = pd.read_csv(
                 self.filename,
@@ -179,11 +234,14 @@ class CSVDataReader(ObjectDataReader):
                 skiprows=skip_rows,
                 nrows=block_size,
             )
+
+        res_df.columns = [col.strip() for col in res_df.columns]
         records = res_df.to_records(index=False)
         return np.array(records, dtype=records.dtype.descr)
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
+        #! TODO - I think we need to account for pre-header comment lines here!!!
         if self.obj_id_table is not None:
             return
 
@@ -191,17 +249,26 @@ class CSVDataReader(ObjectDataReader):
             self.obj_id_table = pd.read_csv(
                 self.filename,
                 sep="\\s+",
-                usecols=[self._primary_id_column_name],
-                header=self.header_row,
+                usecols=[self._primary_id_col_index],
+                header=self.header_row_index,
+            )
+        elif self.sep == "pipe" or self.sep == "psv" or self.sep == "|":
+            self.obj_id_table = pd.read_csv(
+                self.filename,
+                sep="|",
+                usecols=[self._primary_id_col_index],
+                header=self.header_row_index,
+                dtype={self._primary_id_column_name: str},
             )
         else:
             self.obj_id_table = pd.read_csv(
                 self.filename,
                 delimiter=",",
-                usecols=[self._primary_id_column_name],
-                header=self.header_row,
+                usecols=[self._primary_id_col_index],
+                header=self.header_row_index,
             )
 
+        self.obj_id_table.columns = [col.strip() for col in self.obj_id_table.columns]
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
         # Create a dictionary of the object ID counts.
@@ -224,10 +291,11 @@ class CSVDataReader(ObjectDataReader):
         res : numpy structured array
             The data read in from the file.
         """
+        #! TODO - Write tests for the PSV changes here!!!
         self._build_id_map()
 
         # Create list of only the matching rows for these object IDs and the header row.
-        skipped_row = [True] * self.header_row  # skip the pre-header
+        skipped_row = [True] * self.header_row_index  # skip the pre-header
         skipped_row.extend([False])  # Keep the the column header
         skipped_row.extend(~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids))
 
@@ -239,6 +307,13 @@ class CSVDataReader(ObjectDataReader):
                 sep="\\s+",
                 skiprows=(lambda x: skipped_row[x]),
             )
+        elif self.sep == "pipe" or self.sep == "psv" or self.sep == "|":
+            res_df = pd.read_csv(
+                self.filename,
+                sep="|",
+                skiprows=(lambda x: skipped_row[x]),
+                dtype={self._primary_id_column_name: str},
+            )
         else:
             res_df = pd.read_csv(
                 self.filename,
@@ -246,6 +321,7 @@ class CSVDataReader(ObjectDataReader):
                 skiprows=(lambda x: skipped_row[x]),
             )
 
+        res_df.columns = [col.strip() for col in res_df.columns]
         records = res_df.to_records(index=False)
         return np.array(records, dtype=records.dtype.descr)
 
