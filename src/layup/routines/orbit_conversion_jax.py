@@ -624,28 +624,28 @@ jac_xyz_cometary = jax.jacobian(universal_cartesian, argnums=(1, 2, 3, 4, 5, 6))
 
 def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = np.array([x, y, z])
-    r_rot = np.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
+    r_rot = np.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
     v = np.array([vx, vy, vz])
     v_rot = np.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
 
     jj_elements = np.array(
         jac_cometary_xyz(mu, r_rot[0], r_rot[1], r_rot[2], v_rot[0], v_rot[1], v_rot[2], epochMJD_TDB)
     )
-    jj_rotation = block_diag(EQ_TO_ECL_ROTATION_MATRIX, EQ_TO_ECL_ROTATION_MATRIX)
+    jj_rotation = block_diag(EQ_TO_ECL_ROTATION_MATRIX.T, EQ_TO_ECL_ROTATION_MATRIX.T)
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
 
 
 def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = np.array([x, y, z])
-    r_rot = np.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
+    r_rot = np.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
     v = np.array([vx, vy, vz])
     v_rot = np.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
 
     jj_elements = np.array(
         jac_keplerian_xyz(mu, r_rot[0], r_rot[1], r_rot[2], v_rot[0], v_rot[1], v_rot[2], epochMJD_TDB)
     )
-    jj_rotation = block_diag(EQ_TO_ECL_ROTATION_MATRIX, EQ_TO_ECL_ROTATION_MATRIX)
+    jj_rotation = block_diag(EQ_TO_ECL_ROTATION_MATRIX.T, EQ_TO_ECL_ROTATION_MATRIX.T)
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
 
