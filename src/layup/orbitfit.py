@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 INPUT_FORMAT_READERS = {
     "MPC80col": None,
-    "ADES_csv": CSVDataReader,
-    "ADES_psv": None,
-    "ADES_xml": None,
-    "ADES_hdf5": HDF5DataReader,
+    "ADES_csv": (CSVDataReader,"csv"),
+    "ADES_psv": (CSVDataReader,"psv"),
+    "ADES_xml": (None,None),
+    "ADES_hdf5": (HDF5DataReader,None),
 }
 
 # Define a structured dtype to match the OrbfitResult fields
@@ -203,11 +203,11 @@ def orbitfit_cli(
     if output_file_format.lower() not in ["csv", "hdf5"]:
         logger.error("File format must be 'csv' or 'hdf5'")
 
-    reader_class = INPUT_FORMAT_READERS[input_file_format]
+    reader_class,separate = INPUT_FORMAT_READERS[input_file_format]
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
-    reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name)
+    reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name,sep=separate)
 
     chunks = _create_chunks(reader, chunk_size)
 
