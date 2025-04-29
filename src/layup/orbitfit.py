@@ -211,9 +211,12 @@ def orbitfit_cli(
 
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
+        overwrite = cli_args.overwrite
     else:
         cache_dir = None
+        overwrite = False
 
+    first_write = True  # Flag to check if this is the first write to the output file
     for chunk in chunks:
         data = reader.read_objects(chunk)
 
@@ -226,6 +229,15 @@ def orbitfit_cli(
             primary_id_column_name=_primary_id_column_name,
         )
 
+        # Before writing our first chunk, check if the output file already exists.
+        if first_write and os.path.exists(output_file):
+            if overwrite:
+                logger.warning(f"Output file {output_file} already exists. Overwriting.")
+                os.remove(output_file)
+            else:
+                logger.error(f"Output file {output_file} already exists")
+                raise FileExistsError(f"Output file {output_file} already exists")
+            first_write = False
         if output_file_format == "hdf5":
             write_hdf5(fit_orbits, output_file, key="data")
         else:
