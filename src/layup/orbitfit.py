@@ -88,6 +88,8 @@ def _orbitfit(data, cache_dir: str):
     res = run_from_vector(get_ephem(kernels_loc), observations)
 
     # Populate our output structured array with the orbit fit results
+    success = res.flag == 0
+    cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
     output = np.array(
         [
             (
@@ -103,7 +105,7 @@ def _orbitfit(data, cache_dir: str):
                 res.flag,
                 "BCART",  # The base format returned by the C++ code
             )
-            + tuple(res.cov[i] for i in range(36))  # Flat covariance matrix
+            + cov_matrix  # Flat covariance matrix
         ],
         dtype=_RESULT_DTYPES,
     )
