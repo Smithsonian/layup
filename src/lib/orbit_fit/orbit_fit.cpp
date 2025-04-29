@@ -80,6 +80,11 @@ namespace orbit_fit
         for (int i = 0; i < iter; i++)
         {
             assist_integrate_or_interpolate(ax, t - lt);
+
+	    if(r->status == REB_STATUS_GENERIC_ERROR){
+		printf("t: %lf, lt: %lf\n", t, lt);
+		return 1;
+	    }
             double dx = r->particles[np].x - r_obs.x;
             double dy = r->particles[np].y - r_obs.y;
             double dz = r->particles[np].z - r_obs.z;
