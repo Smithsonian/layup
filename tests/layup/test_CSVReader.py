@@ -14,7 +14,7 @@ def test_CSVDataReader_ephem(use_cache):
     It just loads it directly from a CSV.
     """
     csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv", cache_table=use_cache)
-    assert csv_reader.header_row == 0
+    assert csv_reader.header_row_index == 0
     assert csv_reader.get_reader_info() == "CSVDataReader:" + get_test_filepath("CART.csv")
 
     # Read in all 9 rows.
@@ -77,7 +77,7 @@ def test_CSVDataReader_ephem(use_cache):
 def test_CSVDataReader_read_by_row(use_cache):
     """Test that reading in all rows produces the same row as reading in one row at a time."""
     csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv", cache_table=use_cache)
-    assert csv_reader.header_row == 0
+    assert csv_reader.header_row_index == 0
     assert csv_reader.get_reader_info() == "CSVDataReader:" + get_test_filepath("CART.csv")
 
     # Read in all 9 rows.
@@ -164,11 +164,11 @@ def test_CSVDataReader_orbits():
     It just loads it directly from a CSV.
     """
     orbit_des_reader = CSVDataReader(get_test_filepath("testorb.des"), "whitespace")
-    assert orbit_des_reader.header_row == 0
+    assert orbit_des_reader.header_row_index == 0
     orbit_des = orbit_des_reader.read_rows()
 
     orbit_csv_reader = CSVDataReader(get_test_filepath("testorb.csv"), "csv")
-    assert orbit_csv_reader.header_row == 0
+    assert orbit_csv_reader.header_row_index == 0
     orbit_csv = orbit_des_reader.read_rows()
 
     # Check that the two files are the same.
@@ -234,12 +234,12 @@ def test_CSVDataReader_parameters():
     """
     # Only read in the first two lines.
     txt_reader = CSVDataReader(get_test_filepath("CART.txt"), "whitespace")
-    assert txt_reader.header_row == 0
+    assert txt_reader.header_row_index == 0
     params_txt = txt_reader.read_rows(0, 2)
     assert len(params_txt) == 2
 
     csv_reader = CSVDataReader(get_test_filepath("CART.csv"), "csv")
-    assert csv_reader.header_row == 0
+    assert csv_reader.header_row_index == 0
     params_csv = csv_reader.read_rows(0, 2)
     assert len(params_txt) == 2
 
@@ -397,3 +397,53 @@ def test_file_count():
     reader = CSVDataReader(get_test_filepath("BCOM.csv"), sep="csv")
     row_count = reader.get_row_count()
     assert row_count == 814
+    assert reader.num_pre_header_lines == 2
+
+
+def test_CSVReader_csv_read_rows_for_object():
+    """Test that we can read in rows for a specific object from a CSV file.
+    We want to ensure that the number of expected rows from `read_objects` is correct.
+    Additionally, we want to ensure data types match between read_rows and read_objects."""
+    reader = CSVDataReader(get_test_filepath("BCOM.csv"), sep="csv")
+
+    one_row = reader.read_rows(3, 1)
+    data = reader.read_objects(one_row["ObjID"])
+    assert len(data) == 1
+    assert one_row.dtype.names == data.dtype.names
+
+
+def test_file_count_too_many_pre_header_comments():
+    with pytest.raises(SystemExit) as e1:
+        reader = CSVDataReader(get_test_filepath("csv_pre_header_comments.csv"), sep="csv")
+        _ = reader.get_row_count()
+    assert e1.type == SystemExit
+    assert "not found in the first 100" in str(e1.value)
+
+
+def test_CSVDataReader_psv():
+    """Test that we read in a pipe-separated values (PSV) file correctly."""
+    reader = CSVDataReader(get_test_filepath("example.psv"), "pipe", primary_id_column_name="provID")
+    row_count = reader.get_row_count()
+    assert row_count == 27
+
+
+def test_CSVReader_psv_read_rows():
+    """Test that we can read in rows from a pipe-separated values (PSV) file."""
+    reader = CSVDataReader(get_test_filepath("example.psv"), "pipe", primary_id_column_name="provID")
+    # reader = CSVDataReader(get_test_filepath("deep7.psv"), "pipe", primary_id_column_name="ra")
+
+    data = reader.read_rows(0, 5)
+    assert len(data) == 5
+    # TODO: Validate that the data read in is correct.
+
+
+def test_CSVReader_psv_read_rows_for_object():
+    """Test that we can read in rows for a specific object from a PV file."""
+    reader = CSVDataReader(
+        get_test_filepath("example_no_whitespace.psv"), "pipe", primary_id_column_name="provID"
+    )
+
+    one_row = reader.read_rows(0, 1)
+    data = reader.read_objects(one_row["provID"])
+    assert len(data) == 27
+    assert one_row.dtype.names == data.dtype.names
