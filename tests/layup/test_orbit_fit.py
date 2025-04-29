@@ -109,6 +109,26 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     # Verify that all of the output data is in the default BCART format
     assert np.all(output_data["FORMAT"] == "BCART")
 
+    # For each row in the output data, check that there is a non-zero covariance matrix
+    # if there was a successful fit
+    for row in output_data:
+        # Check that the covariance matrix is non-zero
+        cov_matrix = np.array(
+            [row[f"cov_0{i}"] for i in range(10)] + [row[f"cov_{i}"] for i in range(10, 36)]
+        )
+        # Check if the cov_matrix has any NaN values indicating a failed fit
+        nan_mask = np.isnan(cov_matrix)
+        if nan_mask.any():
+            # If any values are NaN, all should be NaN
+            assert np.all(nan_mask)
+            # Since the fit failed, check that the flag is set to 1
+            assert row["flag"] == 1
+        else:
+            # Since no values are NaN, check that the flag is set to 0
+            assert row["flag"] == 0
+            # Check that the covariance matrix is non-zero
+            assert np.count_nonzero(cov_matrix) > 0
+
 
 def test_orbit_fit_mixed_inputs():
     """Test that the orbit_fit cli works for a mixed input file."""
