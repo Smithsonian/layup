@@ -30,7 +30,7 @@ def main():
     optional.add_argument(
         "--ar",
         "--ar-data-path",
-        help="Directory path where Assist+Rebound data files where stored when running bootstrap_layup_data_files from the command line.",
+        help="Directory path where Assist+Rebound data files were stored when running `layup bootstrap` from the command line.",
         type=str,
         dest="ar_data_file_path",
         required=False,
