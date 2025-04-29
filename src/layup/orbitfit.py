@@ -11,17 +11,17 @@ from numpy.lib import recfunctions as rfn
 from layup.routines import Observation, get_ephem, run_from_vector
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
-from layup.utilities.file_io import CSVDataReader, HDF5DataReader
+from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
 
 INPUT_FORMAT_READERS = {
-    "MPC80col": None,
-    "ADES_csv": CSVDataReader,
-    "ADES_psv": None,
-    "ADES_xml": None,
-    "ADES_hdf5": HDF5DataReader,
+    "MPC80col": (Obs80DataReader, None),
+    "ADES_csv": (CSVDataReader, "csv"),
+    "ADES_psv": (CSVDataReader, "psv"),
+    "ADES_xml": (None, None),
+    "ADES_hdf5": (HDF5DataReader, None),
 }
 
 # Define a structured dtype to match the OrbfitResult fields
@@ -89,6 +89,8 @@ def _orbitfit(data, cache_dir: str):
     res = run_from_vector(get_ephem(kernels_loc), observations)
 
     # Populate our output structured array with the orbit fit results
+    success = res.flag == 0
+    cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
     output = np.array(
         [
             (
@@ -104,7 +106,7 @@ def _orbitfit(data, cache_dir: str):
                 res.flag,
                 "BCART",  # The base format returned by the C++ code
             )
-            + tuple(res.cov[i] for i in range(36))  # Flat covariance matrix
+            + cov_matrix  # Flat covariance matrix
         ],
         dtype=_RESULT_DTYPES,
     )
@@ -203,11 +205,11 @@ def orbitfit_cli(
     if output_file_format.lower() not in ["csv", "hdf5"]:
         logger.error("File format must be 'csv' or 'hdf5'")
 
-    reader_class = INPUT_FORMAT_READERS[input_file_format]
+    reader_class, separator = INPUT_FORMAT_READERS[input_file_format]
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
-    reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name)
+    reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name, sep=separator)
 
     chunks = _create_chunks(reader, chunk_size)
 
