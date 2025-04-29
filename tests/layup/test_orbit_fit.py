@@ -1,4 +1,3 @@
-import argparse
 import os
 
 import numpy as np
@@ -7,7 +6,7 @@ import pytest
 from numpy.testing import assert_equal
 
 from layup.orbitfit import orbitfit_cli
-from layup.routines import run_from_vector, get_ephem, Observation
+from layup.routines import Observation, get_ephem, run_from_vector
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -51,6 +50,84 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     # Note that the input file includes some rows without our provID column, so exclude the nans
     n_uniq_ids = sum([0 if np.isnan(id) else 1 for id in set(input_data["provID"])])
     assert_equal(len(output_data), n_uniq_ids)
+
+    # Verify the columns in the output data
+    expected_cols = [
+        "provID",
+        "csq",
+        "ndof",
+        "x",
+        "y",
+        "z",
+        "vx",
+        "vy",
+        "vz",
+        "epoch",
+        "niter",
+        "method",
+        "flag",
+        "FORMAT",
+        "cov_00",
+        "cov_01",
+        "cov_02",
+        "cov_03",
+        "cov_04",
+        "cov_05",
+        "cov_06",
+        "cov_07",
+        "cov_08",
+        "cov_09",
+        "cov_10",
+        "cov_11",
+        "cov_12",
+        "cov_13",
+        "cov_14",
+        "cov_15",
+        "cov_16",
+        "cov_17",
+        "cov_18",
+        "cov_19",
+        "cov_20",
+        "cov_21",
+        "cov_22",
+        "cov_23",
+        "cov_24",
+        "cov_25",
+        "cov_26",
+        "cov_27",
+        "cov_28",
+        "cov_29",
+        "cov_30",
+        "cov_31",
+        "cov_32",
+        "cov_33",
+        "cov_34",
+        "cov_35",
+    ]
+    assert set(output_data.dtype.names) == set(expected_cols)
+
+    # Verify that all of the output data is in the default BCART format
+    assert np.all(output_data["FORMAT"] == "BCART")
+
+    # For each row in the output data, check that there is a non-zero covariance matrix
+    # if there was a successful fit
+    for row in output_data:
+        # Check that the covariance matrix is non-zero
+        cov_matrix = np.array(
+            [row[f"cov_0{i}"] for i in range(10)] + [row[f"cov_{i}"] for i in range(10, 36)]
+        )
+        # Check if the cov_matrix has any NaN values indicating a failed fit
+        nan_mask = np.isnan(cov_matrix)
+        if nan_mask.any():
+            # If any values are NaN, all should be NaN
+            assert np.all(nan_mask)
+            # Since the fit failed, check that the flag is set to 1
+            assert row["flag"] == 1
+        else:
+            # Since no values are NaN, check that the flag is set to 0
+            assert row["flag"] == 0
+            # Check that the covariance matrix is non-zero
+            assert np.count_nonzero(cov_matrix) > 0
 
 
 def test_orbit_fit_mixed_inputs():

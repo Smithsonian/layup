@@ -54,7 +54,6 @@
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
-#include "orbit_fit_result.cpp"
 
 extern "C"
 {
@@ -880,245 +879,7 @@ namespace orbit_fit
         return ephem;
     }
 
-    struct OrbfitResult run_from_cache(std::string cache_dir, std::vector<Observation> &detections_full)
-    {
-        struct assist_ephem *ephem = get_ephem(cache_dir);
-
-        std::vector<double> times_full(detections_full.size());
-        for (int i = 0; i < times_full.size(); i++)
-        {
-            times_full[i] = detections_full[i].epoch;
-        }
-
-        // Generate and print a random integer
-        size_t start_i = detections_full.size() - 1;
-
-        // This should be a little more clever and flexible
-        // First find a triple of detections in the full data set.
-        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 5, start_i);
-
-        int success = 0;
-        size_t iters;
-        double chi2_final;
-        size_t dof;
-        struct reb_particle p1;
-
-        for (size_t i = 0; i < idx.size(); i++)
-        {
-
-            std::vector<size_t> indices = idx[i];
-            size_t id0 = indices[0];
-            size_t id1 = indices[1];
-            size_t id2 = indices[2];
-
-            printf("gauss indices: %lu %lu %lu\n", id0, id1, id2);
-            fflush(stdout);
-
-            Observation d0 = detections_full[id0];
-            Observation d1 = detections_full[id1];
-            Observation d2 = detections_full[id2];
-
-            // Put this in a better place
-            double GMtotal = 0.00029630927487993194;
-
-            std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
-            if (!res.has_value())
-            {
-                printf("gauss failed.  Try another triplet.\n");
-                fflush(stdout);
-                continue;
-            }
-
-            // Now get a segment of data that spans the triplet and that uses up to
-            // a certain number of points, if they are available in a time window.
-            // This should be a parameter
-            size_t num = 40;
-
-            size_t curr_num = id2 - id1 + 1;
-
-            size_t start_index;
-            size_t end_index;
-            if (curr_num >= num)
-            {
-                // We already have enough data and
-                // don't need to move the limits
-                start_index = id0;
-                end_index = id1;
-            }
-            else if ((detections_full.size() - id0) >= num)
-            {
-                // There are enough points if we include
-                // only the later points, we only need to
-                // later limit.
-                start_index = id0;
-                end_index = id0 + num;
-            }
-            else if (detections_full.size() >= num)
-            {
-                end_index = detections_full.size();
-                start_index = detections_full.size() - num;
-            }
-            else
-            {
-                start_index = 0;
-                end_index = detections_full.size();
-            }
-
-            std::vector<Observation>::const_iterator first_d = detections_full.begin() + start_index;
-            std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
-            std::vector<Observation> detections(first_d, last_d);
-
-            std::vector<double>::const_iterator first_t = times_full.begin() + start_index;
-            std::vector<double>::const_iterator last_t = times_full.begin() + end_index;
-            std::vector<double> times(first_t, last_t);
-
-            std::vector<residuals> resid_vec(detections.size());
-            std::vector<partials> partials_vec(detections.size());
-
-            // Make these parameters flexible.
-            size_t iter_max = 100;
-            double eps = 1e-12;
-
-            Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
-            int flag;
-
-            p1.x = res.value()[0].x;
-            p1.y = res.value()[0].y;
-            p1.z = res.value()[0].z;
-            p1.vx = res.value()[0].vx;
-            p1.vy = res.value()[0].vy;
-            p1.vz = res.value()[0].vz;
-
-            flag = orbit_fit(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections,
-                resid_vec,
-                partials_vec,
-                iters,
-                chi2_final,
-                cov,
-                eps,
-                iter_max);
-
-            dof = 2 * detections.size() - 6;
-
-            if (flag == 0)
-            {
-                printf("stage 2 flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
-                print_initial_condition(p1, res.value()[0].epoch);
-            }
-            else
-            {
-                printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
-                continue;
-            }
-
-            Eigen::MatrixXd obs_cov(6, 6);
-            predict(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections_full[0],
-                cov,
-                obs_cov);
-
-            size_t last = detections_full.size() - 1;
-            predict(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections_full[last],
-                cov,
-                obs_cov);
-
-            num = detections_full.size();
-
-            first_d = detections_full.begin() + detections_full.size() - num;
-            last_d = detections_full.end();
-            std::vector<Observation> detections2(first_d, last_d);
-
-            first_t = times_full.begin() + times_full.size() - num;
-            last_t = times_full.end();
-            std::vector<double> times2(first_t, last_t);
-
-            std::vector<residuals> resid_vec2(detections2.size());
-            std::vector<partials> partials_vec2(detections2.size());
-
-            dof = 2 * detections2.size() - 6;
-
-            Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov2;
-            flag = orbit_fit(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections2,
-                resid_vec2,
-                partials_vec2,
-                iters,
-                chi2_final,
-                cov2,
-                eps,
-                iter_max);
-
-            if (flag == 0)
-            {
-                printf("stage 3 flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
-                Eigen::MatrixXd obs_cov2(6, 6);
-                predict(
-                    ephem,
-                    p1,
-                    res.value()[0].epoch,
-                    detections_full[0],
-                    cov2,
-                    obs_cov2);
-
-                last = detections_full.size() - 1;
-                predict(
-                    ephem,
-                    p1,
-                    res.value()[0].epoch,
-                    detections_full[last],
-                    cov2,
-                    obs_cov2);
-                success = 1;
-                break;
-            }
-            else
-            {
-                // At this point there is a good gauss solution and a good
-                // short interval solution, but the full data set is still failing.
-                // That probably means that the data set should be gradually enlarged.
-                printf("flag: %d iters: %lu, stage 3 failed.  Try another triplet %lu\n", flag, iters, i);
-                continue;
-            }
-        }
-        if (success == 0)
-        {
-            printf("failed to find good fit\n");
-            fflush(stdout);
-        }
-
-        struct OrbfitResult result;
-
-        result.csq = chi2_final;
-        result.ndof = dof;
-        result.state[0] = p1.x;
-        result.state[1] = p1.y;
-        result.state[2] = p1.z;
-        result.state[3] = p1.vx;
-        result.state[4] = p1.vy;
-        result.state[5] = p1.vz;
-
-        result.niter = iters;
-
-        assist_ephem_free(ephem);
-
-        return result;
-    }
-
-    struct OrbfitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
+    FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
     {
 
         std::vector<double> times_full(detections_full.size());
@@ -1132,12 +893,13 @@ namespace orbit_fit
         // First find a triple of detections in the full data set.
         std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);
 
-        int success = 0;
+        int success = 1;
         size_t iters;
         double chi2_final;
         double result_epoch;
         size_t dof;
         struct reb_particle p1;
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> final_cov;
 
         for (size_t i = 0; i < idx.size(); i++)
         {
@@ -1157,7 +919,7 @@ namespace orbit_fit
             // Put this in a better place
             double GMtotal = 0.00029630927487993194;
 
-            std::optional<std::vector<gauss_soln>> res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
+            std::optional<std::vector<FitResult>> res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
             if (!res.has_value())
             {
                 printf("gauss failed.  Try another triplet.\n");
@@ -1221,12 +983,12 @@ namespace orbit_fit
 
             // struct reb_particle p1;
 
-            p1.x = res.value()[0].x;
-            p1.y = res.value()[0].y;
-            p1.z = res.value()[0].z;
-            p1.vx = res.value()[0].vx;
-            p1.vy = res.value()[0].vy;
-            p1.vz = res.value()[0].vz;
+            p1.x = res.value()[0].state[0];
+            p1.y = res.value()[0].state[1];
+            p1.z = res.value()[0].state[2];
+            p1.vx = res.value()[0].state[3];
+            p1.vy = res.value()[0].state[4];
+            p1.vz = res.value()[0].state[5];
 
             flag = orbit_fit(
                 ephem,
@@ -1287,7 +1049,6 @@ namespace orbit_fit
 
             dof = 2 * detections2.size() - 6;
 
-            Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov2;
             flag = orbit_fit(
                 ephem,
                 p1,
@@ -1297,22 +1058,22 @@ namespace orbit_fit
                 partials_vec2,
                 iters,
                 chi2_final,
-                cov2,
+                final_cov,
                 eps,
                 iter_max);
 
             if (flag == 0)
             {
                 printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
-                Eigen::MatrixXd obs_cov2(6, 6);
+                Eigen::MatrixXd obs_final_cov(6, 6);
                 result_epoch = res.value()[0].epoch;
                 predict(
                     ephem,
                     p1,
                     res.value()[0].epoch,
                     detections_full[0],
-                    cov2,
-                    obs_cov2);
+                    final_cov,
+                    obs_final_cov);
 
                 last = detections_full.size() - 1;
                 predict(
@@ -1320,9 +1081,9 @@ namespace orbit_fit
                     p1,
                     res.value()[0].epoch,
                     detections_full[last],
-                    cov2,
-                    obs_cov2);
-                success = 1;
+                    final_cov,
+                    obs_final_cov);
+                success = 0;
                 break;
             }
             else
@@ -1334,13 +1095,16 @@ namespace orbit_fit
                 continue;
             }
         }
-        if (success == 0)
+        if (success != 0)
         {
             printf("fully failed\n");
             fflush(stdout);
         }
 
-        struct OrbfitResult result;
+        FitResult result;
+
+        result.method = "orbit_fit";
+        result.flag = success;
 
         result.epoch = result_epoch;
         result.csq = chi2_final;
@@ -1353,6 +1117,17 @@ namespace orbit_fit
         result.state[4] = p1.vy;
         result.state[5] = p1.vz;
 
+        if (success == 0) {
+            // Populate our covariance matrix
+            for (int i = 0; i < 6; i++)
+            {
+                for (int j = 0; j < 6; j++)
+                {
+                    // flatten the covariance matrix
+                    result.cov[(i * 6) + j] = final_cov(i, j);
+                }
+            }
+        }
         // Important issues:
         // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
         // 2. Making sure the weight matrix is as good as it can be
@@ -1364,7 +1139,7 @@ namespace orbit_fit
         return result;
     }
 
-    std::optional<struct gauss_soln> run_from_vector_with_initial_guess(struct assist_ephem *ephem, gauss_soln initial_guess, std::vector<Observation> &detections)
+    std::optional<FitResult> run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
     {
         int success = 0;
         size_t iters;
@@ -1383,12 +1158,12 @@ namespace orbit_fit
 
         reb_particle p1;
 
-        p1.x = initial_guess.x;
-        p1.y = initial_guess.y;
-        p1.z = initial_guess.z;
-        p1.vx = initial_guess.vx;
-        p1.vy = initial_guess.vy;
-        p1.vz = initial_guess.vz;
+        p1.x = initial_guess.state[0];
+        p1.y = initial_guess.state[1];
+        p1.z = initial_guess.state[2];
+        p1.vx = initial_guess.state[3];
+        p1.vy = initial_guess.state[4];
+        p1.vz = initial_guess.state[5];
         double epoch = initial_guess.epoch;
 
         flag = orbit_fit(
@@ -1431,23 +1206,25 @@ namespace orbit_fit
             std::cout << "obs_cov: \n"
                       << obs_cov << std::endl;
 
-            struct gauss_soln result;
+            FitResult result;
 
-            result.iters = iters;
+            result.niter = iters;
             result.csq = chi2_final;
-            result.dof = dof;
+            result.ndof = dof;
             result.flag = flag;
             result.method = "orbit_fit";
 
             result.epoch = epoch;
-            result.x = p1.x;
-            result.y = p1.y;
-            result.z = p1.z;
-            result.vx = p1.vx;
-            result.vy = p1.vy;
-            result.vz = p1.vz;
+            result.state = {p1.x, p1.y, p1.z, p1.vx, p1.vy, p1.vz};
 
-            result.cov = cov;
+            for(int i = 0; i < 6; i++)
+            {
+                for(int j = 0; j < 6; j++)
+                {
+                    // flatten the covariance matrix
+                    result.cov[(i * 6) + j] = cov(i,j);
+                }
+            }
 
             return result;
         }
@@ -1465,11 +1242,6 @@ namespace orbit_fit
         py::class_<assist_ephem>(m, "assist_ephem");
         m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Core orbit fit function.)pbdoc");
         m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");
-        m.def("run_from_cache", &orbit_fit::run_from_cache, R"pbdoc(
-                Creates an ASSIST Objects from the kernel files in the provided
-                cache directory and runs orbit fit from the provided list of detections.
-                **POSSIBLY TO BE DEPRECATED**
-            )pbdoc");
         m.def("run_from_vector", &orbit_fit::run_from_vector, R"pbdoc(
                 Takes an assist_ephem object and a vector of observations and runs orbit fit.
             )pbdoc");

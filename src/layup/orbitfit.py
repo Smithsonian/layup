@@ -4,11 +4,11 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import pooch
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
-import pooch
 
-from layup.routines import Observation, run_from_vector, get_ephem
+from layup.routines import Observation, get_ephem, run_from_vector
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -22,6 +22,28 @@ INPUT_FORMAT_READERS = {
     "ADES_xml": None,
     "ADES_hdf5": HDF5DataReader,
 }
+
+# Define a structured dtype to match the OrbfitResult fields
+_RESULT_DTYPES = np.dtype(
+    [
+        ("provID", "O"),  # Object ID
+        ("csq", "f8"),  # Chi-square value
+        ("ndof", "i4"),  # Number of degrees of freedom
+        ("x", "f8"),  # The first of 6 state vector elements
+        ("y", "f8"),
+        ("z", "f8"),
+        ("vx", "f8"),
+        ("vy", "f8"),
+        ("vz", "f8"),  # The last of 6 state vector elements
+        ("epoch", "f8"),  # Epoch
+        ("niter", "i4"),  # Number of iterations
+        ("method", "O"),  # Method used for orbit fitting
+        ("flag", "i4"),  # Single-character flag indicating success of the fit
+        ("FORMAT", "O"),  # Orbit format
+    ]
+    + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
+    + [(f"cov_{i}", "f8") for i in range(10, 36)]  # Flat covariance matrix (remaining 26 elements)
+)
 
 
 def _orbitfit(data, cache_dir: str):
@@ -38,20 +60,8 @@ def _orbitfit(data, cache_dir: str):
     cache_dir : str
         The directory where the required orbital files are stored
     """
-    # Define a structured dtype to match the OrbfitResult fields
-    result_dtype = np.dtype(
-        [
-            ("provID", "O"),  # Object ID
-            ("csq", "f8"),  # Chi-square value
-            ("ndof", "i4"),  # Number of degrees of freedom
-            ("state", "O"),  # State vector (6 elements)
-            ("epoch", "f8"),  # Epoch
-            ("cov", "O"),  # Covariance matrix as an object dtype
-            ("niter", "i4"),  # Number of iterations
-        ]
-    )
     if len(data) == 0:
-        return np.array([], dtype=result_dtype)
+        return np.array([], dtype=_RESULT_DTYPES)
 
     # Convert the astrometry data to a list of Observations
     # Reminder to label the units.  Within an Observation struct,
@@ -78,19 +88,26 @@ def _orbitfit(data, cache_dir: str):
     res = run_from_vector(get_ephem(kernels_loc), observations)
 
     # Populate our output structured array with the orbit fit results
+    success = res.flag == 0
+    cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
     output = np.array(
         [
             (
                 data["provID"][0],
                 res.csq,
                 res.ndof,
-                res.state,
-                res.epoch,
-                res.cov,
-                res.niter,
             )
+            + tuple(res.state[i] for i in range(6))  # Flat state vector
+            + (
+                res.epoch,
+                res.niter,
+                res.method,
+                res.flag,
+                "BCART",  # The base format returned by the C++ code
+            )
+            + cov_matrix  # Flat covariance matrix
         ],
-        dtype=result_dtype,
+        dtype=_RESULT_DTYPES,
     )
 
     return output
