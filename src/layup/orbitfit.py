@@ -10,13 +10,13 @@ from numpy.lib import recfunctions as rfn
 
 from layup.routines import Observation, get_ephem, run_from_vector
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
-from layup.utilities.file_io import CSVDataReader, HDF5DataReader
+from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
 
 INPUT_FORMAT_READERS = {
-    "MPC80col": None,
+    "MPC80col": (Obs80DataReader, None),
     "ADES_csv": (CSVDataReader, "csv"),
     "ADES_psv": (CSVDataReader, "psv"),
     "ADES_xml": (None, None),
