@@ -35,9 +35,9 @@ def test_read_rows(filename):
 
             # For numeric values, special handling for NaN
             if np.issubdtype(data[col].dtype, np.number):
-                assert np.isnan(val1) and np.isnan(val2) or val1 == val2, (
-                    f"Values don't match for {col}: {val1} != {val2}"
-                )
+                assert (
+                    np.isnan(val1) and np.isnan(val2) or val1 == val2
+                ), f"Values don't match for {col}: {val1} != {val2}"
             else:
                 # For non-numeric values, regular comparison
                 assert val1 == val2, f"Values don't match for {col}: {val1} != {val2}"
