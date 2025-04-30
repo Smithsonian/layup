@@ -98,10 +98,10 @@ def main():
     )
 
     optional.add_argument(
-        "-so",
-        "--split-output",
-        help="Split output into two files; successfully fit, and failed to fit. Failed output is named output file stem + '_flagged', i.e. 'output_flagged.csv'. Default is False.",
-        dest="split_output",
+        "-sf",
+        "--separate-flagged",
+        help="Split flagged results into separate output file. Flagged results file is called `output_file_stem` + '_flagged', i.e. 'output_flagged.csv'. Default is False.",
+        dest="separate_flagged",
         action="store_true",
         required=False,
     )

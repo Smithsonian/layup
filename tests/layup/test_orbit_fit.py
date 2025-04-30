@@ -32,7 +32,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     class FakeCliArgs:
         def __init__(self, force):
             self.ar_data_file_path = None
-            self.split_output = False
+            self.separate_flagged = False
             self.force = force
 
     with pytest.raises(FileExistsError):

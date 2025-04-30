@@ -197,7 +197,7 @@ def orbitfit_cli(
     # If splitting the output has been requested, then we'll create a second output
     # file with "_flagged" appended to the stem. i.e. if the user provided "output.h5
     # then the flagged output will be "output_flagged.h5".
-    if cli_args.split_output:
+    if cli_args.separate_flagged:
         output_file_stem_flagged = output_file_stem
         if output_file_format == "csv":
             output_file_flagged = Path(f"{output_file_stem_flagged}_flagged.{output_file_format.lower()}")
@@ -263,7 +263,7 @@ def orbitfit_cli(
             if overwrite:
                 logger.warning(f"Output file {output_file} already exists. Overwriting.")
                 os.remove(output_file)
-                if cli_args.split_output and os.path.exists(output_file_flagged):
+                if cli_args.separate_flagged and os.path.exists(output_file_flagged):
                     logger.warning(f"Output file {output_file_flagged} already exists. Overwriting.")
                     os.remove(output_file_flagged)
             else:
@@ -271,7 +271,7 @@ def orbitfit_cli(
                 raise FileExistsError(f"Output file {output_file} already exists")
             first_write = False
 
-        if cli_args.split_output:
+        if cli_args.separate_flagged:
             # Split the results into two files: one for successful fits and one for failed fits
             success_mask = fit_orbits["flag"] == 0
             fit_orbits_success = fit_orbits[success_mask]
