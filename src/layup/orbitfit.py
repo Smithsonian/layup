@@ -72,7 +72,7 @@ def _orbitfit(data, cache_dir: str):
         Observation.from_astrometry(
             d["ra"] * np.pi / 180.0,
             d["dec"] * np.pi / 180.0,
-            convert_tdb_date_to_julian_date(d["obstime"], cache_dir)[0],  # Convert obstime to JD TDB
+            convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
             [d["x"], d["y"], d["z"]],  # Barycentric position
             [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
         )

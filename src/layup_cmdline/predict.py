@@ -204,7 +204,7 @@ def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
         try:
             # If conversion to float fails, assume that the input was a date string
             # in the format YYYY-mm-ddTDB.
-            date_JD_TDB, _ = convert_tdb_date_to_julian_date(input_str, str(cache_path))
+            date_JD_TDB = convert_tdb_date_to_julian_date(input_str, str(cache_path))
         except:
             # Several different exceptions can be raised here, but they all allude
             # to the fact that the input string is not in the expected format.

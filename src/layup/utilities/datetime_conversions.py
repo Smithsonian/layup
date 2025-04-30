@@ -1,4 +1,7 @@
-def convert_tdb_date_to_julian_date(input_tdb_date: str, spice_kernel_dir: str = "") -> tuple[float, str]:
+SEC_PER_DAY = 24 * 60 * 60
+
+
+def convert_tdb_date_to_julian_date(input_tdb_date: str, spice_kernel_dir: str = "") -> float:
     """
     Convert a TDB date string to Julian Date.
 
@@ -13,13 +16,10 @@ def convert_tdb_date_to_julian_date(input_tdb_date: str, spice_kernel_dir: str =
 
     Returns
     -------
-    tuple(float, str)
-        The Julian Date, as a float, corresponding to the input TDB date. Also
-        returns the UTC date string in ISO format.
+    float
+        The Julian Date, as a float, corresponding to the input TDB date.
     """
-    from datetime import datetime
     from pathlib import Path
-    from astropy.time import Time
     import spiceypy as spice
     import pooch
 
@@ -47,7 +47,7 @@ def convert_tdb_date_to_julian_date(input_tdb_date: str, spice_kernel_dir: str =
         )
 
     et = spice.str2et(input_tdb_date)
-    date_JD_TDB = spice.j2000() + et/(24*60*60)
+    date_JD_TDB = spice.j2000() + et / SEC_PER_DAY
 
     # Return the TDB Julian Date as a float
     return date_JD_TDB
