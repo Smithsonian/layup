@@ -1,7 +1,8 @@
 import logging
 import os
+from argparse import Namespace
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 import pooch
@@ -151,7 +152,7 @@ def orbitfit_cli(
     output_file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
     num_workers: int = -1,
-    cli_args: dict = None,
+    cli_args: Optional[Namespace] = None,
 ):
     """This is the function that is called from the command line
 
@@ -169,9 +170,16 @@ def orbitfit_cli(
         The number of workers to use for parallel processing of the individual
         chunk. If -1, the number of workers will be set to the number of CPUs on
         the system. The default is 1 worker.
-    cli_args : argparse, optional (default=None)
+    cli_args : argparse.Namespace, optional (default=None)
         The argparse object that was created when running from the CLI.
     """
+
+    if cli_args is not None:
+        cache_dir = cli_args.ar_data_file_path
+        overwrite = cli_args.force
+    else:
+        cache_dir = None
+        overwrite = False
 
     _primary_id_column_name = "provID"
 
@@ -185,6 +193,30 @@ def orbitfit_cli(
             else Path(f"{output_file_stem}.h5")
         )
     output_directory = output_file.parent.resolve()
+
+    # If splitting the output has been requested, then we'll create a second output
+    # file with "_flagged" appended to the stem. i.e. if the user provided "output.h5
+    # then the flagged output will be "output_flagged.h5".
+    if cli_args.separate_flagged:
+        output_file_stem_flagged = output_file_stem
+        if output_file_format == "csv":
+            output_file_flagged = Path(f"{output_file_stem_flagged}_flagged.{output_file_format.lower()}")
+        else:
+            output_file_stem_parts = output_file_stem_flagged.split(".")
+            if len(output_file_stem_parts) > 1:
+                output_file_stem_flagged = output_file_stem_parts[0] + "_flagged." + output_file_stem_parts[1]
+            else:
+                output_file_stem_flagged = output_file_stem_flagged + "_flagged"
+
+            output_file_flagged = (
+                Path(f"{output_file_stem_flagged}")
+                if output_file_stem_flagged.endswith(".h5")
+                else Path(f"{output_file_stem_flagged}.h5")
+            )
+
+        if output_file_flagged.exists() and not overwrite:
+            logger.error(f"Output flagged file {output_file_flagged} already exists")
+            raise FileExistsError(f"Output flagged file {output_file_flagged} already exists")
 
     if num_workers < 0:
         num_workers = os.cpu_count()
@@ -213,13 +245,6 @@ def orbitfit_cli(
 
     chunks = _create_chunks(reader, chunk_size)
 
-    if cli_args is not None:
-        cache_dir = cli_args.ar_data_file_path
-        overwrite = cli_args.force
-    else:
-        cache_dir = None
-        overwrite = False
-
     first_write = True  # Flag to check if this is the first write to the output file
     for chunk in chunks:
         data = reader.read_objects(chunk)
@@ -238,14 +263,40 @@ def orbitfit_cli(
             if overwrite:
                 logger.warning(f"Output file {output_file} already exists. Overwriting.")
                 os.remove(output_file)
+                if cli_args.separate_flagged and os.path.exists(output_file_flagged):
+                    logger.warning(f"Output file {output_file_flagged} already exists. Overwriting.")
+                    os.remove(output_file_flagged)
             else:
                 logger.error(f"Output file {output_file} already exists")
                 raise FileExistsError(f"Output file {output_file} already exists")
             first_write = False
-        if output_file_format == "hdf5":
-            write_hdf5(fit_orbits, output_file, key="data")
-        else:
-            write_csv(fit_orbits, output_file)
+
+        if cli_args.separate_flagged:
+            # Split the results into two files: one for successful fits and one for failed fits
+            success_mask = fit_orbits["flag"] == 0
+            fit_orbits_success = fit_orbits[success_mask]
+            fit_orbits_failed = fit_orbits[~success_mask]
+
+            if output_file_format == "hdf5":
+                if len(fit_orbits_success) > 0:
+                    write_hdf5(fit_orbits_success, output_file, key="data")
+
+                if len(fit_orbits_failed) > 0:
+                    write_hdf5(
+                        fit_orbits_failed[["provID", "method", "flag"]], output_file_flagged, key="data"
+                    )
+            else:  # csv output format
+                if len(fit_orbits_success) > 0:
+                    write_csv(fit_orbits_success, output_file)
+
+                if len(fit_orbits_failed) > 0:
+                    write_csv(fit_orbits_failed[["provID", "method", "flag"]], output_file_flagged)
+
+        else:  # All results go to a single output file
+            if output_file_format == "hdf5":
+                write_hdf5(fit_orbits, output_file, key="data")
+            else:
+                write_csv(fit_orbits, output_file)
 
     print(f"Data has been written to {output_file}")
 

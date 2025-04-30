@@ -97,6 +97,15 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-sf",
+        "--separate-flagged",
+        help="Split flagged results into separate output file. Flagged results file is called `output_file_stem` + '_flagged', i.e. 'output_flagged.csv'. Default is False.",
+        dest="separate_flagged",
+        action="store_true",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
