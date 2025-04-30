@@ -722,12 +722,13 @@ namespace orbit_fit
         // First find a triple of detections in the full data set.
         std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);
 
-        int success = 0;
+        int success = 1;
         size_t iters;
         double chi2_final;
         double result_epoch;
         size_t dof;
         struct reb_particle p1;
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> final_cov;
 
         for (size_t i = 0; i < idx.size(); i++)
         {
@@ -877,7 +878,6 @@ namespace orbit_fit
 
             dof = 2 * detections2.size() - 6;
 
-            Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov2;
             flag = orbit_fit(
                 ephem,
                 p1,
@@ -887,22 +887,22 @@ namespace orbit_fit
                 partials_vec2,
                 iters,
                 chi2_final,
-                cov2,
+                final_cov,
                 eps,
                 iter_max);
 
             if (flag == 0)
             {
                 printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
-                Eigen::MatrixXd obs_cov2(6, 6);
+                Eigen::MatrixXd obs_final_cov(6, 6);
                 result_epoch = res.value()[0].epoch;
                 PredictResult pred_first2 = predict(
                     ephem,
                     p1,
                     res.value()[0].epoch,
                     detections_full[0],
-                    cov2,
-                    obs_cov2);
+                    final_cov,
+                    obs_final_cov);
 
                 last = detections_full.size() - 1;
                 PredictResult pred_last2 = predict(
@@ -910,9 +910,9 @@ namespace orbit_fit
                     p1,
                     res.value()[0].epoch,
                     detections_full[last],
-                    cov2,
-                    obs_cov2);
-                success = 1;
+                    final_cov,
+                    obs_final_cov);
+                success = 0;
                 break;
             }
             else
@@ -924,7 +924,7 @@ namespace orbit_fit
                 continue;
             }
         }
-        if (success == 0)
+        if (success != 0)
         {
             printf("fully failed\n");
             fflush(stdout);
@@ -946,6 +946,17 @@ namespace orbit_fit
         result.state[4] = p1.vy;
         result.state[5] = p1.vz;
 
+        if (success == 0) {
+            // Populate our covariance matrix
+            for (int i = 0; i < 6; i++)
+            {
+                for (int j = 0; j < 6; j++)
+                {
+                    // flatten the covariance matrix
+                    result.cov[(i * 6) + j] = final_cov(i, j);
+                }
+            }
+        }
         // Important issues:
         // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
         // 2. Making sure the weight matrix is as good as it can be

@@ -25,6 +25,26 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     output_file_stem = "test_output"
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
 
+    # Write an empty file to temp_out_file path to test the overwrite functionality
+    with open(temp_out_file, "w") as f:
+        f.write("")
+
+    class FakeCliArgs:
+        def __init__(self, overwrite):
+            self.ar_data_file_path = None
+            self.overwrite = overwrite
+
+    with pytest.raises(FileExistsError):
+        orbitfit_cli(
+            input=get_test_filepath("100_random_mpc_ADES_provIDs_no_sats.csv"),
+            input_file_format="ADES_csv",
+            output_file_stem=output_file_stem,
+            output_file_format="csv",
+            chunk_size=chunk_size,
+            num_workers=num_workers,
+            cli_args=FakeCliArgs(overwrite=False),
+        )
+    # Now run the orbit_fit cli with overwrite set to True
     orbitfit_cli(
         input=get_test_filepath("100_random_mpc_ADES_provIDs_no_sats.csv"),
         input_file_format="ADES_csv",
@@ -32,6 +52,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         output_file_format="csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
+        cli_args=FakeCliArgs(overwrite=True),
     )
 
     # Verify the orbit fit produced an output file
@@ -108,6 +129,26 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
 
     # Verify that all of the output data is in the default BCART format
     assert np.all(output_data["FORMAT"] == "BCART")
+
+    # For each row in the output data, check that there is a non-zero covariance matrix
+    # if there was a successful fit
+    for row in output_data:
+        # Check that the covariance matrix is non-zero
+        cov_matrix = np.array(
+            [row[f"cov_0{i}"] for i in range(10)] + [row[f"cov_{i}"] for i in range(10, 36)]
+        )
+        # Check if the cov_matrix has any NaN values indicating a failed fit
+        nan_mask = np.isnan(cov_matrix)
+        if nan_mask.any():
+            # If any values are NaN, all should be NaN
+            assert np.all(nan_mask)
+            # Since the fit failed, check that the flag is set to 1
+            assert row["flag"] == 1
+        else:
+            # Since no values are NaN, check that the flag is set to 0
+            assert row["flag"] == 0
+            # Check that the covariance matrix is non-zero
+            assert np.count_nonzero(cov_matrix) > 0
 
 
 def test_orbit_fit_mixed_inputs():
