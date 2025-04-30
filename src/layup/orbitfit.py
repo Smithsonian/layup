@@ -10,6 +10,7 @@ from numpy.lib import recfunctions as rfn
 
 from layup.routines import Observation, get_ephem, run_from_vector
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
+from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
@@ -32,10 +33,10 @@ _RESULT_DTYPES = np.dtype(
         ("x", "f8"),  # The first of 6 state vector elements
         ("y", "f8"),
         ("z", "f8"),
-        ("vx", "f8"),
-        ("vy", "f8"),
-        ("vz", "f8"),  # The last of 6 state vector elements
-        ("epoch", "f8"),  # Epoch
+        ("xdot", "f8"),
+        ("ydot", "f8"),
+        ("zdot", "f8"),  # The last of 6 state vector elements
+        ("epochMJD_TDB", "f8"),  # Epoch
         ("niter", "i4"),  # Number of iterations
         ("method", "O"),  # Method used for orbit fitting
         ("flag", "i4"),  # Single-character flag indicating success of the fit
@@ -71,7 +72,7 @@ def _orbitfit(data, cache_dir: str):
         Observation.from_astrometry(
             d["ra"] * np.pi / 180.0,
             d["dec"] * np.pi / 180.0,
-            spice.j2000() + d["et"] / (24 * 60 * 60),  # Convert ET to JD TDB
+            convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
             [d["x"], d["y"], d["z"]],  # Barycentric position
             [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
         )
@@ -99,7 +100,7 @@ def _orbitfit(data, cache_dir: str):
             )
             + tuple(res.state[i] for i in range(6))  # Flat state vector
             + (
-                res.epoch,
+                res.epoch - 2400000.5,
                 res.niter,
                 res.method,
                 res.flag,
@@ -130,7 +131,8 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
 
     layup_observatory = LayupObservatory()
 
-    # The units of et are seconds (from J2000).
+    # The units of et are seconds (from J2000). This new column is used by
+    # data_processing_utilities.obscodes_to_barycentric.
     et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
@@ -213,7 +215,7 @@ def orbitfit_cli(
 
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
-        overwrite = cli_args.overwrite
+        overwrite = cli_args.force
     else:
         cache_dir = None
         overwrite = False
