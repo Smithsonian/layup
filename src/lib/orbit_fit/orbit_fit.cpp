@@ -83,11 +83,6 @@ namespace orbit_fit
             assist_integrate_or_interpolate(ax, t - lt);
 
 	    if(r->status == REB_STATUS_GENERIC_ERROR){
-		printf("barf t: %lf, lt: %le, jd_tdb: %lf\n", t, lt, ephem->jd_ref+t);
-		printf("%le %le %le %le %le %le\n",
-		       r->particles[np].x, r_obs.x,
-		       r->particles[np].y, r_obs.y,
-		       r->particles[np].z, r_obs.z);
 		return 1;
 	    }
             double dx = r->particles[np].x - r_obs.x;
@@ -1001,7 +996,6 @@ namespace orbit_fit
             p1.vy = res.value()[0].state[4];
             p1.vz = res.value()[0].state[5];
 
-	    printf("start orbit_fit: %lu\n", detections.size());
             flag = orbit_fit(
                 ephem,
                 p1,
@@ -1061,7 +1055,6 @@ namespace orbit_fit
 
             dof = 2 * detections2.size() - 6;
 
-	    printf("start orbit_fit: %lu\n", detections2.size());	    
             flag = orbit_fit(
                 ephem,
                 p1,
