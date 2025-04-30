@@ -7,6 +7,7 @@ import numpy as np
 import pooch
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
+from astropy.time import Time
 
 from layup.routines import Observation, get_ephem, run_from_vector
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
@@ -32,10 +33,10 @@ _RESULT_DTYPES = np.dtype(
         ("x", "f8"),  # The first of 6 state vector elements
         ("y", "f8"),
         ("z", "f8"),
-        ("vx", "f8"),
-        ("vy", "f8"),
-        ("vz", "f8"),  # The last of 6 state vector elements
-        ("epoch", "f8"),  # Epoch
+        ("xdot", "f8"),
+        ("ydot", "f8"),
+        ("zdot", "f8"),  # The last of 6 state vector elements
+        ("epochMJD_TDB", "f8"),  # Epoch
         ("niter", "i4"),  # Number of iterations
         ("method", "O"),  # Method used for orbit fitting
         ("flag", "i4"),  # Single-character flag indicating success of the fit
@@ -90,6 +91,7 @@ def _orbitfit(data, cache_dir: str):
     # Populate our output structured array with the orbit fit results
     success = res.flag == 0
     cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
+    res.epoch = float(Time(res.epoch, format='jd', scale='tdb').mjd) # converting from jd to mjd
     output = np.array(
         [
             (
