@@ -25,11 +25,16 @@ namespace orbit_fit
     {
 
         struct reb_simulation *r = ax->sim;
+        struct assist_ephem *ephem = ax->ephem;
         double lt = lt0;
         // Performs the light travel time correction between object and observatory iteratively for the object at a given reference time
         for (int i = 0; i < iter; i++)
         {
             assist_integrate_or_interpolate(ax, t - lt);
+
+            if(r->status == REB_STATUS_GENERIC_ERROR){
+                return 1;
+            }
             double dx = r->particles[np].x - r_obs.x;
             double dy = r->particles[np].y - r_obs.y;
             double dz = r->particles[np].z - r_obs.z;
