@@ -102,8 +102,7 @@ def main():
         "--split-output",
         help="Split output into two files; successfully fit, and failed to fit. Failed output is named output file stem + '_flagged', i.e. 'output_flagged.csv'. Default is False.",
         dest="split_output",
-        default=False,
-        type=bool,
+        action="store_true",
         required=False,
     )
 
