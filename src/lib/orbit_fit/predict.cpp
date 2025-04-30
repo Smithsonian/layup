@@ -222,9 +222,33 @@ namespace orbit_fit
         return results;
     }
 
+    Eigen::MatrixXd numpy_to_eigen(std::vector<double> arr, size_t m, size_t n)
+    {
+        // Utility function to convert a numpy array to an Eigen matrix
+        // Convert a 1D array to a 2D Eigen matrix
+        // Assuming arr is of size m*n
+        if (arr.size() != m * n)
+        {
+            throw std::invalid_argument("Array size does not match the specified dimensions.");
+        }
+
+        Eigen::MatrixXd result(m, n);
+        for (size_t i = 0; i < m; i++)
+        {
+            for (size_t j = 0; j < n; j++)
+            {
+                result(i, j) = arr[i * n + j];
+            }
+        }
+        return result;
+    }
+
     static void predict_bindings(py::module &m)
     {
+        py::class_<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>>(m, "MatrixXd")
+            .def(py::init<>());
         m.def("predict", &orbit_fit::predict, R"pbdoc(predict)pbdoc");
         m.def("predict_sequence", &orbit_fit::predict_sequence, R"pbdoc(predict_sequence)pbdoc");
+        m.def("numpy_to_eigen", &orbit_fit::numpy_to_eigen, R"pbdoc(numpy_to_eigen)pbdoc");
     }
 } // namespace orbit_fit

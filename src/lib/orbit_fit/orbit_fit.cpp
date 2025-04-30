@@ -1066,8 +1066,6 @@ namespace orbit_fit
 #ifdef Py_PYTHON_H
     static void orbit_fit_bindings(py::module &m)
     {
-        py::class_<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>>(m, "MatrixXd")
-            .def(py::init<>());
         py::class_<assist_ephem>(m, "assist_ephem");
         m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Core orbit fit function.)pbdoc");
         m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");
