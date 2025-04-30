@@ -90,6 +90,16 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-pid",
+        "--primary-id-column-name",
+        help="Column name in input file that contains the primary ID of the object.",
+        dest="primary_id_column_name",
+        type=str,
+        default="ObjID",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)

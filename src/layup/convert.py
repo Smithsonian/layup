@@ -41,6 +41,11 @@ degree_columns = {
 # Add this to MJD to convert to JD
 MJD_TO_JD_CONVERSTION = 2400000.5
 
+INPUT_READERS = {
+    "csv": CSVDataReader,
+    "hdf5": HDF5DataReader,
+}
+
 
 def _apply_convert(data, convert_to, cache_dir=None):
     """
@@ -233,13 +238,16 @@ def convert_cli(
         num_workers = os.cpu_count()
 
     # Open the input file and read the first line
-    if file_format == "hdf5":
-        sample_reader = HDF5DataReader(
-            input_file,
-            format_column_name="FORMAT",
-        )
-    else:
-        sample_reader = CSVDataReader(input_file, format_column_name="FORMAT")
+    reader_class = INPUT_READERS.get(file_format)
+    if reader_class is None:
+        logger.error(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
+        raise ValueError(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
+
+    sample_reader = reader_class(
+        input_file,
+        format_column_name="FORMAT",
+        primary_id_column_name=cli_args.primary_id_column_name,
+    )
 
     sample_data = sample_reader.read_rows(block_start=0, block_size=1)
 
@@ -258,26 +266,24 @@ def convert_cli(
 
     # Reopen the file now that we know the input format and can validate the column names
     required_columns = REQUIRED_COLUMN_NAMES[input_format]
-    if file_format == "hdf5":
-        reader = HDF5DataReader(
-            input_file, format_column_name="FORMAT", required_column_names=required_columns
-        )
-    else:
-        reader = CSVDataReader(
-            input_file, format_column_name="FORMAT", required_column_names=required_columns
-        )
+    full_reader = reader_class(
+        input_file,
+        format_column_name="FORMAT",
+        primary_id_column_name=cli_args.primary_id_column_name,
+        required_column_names=required_columns,
+    )
 
     # Calculate the start and end indices for each chunk, as a list of tuples
     # of the form (start, end) where start is the starting index of the chunk
     # and the last index of the chunk + 1.
-    total_rows = reader.get_row_count()
+    total_rows = full_reader.get_row_count()
     chunks = [(i, min(i + chunk_size, total_rows)) for i in range(0, total_rows, chunk_size)]
 
     cache_dir = cli_args.ar_data_file_path if cli_args else None
 
     for chunk_start, chunk_end in chunks:
         # Read the chunk of data
-        chunk_data = reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
+        chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
         # Parallelize conversion of this chunk of data.
         converted_data = convert(chunk_data, convert_to, num_workers=num_workers, cache_dir=cache_dir)
         # Write out the converted data in in the requested file format.
