@@ -68,7 +68,8 @@ def _orbitfit(data, cache_dir: str):
     # and internal to the C++ code in general, we are using
     # radians.
     observations = [
-        Observation.from_astrometry(
+        Observation.from_astrometry_id(
+            d["provID"],
             d["ra"] * np.pi / 180.0,
             d["dec"] * np.pi / 180.0,
             spice.j2000() + d["et"] / (24 * 60 * 60),  # Convert ET to JD TDB

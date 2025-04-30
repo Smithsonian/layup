@@ -74,26 +74,25 @@ namespace orbit_fit
     int integrate_light_time(struct assist_extras *ax, int np, double t, reb_vec3d r_obs, double lt0, size_t iter, double speed_of_light)
     {
 
-	printf("start integrate_light_time\n");
         struct reb_simulation *r = ax->sim;
+	struct assist_ephem *ephem = ax->ephem;
         double lt = lt0;
         // Performs the light travel time correction between object and observatory iteratively for the object at a given reference time
         for (int i = 0; i < iter; i++)
         {
-	    printf("okay t: %lf, lt: %lf\n", t, lt);	    
             assist_integrate_or_interpolate(ax, t - lt);
 
 	    if(r->status == REB_STATUS_GENERIC_ERROR){
-		printf("barf t: %lf, lt: %lf\n", t, lt);
+		printf("barf t: %lf, lt: %le, jd_tdb: %lf\n", t, lt, ephem->jd_ref+t);
+		printf("%le %le %le %le %le %le\n",
+		       r->particles[np].x, r_obs.x,
+		       r->particles[np].y, r_obs.y,
+		       r->particles[np].z, r_obs.z);
 		return 1;
 	    }
             double dx = r->particles[np].x - r_obs.x;
             double dy = r->particles[np].y - r_obs.y;
             double dz = r->particles[np].z - r_obs.z;
-	    printf("%le %le %le %le %le %le\n",
-		   r->particles[np].x, r_obs.x,
-		   r->particles[np].y, r_obs.y,
-		   r->particles[np].z, r_obs.z);
             double rho_mag = sqrt(dx * dx + dy * dy + dz * dz);
             lt = rho_mag / speed_of_light;
         }
@@ -282,7 +281,7 @@ namespace orbit_fit
         // rho and its components, since those are
         // already computed for the light time iteration.
 
-	printf("residuals\n");
+	//printf("residuals\n");
         integrate_light_time(ax, j, t_obs, r_obs, 0.0, 4, SPEED_OF_LIGHT);
 
         double rho_x = r->particles[j].x - xe;
@@ -942,7 +941,7 @@ namespace orbit_fit
             // Now get a segment of data that spans the triplet and that uses up to
             // a certain number of points, if they are available in a time window.
             // This should be a parameter
-            size_t num = 40;
+            size_t num = 100;
 
             size_t curr_num = id2 - id1 + 1;
 
@@ -1002,6 +1001,7 @@ namespace orbit_fit
             p1.vy = res.value()[0].state[4];
             p1.vz = res.value()[0].state[5];
 
+	    printf("start orbit_fit: %lu\n", detections.size());
             flag = orbit_fit(
                 ephem,
                 p1,
@@ -1061,6 +1061,7 @@ namespace orbit_fit
 
             dof = 2 * detections2.size() - 6;
 
+	    printf("start orbit_fit: %lu\n", detections2.size());	    
             flag = orbit_fit(
                 ephem,
                 p1,

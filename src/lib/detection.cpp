@@ -99,6 +99,8 @@ namespace orbit_fit
         std::optional<double> ra_unc;
         std::optional<double> dec_unc;
 
+	std::string id;
+
     private:
         // Private constructor used by the factory methods.
         Observation(double epoch_val,
@@ -186,6 +188,22 @@ namespace orbit_fit
             return obs;
         }
 
+        // Factory method for an Astrometry observation.
+        static Observation from_astrometry_id(std::string id, double ra, double dec, double epoch_val,
+                                           const std::array<double, 3> &obs_position,
+                                           const std::array<double, 3> &obs_velocity)
+        {
+            Observation obs(epoch_val, obs_position, obs_velocity);
+            obs.observation_type = AstrometryObservation();
+	    obs.id = id;
+            obs.ra_unc = 1.0/206265;
+            obs.dec_unc = 1.0/206265;
+            obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
+            obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
+            obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
+            return obs;
+        }
+
         // Factory method for a Streak observation.
         static Observation from_streak(double ra, double dec, double ra_rate, double dec_rate,
                                        double epoch_val,
@@ -227,6 +245,10 @@ namespace orbit_fit
                           std::array<double, 3>, std::array<double, 3>, double, double>())
             .def_static("from_astrometry", &Observation::from_astrometry,
                         py::arg("ra"), py::arg("dec"), py::arg("epoch"),
+                        py::arg("observer_position"), py::arg("observer_velocity"),
+                        "Construct an Astrometry observation")
+            .def_static("from_astrometry_id", &Observation::from_astrometry_id,
+                        py::arg("id"), py::arg("ra"), py::arg("dec"), py::arg("epoch"),
                         py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct an Astrometry observation")
             // Constructor for a Streak observation.
