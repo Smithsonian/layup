@@ -275,13 +275,15 @@ def orbitfit_cli(
                     write_hdf5(fit_orbits_success, output_file, key="data")
 
                 if len(fit_orbits_failed) > 0:
-                    write_hdf5(fit_orbits_failed, output_file_flagged, key="data")
+                    write_hdf5(
+                        fit_orbits_failed[["provID", "method", "flag"]], output_file_flagged, key="data"
+                    )
             else:  # csv output format
                 if len(fit_orbits_success) > 0:
                     write_csv(fit_orbits_success, output_file)
 
                 if len(fit_orbits_failed) > 0:
-                    write_csv(fit_orbits_failed, output_file_flagged)
+                    write_csv(fit_orbits_failed[["provID", "method", "flag"]], output_file_flagged)
 
         else:  # All results go to a single output file
             if output_file_format == "hdf5":
