@@ -32,10 +32,10 @@ _RESULT_DTYPES = np.dtype(
         ("x", "f8"),  # The first of 6 state vector elements
         ("y", "f8"),
         ("z", "f8"),
-        ("vx", "f8"),
-        ("vy", "f8"),
-        ("vz", "f8"),  # The last of 6 state vector elements
-        ("epoch", "f8"),  # Epoch
+        ("xdot", "f8"),
+        ("ydot", "f8"),
+        ("zdot", "f8"),  # The last of 6 state vector elements
+        ("epochMJD_TDB", "f8"),  # Epoch
         ("niter", "i4"),  # Number of iterations
         ("method", "O"),  # Method used for orbit fitting
         ("flag", "i4"),  # Single-character flag indicating success of the fit
@@ -99,7 +99,7 @@ def _orbitfit(data, cache_dir: str):
             )
             + tuple(res.state[i] for i in range(6))  # Flat state vector
             + (
-                res.epoch,
+                res.epoch - 2400000.5,
                 res.niter,
                 res.method,
                 res.flag,
