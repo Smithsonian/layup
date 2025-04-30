@@ -30,10 +30,10 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         f.write("")
 
     class FakeCliArgs:
-        def __init__(self, overwrite):
+        def __init__(self, force):
             self.ar_data_file_path = None
-            self.overwrite = overwrite
             self.split_output = False
+            self.force = force
 
     with pytest.raises(FileExistsError):
         orbitfit_cli(
@@ -43,7 +43,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
             output_file_format="csv",
             chunk_size=chunk_size,
             num_workers=num_workers,
-            cli_args=FakeCliArgs(overwrite=False),
+            cli_args=FakeCliArgs(force=False),
         )
     # Now run the orbit_fit cli with overwrite set to True
     orbitfit_cli(
@@ -53,7 +53,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         output_file_format="csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
-        cli_args=FakeCliArgs(overwrite=True),
+        cli_args=FakeCliArgs(force=True),
     )
 
     # Verify the orbit fit produced an output file
@@ -81,10 +81,10 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         "x",
         "y",
         "z",
-        "vx",
-        "vy",
-        "vz",
-        "epoch",
+        "xdot",
+        "ydot",
+        "zdot",
+        "epochMJD_TDB",
         "niter",
         "method",
         "flag",

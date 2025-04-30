@@ -194,15 +194,7 @@ def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
     float
         The converted JD_TDB date.
     """
-    import spiceypy as spice
-    from spiceypy.utils.exceptions import SpiceUNPARSEDTIME
-
-    if os.path.exists(cache_path / "naif0012.tls"):
-        spice.furnsh(str(cache_path / "naif0012.tls"))
-    else:
-        raise FileNotFoundError(
-            f"SPICE kernel file not found cache directory: {cache_path}. Run `layup bootstrap` to download the required files."
-        )
+    from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 
     try:
         # Assume that input is a JD_TDB float that was converted to string. Attempt
@@ -212,8 +204,7 @@ def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
         try:
             # If conversion to float fails, assume that the input was a date string
             # in the format YYYY-mm-ddTDB.
-            et = spice.str2et(input_str)
-            date_JD_TDB = spice.j2000() + et / SEC_PER_DAY
+            date_JD_TDB = convert_tdb_date_to_julian_date(input_str, str(cache_path))
         except:
             # Several different exceptions can be raised here, but they all allude
             # to the fact that the input string is not in the expected format.
