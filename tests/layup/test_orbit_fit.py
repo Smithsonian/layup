@@ -129,8 +129,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     assert set(output_data.dtype.names) == set(expected_cols)
 
     # Verify that all of the output data is in the default BCART format for flag == 0 and is nan for flag !=0
-    assert np.all(output_data["FORMAT"][output_data["flag"]== 0] == "BCART")
-    assert (math.isnan(output_data["FORMAT"][output_data["flag"]!= 0] ))
+    assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == "BCART")
+    assert math.isnan(output_data["FORMAT"][output_data["flag"] != 0])
     # For each row in the output data, check that there is a non-zero covariance matrix
     # if there was a successful fit
     for row in output_data:
