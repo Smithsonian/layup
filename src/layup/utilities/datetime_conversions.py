@@ -47,10 +47,7 @@ def convert_tdb_date_to_julian_date(input_tdb_date: str, spice_kernel_dir: str =
         )
 
     et = spice.str2et(input_tdb_date)
-    spice_utc = spice.et2utc(et, "ISOC", prec=6)
-    date_JD_TDB = Time(
-        datetime.strptime(spice_utc, "%Y-%m-%dT%H:%M:%S.%f"), format="datetime", scale="utc"
-    ).tdb.jd
+    date_JD_TDB = spice.j2000() + et/(24*60*60)
 
-    # Return the Julian Date as a float
-    return date_JD_TDB, spice_utc
+    # Return the TDB Julian Date as a float
+    return date_JD_TDB
