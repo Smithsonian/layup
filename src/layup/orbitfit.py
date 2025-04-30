@@ -174,6 +174,13 @@ def orbitfit_cli(
         The argparse object that was created when running from the CLI.
     """
 
+    if cli_args is not None:
+        cache_dir = cli_args.ar_data_file_path
+        overwrite = cli_args.force
+    else:
+        cache_dir = None
+        overwrite = False
+
     _primary_id_column_name = "provID"
 
     input_file = Path(input)
@@ -207,6 +214,10 @@ def orbitfit_cli(
                 else Path(f"{output_file_stem_flagged}.h5")
             )
 
+        if output_file_flagged.exists() and not overwrite:
+            logger.error(f"Output flagged file {output_file_flagged} already exists")
+            raise FileExistsError(f"Output flagged file {output_file_flagged} already exists")
+
     if num_workers < 0:
         num_workers = os.cpu_count()
 
@@ -234,13 +245,6 @@ def orbitfit_cli(
 
     chunks = _create_chunks(reader, chunk_size)
 
-    if cli_args is not None:
-        cache_dir = cli_args.ar_data_file_path
-        overwrite = cli_args.force
-    else:
-        cache_dir = None
-        overwrite = False
-
     first_write = True  # Flag to check if this is the first write to the output file
     for chunk in chunks:
         data = reader.read_objects(chunk)
@@ -260,6 +264,7 @@ def orbitfit_cli(
                 logger.warning(f"Output file {output_file} already exists. Overwriting.")
                 os.remove(output_file)
                 if cli_args.split_output and os.path.exists(output_file_flagged):
+                    logger.warning(f"Output file {output_file_flagged} already exists. Overwriting.")
                     os.remove(output_file_flagged)
             else:
                 logger.error(f"Output file {output_file} already exists")
