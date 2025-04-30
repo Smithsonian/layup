@@ -171,7 +171,7 @@ def orbitfit_cli(
         The argparse object that was created when running from the CLI.
     """
 
-    _primary_id_column_name = "provID"
+    _primary_id_column_name = cli_args.primary_id_column_name
 
     input_file = Path(input)
     if output_file_format == "csv":

@@ -33,6 +33,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         def __init__(self, overwrite):
             self.ar_data_file_path = None
             self.overwrite = overwrite
+            self.primary_id_column_name = "provID"
 
     with pytest.raises(FileExistsError):
         orbitfit_cli(
