@@ -7,7 +7,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import config
-from scipy.linalg import block_diag
+from jax.scipy.linalg import block_diag
 
 config.update("jax_enable_x64", True)
 
@@ -622,46 +622,47 @@ jac_keplerian_xyz = jax.jacobian(universal_keplerian, argnums=(1, 2, 3, 4, 5, 6)
 jac_xyz_cometary = jax.jacobian(universal_cartesian, argnums=(1, 2, 3, 4, 5, 6))
 
 
+@jax.jit
 def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
-    r = np.array([x, y, z])
-    r_rot = np.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
-    v = np.array([vx, vy, vz])
-    v_rot = np.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
+    r = jnp.array([x, y, z])
+    r_rot = jnp.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
+    v = jnp.array([vx, vy, vz])
+    v_rot = jnp.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
 
-    jj_elements = np.array(
+    jj_elements = jnp.array(
         jac_cometary_xyz(mu, r_rot[0], r_rot[1], r_rot[2], v_rot[0], v_rot[1], v_rot[2], epochMJD_TDB)
     )
     jj_rotation = block_diag(EQ_TO_ECL_ROTATION_MATRIX.T, EQ_TO_ECL_ROTATION_MATRIX.T)
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
 
-
+@jax.jit
 def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
-    r = np.array([x, y, z])
-    r_rot = np.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
-    v = np.array([vx, vy, vz])
-    v_rot = np.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
+    r = jnp.array([x, y, z])
+    r_rot = jnp.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
+    v = jnp.array([vx, vy, vz])
+    v_rot = jnp.dot(v, EQ_TO_ECL_ROTATION_MATRIX)
 
-    jj_elements = np.array(
+    jj_elements = jnp.array(
         jac_keplerian_xyz(mu, r_rot[0], r_rot[1], r_rot[2], v_rot[0], v_rot[1], v_rot[2], epochMJD_TDB)
     )
     jj_rotation = block_diag(EQ_TO_ECL_ROTATION_MATRIX.T, EQ_TO_ECL_ROTATION_MATRIX.T)
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
 
-
+@jax.jit
 def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance):
-    jj_elements = np.array(jac_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB))
-    jj_rotation = block_diag(ECL_TO_EQ_ROTATION_MATRIX, ECL_TO_EQ_ROTATION_MATRIX)
+    jj_elements = jnp.array(jac_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB))
+    jj_rotation = block_diag(ECL_TO_EQ_ROTATION_MATRIX.T, ECL_TO_EQ_ROTATION_MATRIX.T)
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
 
-
+@jax.jit
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
     q = a * (1 - e)
-    tp = epochMJD_TDB - M * np.sqrt(a**3 / mu)
+    tp = epochMJD_TDB - M * jnp.sqrt(a**3 / mu)
     c = covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance)
-    jj_kep_com = np.array(
+    jj_kep_com = jnp.array(
         [
             [1 - e, -a, 0, 0, 0, 0],
             [0, 1, 0, 0, 0, 0],
