@@ -636,6 +636,7 @@ def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
 
+
 @jax.jit
 def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = jnp.array([x, y, z])
@@ -650,12 +651,14 @@ def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
 
+
 @jax.jit
 def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance):
     jj_elements = jnp.array(jac_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB))
     jj_rotation = block_diag(ECL_TO_EQ_ROTATION_MATRIX.T, ECL_TO_EQ_ROTATION_MATRIX.T)
     covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
     return covar
+
 
 @jax.jit
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
