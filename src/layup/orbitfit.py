@@ -213,7 +213,7 @@ def orbitfit_cli(
 
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
-        overwrite = cli_args.force
+        overwrite = cli_args.overwrite
     else:
         cache_dir = None
         overwrite = False
