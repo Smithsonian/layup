@@ -95,22 +95,21 @@ def _orbitfit(data, cache_dir: str):
         [
             (
                 data["provID"][0],
-                res.csq,
+                (res.csq if success else np.nan),
                 res.ndof,
             )
-            + tuple(res.state[i] for i in range(6))  # Flat state vector
+            + (tuple(res.state[i] for i in range(6)) if success else (np.nan,) * 6)  # Flat state vector
             + (
-                res.epoch - 2400000.5,
+                ((res.epoch - 2400000.5) if success else np.nan),
                 res.niter,
                 res.method,
                 res.flag,
-                "BCART",  # The base format returned by the C++ code
+                ("BCART" if success else np.nan),  # The base format returned by the C++ code
             )
             + cov_matrix  # Flat covariance matrix
         ],
         dtype=_RESULT_DTYPES,
     )
-
     return output
 
 
