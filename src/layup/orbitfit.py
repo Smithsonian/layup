@@ -65,7 +65,6 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
 
     if _is_valid_data(data):  # checks data being supplied to c ++ code is valid
 
-
         # sort the observations by the obstime if specified by the user
         if sort_array:
             data = np.sort(data, order="obstime", kind="mergesort")
