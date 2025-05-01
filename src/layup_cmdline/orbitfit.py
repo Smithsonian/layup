@@ -3,9 +3,9 @@
 #
 import argparse
 import sys
+
+from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-from layup.utilities.file_access_utils import find_file_or_exit
-from layup.utilities.file_access_utils import find_directory_or_exit
 
 
 def main():
@@ -97,6 +97,15 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-sf",
+        "--separate-flagged",
+        help="Split flagged results into separate output file. Flagged results file is called `output_file_stem` + '_flagged', i.e. 'output_flagged.csv'. Default is False.",
+        dest="separate_flagged",
+        action="store_true",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -115,7 +124,7 @@ def execute(args):
     find_file_or_exit(arg_fn=args.input, argname="positional input")
     if args.ar_data_file_path:
         find_directory_or_exit(args.ar_data_file_path, argname="--a --ar-data-path")
-    if not ((args.type.lower()) in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]):
+    if (args.type.lower()) not in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]:
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
 
     from layup.utilities.layup_configs import LayupConfigs
