@@ -71,7 +71,6 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: boo
     """
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
 
-
     if _is_valid_data(data):  # checks data being supplied to c ++ code is valid
 
         # sort the observations by the obstime if specified by the user
@@ -91,7 +90,6 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: boo
             )
             for d in data
         ]
-
 
         # if cache_dir is not provided, use the default os_cache
         if cache_dir is None:
@@ -144,7 +142,6 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: boo
             ],
             dtype=_RESULT_DTYPES,
         )
-
 
     return output
 
