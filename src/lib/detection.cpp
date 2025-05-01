@@ -81,6 +81,7 @@ namespace orbit_fit
     // Now, Observation has private constructors and public static factory methods.
     struct Observation
     {
+	std::string objID; 
         double epoch; // utc jd
         ObservationType observation_type;
         std::array<double, 3> observer_position;
@@ -186,6 +187,23 @@ namespace orbit_fit
             return obs;
         }
 
+        // Factory method for an Astrometry observation.
+        static Observation from_astrometry_with_id(std::string objID,
+						   double ra, double dec, double epoch_val,
+						   const std::array<double, 3> &obs_position,
+						   const std::array<double, 3> &obs_velocity)
+        {
+            Observation obs(epoch_val, obs_position, obs_velocity);
+            obs.observation_type = AstrometryObservation();
+            obs.ra_unc = 1.0/206265;
+            obs.dec_unc = 1.0/206265;
+            obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
+            obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
+            obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
+            obs.objID = objID;
+            return obs;
+        }
+	
         // Factory method for a Streak observation.
         static Observation from_streak(double ra, double dec, double ra_rate, double dec_rate,
                                        double epoch_val,
@@ -226,6 +244,11 @@ namespace orbit_fit
             .def(py::init<double, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>,
                           std::array<double, 3>, std::array<double, 3>, double, double>())
             .def_static("from_astrometry", &Observation::from_astrometry,
+                        py::arg("ra"), py::arg("dec"), py::arg("epoch"),
+                        py::arg("observer_position"), py::arg("observer_velocity"),
+                        "Construct an Astrometry observation")
+            .def_static("from_astrometry_with_id", &Observation::from_astrometry_with_id,
+			py::arg("objID"),
                         py::arg("ra"), py::arg("dec"), py::arg("epoch"),
                         py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct an Astrometry observation")
