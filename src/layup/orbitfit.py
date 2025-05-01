@@ -64,14 +64,12 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
     """
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
-    
-    
+
     # sort the observations by the obstime if specified by the user
-    
-    if (sort_array):
-        data=np.sort(data, order="obstime")
-  
-    
+
+    if sort_array:
+        data = np.sort(data, order="obstime")
+
     # Convert the astrometry data to a list of Observations
     # Reminder to label the units.  Within an Observation struct,
     # and internal to the C++ code in general, we are using
