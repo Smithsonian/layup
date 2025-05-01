@@ -9,14 +9,8 @@ import pooch
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
-from layup.routines import (
-    FitResult,
-    Observation,
-    get_ephem,
-    run_from_vector,
-    run_from_vector_with_initial_guess,
-)
-from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
+from layup.routines import Observation, get_ephem, run_from_vector, run_from_vector_with_initial_guess
+from layup.utilities.data_processing_utilities import LayupObservatory, parse_fit_result, process_data_by_id
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -107,26 +101,6 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
         for d in data
     ]
 
-    guess_to_use = FitResult()
-    if initial_guess is not None:
-        guess_cov = np.array(
-            [initial_guess[f"cov_0{i}"] for i in range(10)]
-            + [initial_guess[f"cov_{i}"] for i in range(10, 36)]
-        )
-        guess_to_use.csq = initial_guess["csq"]
-        guess_to_use.ndof = initial_guess["ndof"]
-        guess_to_use.state = [
-            initial_guess["x"],
-            initial_guess["y"],
-            initial_guess["z"],
-            initial_guess["xdot"],
-            initial_guess["ydot"],
-            initial_guess["zdot"],
-        ]
-        guess_to_use.epoch = initial_guess["epochMJD_TDB"] + 2400000.5
-        guess_to_use.cov = guess_cov
-        guess_to_use.niter = initial_guess["niter"]
-
     # if cache_dir is not provided, use the default os_cache
     if cache_dir is None:
         kernels_loc = str(pooch.os_cache("layup"))
@@ -137,6 +111,7 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
     if initial_guess is None or initial_guess["flag"] != 0:
         res = run_from_vector(get_ephem(kernels_loc), observations)
     else:
+        guess_to_use = parse_fit_result(initial_guess)
         res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
 
     # Populate our output structured array with the orbit fit results

@@ -5,6 +5,7 @@ from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
 
+from layup.routines import FitResult
 from layup.utilities.layup_configs import LayupConfigs
 
 """ A module for utilities useful for processing data in structured numpy arrays """
@@ -93,6 +94,44 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
         ]
         # Concatenate all processed blocks together as our final result
         return np.concatenate([future.result() for future in futures])
+
+
+def parse_fit_result(fit_result_row):
+    """
+    Parse the initial guess data from a structured numpy array representing our
+    orbit fit output result.
+
+    Parameters
+    ----------
+    fit_result_row : numpy structured array
+        The row of the structured array representing the orbit fit result.
+    Returns
+    -------
+    res : FitResult
+        The parsed fit result.
+    """
+    res = FitResult()
+    res.csq = fit_result_row["csq"]  # The chi-squared value of the fit
+    res.ndof = fit_result_row["ndof"]  # The number of degrees of freedom
+    # The state vector of the fit result
+    res.state = [
+        fit_result_row["x"],
+        fit_result_row["y"],
+        fit_result_row["z"],
+        fit_result_row["xdot"],
+        fit_result_row["ydot"],
+        fit_result_row["zdot"],
+    ]
+    # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
+    res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
+
+    # Construct the flattened covariance matrix from the columns of the fit result
+    res.cov = np.array(
+        [fit_result_row[f"cov_0{i}"] for i in range(10)] + [fit_result_row[f"cov_{i}"] for i in range(10, 36)]
+    )
+    # The number of iterations used during the fitting process.
+    res.niter = fit_result_row["niter"]
+    return res
 
 
 class LayupObservatory(SorchaObservatory):
