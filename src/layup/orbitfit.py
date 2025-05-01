@@ -261,7 +261,6 @@ def orbitfit_cli(
 
     chunks = _create_chunks(reader, chunk_size)
 
-    first_write = True  # Flag to check if this is the first write to the output file
     for chunk in chunks:
         data = reader.read_objects(chunk)
 
@@ -273,19 +272,6 @@ def orbitfit_cli(
             num_workers=num_workers,
             primary_id_column_name=_primary_id_column_name,
         )
-
-        # Before writing our first chunk, check if the output file already exists.
-        if first_write and os.path.exists(output_file):
-            if overwrite:
-                logger.warning(f"Output file {output_file} already exists. Overwriting.")
-                os.remove(output_file)
-                if cli_args.separate_flagged and os.path.exists(output_file_flagged):
-                    logger.warning(f"Output file {output_file_flagged} already exists. Overwriting.")
-                    os.remove(output_file_flagged)
-            else:
-                logger.error(f"Output file {output_file} already exists")
-                raise FileExistsError(f"Output file {output_file} already exists")
-            first_write = False
 
         if cli_args.separate_flagged:
             # Split the results into two files: one for successful fits and one for failed fits

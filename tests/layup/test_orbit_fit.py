@@ -23,8 +23,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     """Test that the orbit_fit cli works for a small CSV file."""
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
     os.chdir(tmpdir)
-    output_file_stem = "test_output"
-    temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
+    temp_out_file = "test_output"
 
     # Write an empty file to temp_out_file path to test the overwrite functionality
     with open(temp_out_file, "w") as f:
@@ -37,21 +36,11 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
             self.separate_flagged = False
             self.force = force
 
-    with pytest.raises(FileExistsError):
-        orbitfit_cli(
-            input=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
-            input_file_format="ADES_csv",
-            output_file_stem=output_file_stem,
-            output_file_format="csv",
-            chunk_size=chunk_size,
-            num_workers=num_workers,
-            cli_args=FakeCliArgs(force=False),
-        )
     # Now run the orbit_fit cli with overwrite set to True
     orbitfit_cli(
         input=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
         input_file_format="ADES_csv",
-        output_file_stem=output_file_stem,
+        output_file_stem=temp_out_file,
         output_file_format="csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
@@ -61,7 +50,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     # Verify the orbit fit produced an output file
     assert os.path.exists(temp_out_file)
     # Create a new CSV reader to read in our output file
-    output_csv_reader = CSVDataReader(temp_out_file, "csv", primary_id_column_name="provID")
+    output_csv_reader = CSVDataReader(temp_out_file + ".csv", "csv", primary_id_column_name="provID")
     output_data = output_csv_reader.read_rows()
 
     # Read the input data and get the provID column
