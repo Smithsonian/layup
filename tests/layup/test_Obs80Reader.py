@@ -63,3 +63,13 @@ def test_read_objects_with_multiple_ids():
     all_object_ids = list(set(full_data["provID"]))
     data = reader.read_objects(all_object_ids)
     assert len(data) == len(full_data)
+
+
+def test_unsupported_pid_raises():
+    """Test reading in an MPC Obs80 data file with an unsupported primary ID column."""
+    with pytest.raises(ValueError) as e:
+        _ = Obs80DataReader(get_test_filepath("03666.txt"), primary_id_column_name="unsupported_id")
+        assert (
+            e.value.args[0]
+            == "The primary_id_column_name 'unsupported_id' is not supported for Obs80DataReader."
+        )

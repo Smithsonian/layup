@@ -72,7 +72,7 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: boo
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
 
     # temporary - we should remove when in full production mode
-    print(data["provID"][0])
+    print(data[primary_id_column_name][0])
 
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)

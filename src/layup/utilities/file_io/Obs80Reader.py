@@ -72,89 +72,6 @@ def mpctime_to_isotime(mpc_time):
     return format_string % (yr, mn, day, hrs, mins, secs)
 
 
-#! Need to fix this function???
-def get_obs80_id(line):
-    """Get the object ID from the Obs80 line. Using the object name if provided,
-    otherwise using the provisional ID."""
-    obj_name = line[0:5].strip()
-    prov_id = line[5:12].strip()
-    if obj_name != "":
-        obj_id = obj_name
-    elif prov_id != "":
-        obj_id = prov_id
-    else:
-        raise Exception(f"No object identifier: Name was {obj_name} and provId was {prov_id}")
-    return obj_id
-
-
-#! Need to fix this function???
-def convert_obs80(line, second_line=None):
-    """
-    Converts a row of obs80 data to a tuple of values.
-    The second line is optional and may contain the observatory position.
-
-    Parameters
-    ----------
-    line : str
-        The line of obs80 data to convert.
-    second_line : str, optional
-        The optional second line of obs80 data to convert. Default is None.
-
-    Returns
-    -------
-    tuple
-        A tuple of values containing the object ID, ISO time, RA in degrees,
-        Dec in degrees, magnitude, filter, observatory code, catalog, program,
-        and observatory position (x, y, z).
-    """
-    # Extract the relevant fields from the first mpc obs80 line.
-    obj_name = line[0:5].strip()
-    prov_id = line[5:12].strip()
-    prg = line[13].strip()
-    obstime = line[15:32].strip()
-    ra = line[32:44].strip()
-    dec = line[44:56].strip()
-    mag = line[65:70].strip()
-    filt = line[70:71].strip()
-    cat = line[71].strip()
-    obs_code = line[77:80].strip()
-
-    # Use the object name as object ID if provided, otherwise use the provisional ID.
-    if prov_id != "":
-        obj_id = prov_id
-    elif obj_name != "":
-        obj_id = obj_name
-    else:
-        raise Exception(f"No object identifier: Name was {obj_name} and provId was {prov_id}")
-
-    # Do any unit and type conversions. Note that various layup verbs will likely
-    # convert these values again to their internal formats.
-    iso_time = mpctime_to_isotime(obstime)
-    ra_deg, dec_deg = ra_to_deg_ra(ra), dec_to_deg_dec(dec)
-    mag = float(mag) if mag != "" else 0.0
-
-    # Process the observatory position if provided.
-    obs_geo_x, obs_geo_y, obs_geo_z = np.nan, np.nan, np.nan
-    if second_line is not None:
-        # Check that the second line is long enough to contain the observatory position.
-        if len(second_line) < 80:
-            raise ValueError(
-                f"Observatory position line is too short for {obj_id} and line (with length {len(second_line)}: {second_line}"
-            )
-        if second_line[77:80].strip() != obs_code:
-            raise ValueError(
-                f"Observatory codes do not match in the second line provided for the observatory position. {obsCode} and {second_line[77:80].rstrip()}"
-            )
-        flag = second_line[32:34].strip()
-        if flag in ["1", "2"]:
-            # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
-            obs_geo_x = float(second_line[34] + second_line[35:45].strip())
-            obs_geo_y = float(second_line[46] + second_line[47:57].strip())
-            obs_geo_z = float(second_line[58] + second_line[59:69].strip())
-
-    return obj_id, iso_time, ra_deg, dec_deg, mag, filt, obs_code, cat, prg, obs_geo_x, obs_geo_y, obs_geo_z
-
-
 class Obs80DataReader(ObjectDataReader):
     """A class to read in object data files stored in the MPC's obs80
     format.
@@ -192,6 +109,26 @@ class Obs80DataReader(ObjectDataReader):
             ("obs_geo_y", "f8"),
             ("obs_geo_z", "f8"),
         ]
+
+        # define the column slices for the obs80 format
+        self.col_names = {
+            "ObjID": slice(0, 5),
+            "provID": slice(5, 12),
+            "prg": slice(13, 14),
+            "obstime": slice(15, 32),
+            "ra": slice(32, 44),
+            "dec": slice(44, 56),
+            "mag": slice(65, 70),
+            "filt": slice(70, 71),
+            "cat": slice(71, 72),
+            "obs_code": slice(77, 80),
+        }
+
+        if self._primary_id_column_name not in self.col_names:
+            raise ValueError(
+                f"Primary ID column name '{self._primary_id_column_name}' not found in Obs80 column definitions. "
+                "Valid column names are: " + ", ".join(self.col_names.keys())
+            )
 
         # A table holding just the object ID for each row. Only populated
         # if we try to read data for specific object IDs.
@@ -296,12 +233,12 @@ class Obs80DataReader(ObjectDataReader):
                 if curr_block >= block_start:
                     if prev_line is not None:
                         # We have a two-line row to process.
-                        records.append(convert_obs80(prev_line, second_line=curr_line))
+                        records.append(self.convert_obs80(prev_line, second_line=curr_line))
                         # Remove the previous line so we don't process it again.
                         prev_line = None
                     else:
                         # We have a single line to process.
-                        records.append(convert_obs80(curr_line))
+                        records.append(self.convert_obs80(curr_line))
                 curr_block += 1
 
         return np.array(records, dtype=self.output_dtype)
@@ -324,7 +261,7 @@ class Obs80DataReader(ObjectDataReader):
                     # We have a two-line row, so skip it and only
                     # add the object ID from the final row.
                     continue
-                obj_id = get_obs80_id(curr_line)
+                obj_id = self.get_obs80_id(curr_line)
                 obj_ids.append(obj_id)
                 # Count the number of times we see this object ID.
                 self.obj_id_counts[obj_id] = self.obj_id_counts.get(obj_id, 0) + 1
@@ -378,12 +315,12 @@ class Obs80DataReader(ObjectDataReader):
 
                 # Process our current MPC Obs80 row.
                 if prev_line is not None:
-                    records.append(convert_obs80(prev_line, curr_line))
+                    records.append(self.convert_obs80(prev_line, curr_line))
                     # Remove the previous line so we don't process it again.
                     prev_line = None
                 else:
                     # Our row is a single line to process.
-                    records.append(convert_obs80(curr_line))
+                    records.append(self.convert_obs80(curr_line))
         return np.array(records, dtype=self.output_dtype)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
@@ -416,3 +353,93 @@ class Obs80DataReader(ObjectDataReader):
         input_table.dtype.names = [name.strip() for name in input_table.dtype.names]
 
         return input_table
+
+    def get_obs80_id(self, line):
+        """Get the object ID from the Obs80 line. Note that we have already confirmed
+        that `self.primary_id_column_name` is in `self.col_names`.
+        Parameters
+        ----------
+        line : str
+            The line of obs80 data to extract the object ID from.
+
+        Returns
+        -------
+        str
+            The object ID extracted from the line.
+        """
+        # Use the object name as object ID if provided, otherwise use the provisional ID.
+        return line[self.col_names[self._primary_id_column_name]].strip()
+
+    def convert_obs80(self, line, second_line=None):
+        """
+        Converts a row of obs80 data to a tuple of values.
+        The second line is optional and may contain the observatory position.
+
+        Parameters
+        ----------
+        line : str
+            The line of obs80 data to convert.
+        second_line : str, optional
+            The optional second line of obs80 data to convert. Default is None.
+
+        Returns
+        -------
+        tuple
+            A tuple of values containing the object ID, ISO time, RA in degrees,
+            Dec in degrees, magnitude, filter, observatory code, catalog, program,
+            and observatory position (x, y, z).
+        """
+        # Extract the relevant fields from the first mpc obs80 line.
+        # obj_name = line[self.col_names["obj_name"]].strip()
+        # prov_id = line[self.col_names["prov_id"]].strip()
+        prg = line[self.col_names["prg"]].strip()
+        obstime = line[self.col_names["obstime"]].strip()
+        ra = line[self.col_names["ra"]].strip()
+        dec = line[self.col_names["dec"]].strip()
+        mag = line[self.col_names["mag"]].strip()
+        filt = line[self.col_names["filt"]].strip()
+        cat = line[self.col_names["cat"]].strip()
+        obs_code = line[self.col_names["obs_code"]].strip()
+
+        # Use the object name as object ID if provided, otherwise use the provisional ID.
+        obj_id = line[self.col_names[self._primary_id_column_name]].strip()
+
+        # Do any unit and type conversions. Note that various layup verbs will likely
+        # convert these values again to their internal formats.
+        iso_time = mpctime_to_isotime(obstime)
+        ra_deg, dec_deg = ra_to_deg_ra(ra), dec_to_deg_dec(dec)
+        mag = float(mag) if mag != "" else 0.0
+
+        # Process the observatory position if provided.
+        obs_geo_x, obs_geo_y, obs_geo_z = np.nan, np.nan, np.nan
+        if second_line is not None:
+            # Check that the second line is long enough to contain the observatory position.
+            if len(second_line) < 80:
+                raise ValueError(
+                    f"Observatory position line is too short for {obj_id} and line (with length {len(second_line)}: {second_line}"
+                )
+            if second_line[77:80].strip() != obs_code:
+                raise ValueError(
+                    f"Observatory codes do not match in the second line provided for the observatory position. {obs_code} and {second_line[77:80].rstrip()}"
+                )
+            flag = second_line[32:34].strip()
+            if flag in ["1", "2"]:
+                # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
+                obs_geo_x = float(second_line[34] + second_line[35:45].strip())
+                obs_geo_y = float(second_line[46] + second_line[47:57].strip())
+                obs_geo_z = float(second_line[58] + second_line[59:69].strip())
+
+        return (
+            obj_id,
+            iso_time,
+            ra_deg,
+            dec_deg,
+            mag,
+            filt,
+            obs_code,
+            cat,
+            prg,
+            obs_geo_x,
+            obs_geo_y,
+            obs_geo_z,
+        )
