@@ -79,14 +79,11 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
     if id_col not in data.dtype.names:
         raise ValueError(f"Column {id_col} not found in requested data to orbit fit.")
     if initial_guess is not None:
-        if len(initial_guess) != len(data):
-            raise ValueError("Cannot orbit fit  must have the same number of rows as the input data")
         if id_col not in initial_guess.dtype.names:
             raise ValueError(f"Column {id_col} not found in intial guess data to orbit fit.")
-        if initial_guess["id_col"][0] != data["id_col"][0]:
-            raise ValueError(
-                f"Guess data's object_id {initial_guess['id_col'][0]} does not match the object ID {data['id_col'][0]}"
-            )
+        initial_guess = initial_guess[initial_guess[id_col] == data[id_col][0]]
+        if len(initial_guess) == 0:
+            raise ValueError(f"Initial guess data does not contain any rows for {id_col} = {data[id_col][0]}")
 
     # sort the observations by the obstime if specified by the user
     if sort_array:
@@ -107,20 +104,25 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
         for d in data
     ]
 
-    guesses = []
+    guess_to_use = FitResult()
     if initial_guess is not None:
-        for i, d in enumerate(initial_guess):
-            guess_cov = np.array([d["cov_0{i}"] for i in range(10)] + [d[f"cov_{i}"] for i in range(10, 36)])
-            guess = FitResult()
-            guess.csq = d["csq"]
-            guess.ndof = d["ndof"]
-            guess.state = [d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"]]
-            guess.epoch = d["epoch"] + 2400000.5
-            guess.cov = guess_cov
-            guess.niter = d["niter"]
-            guess.method = d["method"]
-            guess.flag = d["flag"]
-            guesses.append(guess)
+        guess_cov = np.array(
+            [initial_guess[f"cov_0{i}"] for i in range(10)]
+            + [initial_guess[f"cov_{i}"] for i in range(10, 36)]
+        )
+        guess_to_use.csq = initial_guess["csq"]
+        guess_to_use.ndof = initial_guess["ndof"]
+        guess_to_use.state = [
+            initial_guess["x"],
+            initial_guess["y"],
+            initial_guess["z"],
+            initial_guess["xdot"],
+            initial_guess["ydot"],
+            initial_guess["zdot"],
+        ]
+        guess_to_use.epoch = initial_guess["epochMJD_TDB"] + 2400000.5
+        guess_to_use.cov = guess_cov
+        guess_to_use.niter = initial_guess["niter"]
 
     # if cache_dir is not provided, use the default os_cache
     if cache_dir is None:
@@ -130,7 +132,7 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
 
     # Perform the orbit fitting
     if initial_guess is not None:
-        res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), observations, guesses)
+        res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
     else:
         res = run_from_vector(get_ephem(kernels_loc), observations)
 
@@ -143,7 +145,6 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
                 data[id_col][0],
                 (res.csq if success else np.nan),
                 res.ndof,
-                res.root,
             )
             + (tuple(res.state[i] for i in range(6)) if success else (np.nan,) * 6)  # Flat state vector
             + (
@@ -230,11 +231,11 @@ def orbitfit_cli(
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
         overwrite = cli_args.force
-        guess = cli_args.g
+        guess_file = Path(cli_args.g)
     else:
         cache_dir = None
         overwrite = False
-        guess = None
+        guess_file = None
 
     _primary_id_column_name = "provID"
 
@@ -297,27 +298,34 @@ def orbitfit_cli(
         logger.error(f"File format {input_file_format} is not supported")
 
     reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name, sep=separator)
-    if guess is not None:
+    if guess_file is not None:
+        # Check that the guess file exists
+        if not guess_file.exists():
+            logger.error(f"Guess file {guess_file} does not exist")
+            raise FileNotFoundError(f"Guess file {guess_file} does not exist")
+        # Check that the guess file is not the same path as the input file
+        if os.path.abspath(guess_file) == os.path.abspath(input_file):
+            logger.error("Guess file cannot be the same as the input file")
+            raise ValueError("Guess file cannot be the same as the input file")
+
         # We have a guess file, so verify that it has the same number of rows
         # as the input file
-        guess_reader = reader_class(guess, primary_id_column_name=_primary_id_column_name, sep=separator)
-        if len(reader.read_rows()) != len(guess_reader.read_rows()):
-            raise ValueError("The guess file must have the same number of rows as the input file")
+        guess_reader = reader_class(guess_file, primary_id_column_name=_primary_id_column_name, sep=separator)
 
     chunks = _create_chunks(reader, chunk_size)
 
     first_write = True  # Flag to check if this is the first write to the output file
     for chunk in chunks:
         data = reader.read_objects(chunk)
-        guess_data = None
-        if guess is not None:
-            guess_data = guess_reader.read_objects(chunk)
+        initial_guess = None
+        if guess_file is not None:
+            initial_guess = guess_reader.read_objects(chunk)
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
         fit_orbits = orbitfit(
             data,
-            initial_guess=guess_data,
+            initial_guess=initial_guess,
             cache_dir=cache_dir,
             num_workers=num_workers,
             primary_id_column_name=_primary_id_column_name,
