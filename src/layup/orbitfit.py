@@ -51,7 +51,7 @@ def _get_result_dtypes(primary_id_column_name: str):
     )
 
 
-def _orbitfit(data, cache_dir: str, primary_id_column_name: str):
+def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: bool = True):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
     should correspond to the same object.
@@ -64,10 +64,23 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str):
         The object data to derive an orbit for
     cache_dir : str
         The directory where the required orbital files are stored
+    primary_id_column_name : str
+        The name of the primary identifier column for the objects.
+    sort_array : bool
+        Whether to sort the observations by obstime before processing. Default is True.
     """
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
+
+    # temporary - we should remove when in full production mode
+    print(data["provID"][0])
+
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
+
+    # sort the observations by the obstime if specified by the user
+
+    if sort_array:
+        data = np.sort(data, order="obstime", kind="mergesort")
 
     # Convert the astrometry data to a list of Observations
     # Reminder to label the units.  Within an Observation struct,
@@ -100,22 +113,21 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str):
         [
             (
                 data[primary_id_column_name][0],
-                res.csq,
+                (res.csq if success else np.nan),
                 res.ndof,
             )
-            + tuple(res.state[i] for i in range(6))  # Flat state vector
+            + (tuple(res.state[i] for i in range(6)) if success else (np.nan,) * 6)  # Flat state vector
             + (
-                res.epoch - 2400000.5,
+                ((res.epoch - 2400000.5) if success else np.nan),
                 res.niter,
                 res.method,
                 res.flag,
-                "BCART",  # The base format returned by the C++ code
+                ("BCART" if success else np.nan),  # The base format returned by the C++ code
             )
             + cov_matrix  # Flat covariance matrix
         ],
         dtype=_RESULT_DTYPES,
     )
-
     return output
 
 
