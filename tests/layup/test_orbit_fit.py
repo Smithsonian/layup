@@ -36,6 +36,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     class FakeCliArgs:
         def __init__(self, force=False, g=None):
             self.ar_data_file_path = None
+            self.primary_id_column_name = "provID"
             self.separate_flagged = False
             self.force = force
             self.g = g  # Command line argument for initial guesses file

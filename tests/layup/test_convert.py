@@ -13,6 +13,13 @@ import pytest
 def create_argparse_object():
     parser = argparse.ArgumentParser(description="Convert orbital data formats.")
     parser.add_argument("--ar_data_file_path", type=str, required=False, help="cache directory")
+    parser.add_argument(
+        "--primary-id-column-name",
+        type=str,
+        default="ObjID",
+        required=False,
+        help="Column name for primary ID",
+    )
 
     args = parser.parse_args([])
 
