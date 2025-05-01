@@ -8,8 +8,8 @@ import numpy as np
 from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_setup import _create_assist_ephemeris
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
-from sorcha.ephemeris.orbit_conversion_utilities import universal_cometary, universal_keplerian
 
+from layup.utilities.orbit_conversion import universal_cartesian, universal_cometary, universal_keplerian
 from layup.utilities.data_processing_utilities import process_data
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
