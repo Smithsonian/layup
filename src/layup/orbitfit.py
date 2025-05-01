@@ -75,6 +75,7 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
     if initial_guess is not None:
         if id_col not in initial_guess.dtype.names:
             raise ValueError(f"Column {id_col} not found in intial guess data to orbit fit.")
+        # Filter the initial guess data to only include the row for this current object.
         initial_guess = initial_guess[initial_guess[id_col] == data[id_col][0]]
         if len(initial_guess) == 0:
             raise ValueError(f"Initial guess data does not contain any rows for {id_col} = {data[id_col][0]}")
@@ -285,9 +286,8 @@ def orbitfit_cli(
         if os.path.abspath(guess_file) == os.path.abspath(input_file):
             logger.error("Guess file cannot be the same as the input file")
             raise ValueError("Guess file cannot be the same as the input file")
-
-        # We have a guess file, so verify that it has the same number of rows
-        # as the input file
+        # Set up our initial guess file reader. Assumes a matching file format and primary id column name
+        # as the input file.
         guess_reader = reader_class(guess_file, primary_id_column_name=_primary_id_column_name, sep=separator)
 
     chunks = _create_chunks(reader, chunk_size)
@@ -297,6 +297,7 @@ def orbitfit_cli(
         data = reader.read_objects(chunk)
         initial_guess = None
         if guess_file is not None:
+            # Get the guesses for all the objects in the current chunk.
             initial_guess = guess_reader.read_objects(chunk)
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
