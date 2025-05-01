@@ -720,7 +720,7 @@ namespace orbit_fit
         size_t start_i = detections_full.size() - 1;
 
         // First find a triple of detections in the full data set.
-        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 10000.0, 2.0, 10000.0, 3, start_i);
+        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 20.0, 10000.0, 20.0, 10000.0, 3, start_i);
 
         int success = 1;
         size_t iters;
