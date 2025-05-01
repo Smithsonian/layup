@@ -9,7 +9,13 @@ import pooch
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
-from layup.routines import Observation, get_ephem, run_from_vector
+from layup.routines import (
+    FitResult,
+    Observation,
+    get_ephem,
+    run_from_vector,
+    run_from_vector_with_initial_guess,
+)
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
@@ -48,7 +54,7 @@ _RESULT_DTYPES = np.dtype(
 )
 
 
-def _orbitfit(data, cache_dir: str, sort_array=True):
+def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=True):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
     should correspond to the same object.
@@ -59,19 +65,30 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
     ----------
     data : numpy structured array
         The object data to derive an orbit for
+    id_col : str
+        The name of the column containing the object ID
     cache_dir : str
         The directory where the required orbital files are stored
+    initial_guess : numpy structured array
+        Optional guess data to use for the orbit fit. Default is None.
+    sort_array : bool
+        Whether to sort the data by obstime. Default is True.
     """
-
-    # temporary - we should remove when in full production mode
-
-    print(data["provID"][0])
-
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
+    if id_col not in data.dtype.names:
+        raise ValueError(f"Column {id_col} not found in requested data to orbit fit.")
+    if initial_guess is not None:
+        if len(initial_guess) != len(data):
+            raise ValueError("Cannot orbit fit  must have the same number of rows as the input data")
+        if id_col not in initial_guess.dtype.names:
+            raise ValueError(f"Column {id_col} not found in intial guess data to orbit fit.")
+        if initial_guess["id_col"][0] != data["id_col"][0]:
+            raise ValueError(
+                f"Guess data's object_id {initial_guess['id_col'][0]} does not match the object ID {data['id_col'][0]}"
+            )
 
     # sort the observations by the obstime if specified by the user
-
     if sort_array:
         data = np.sort(data, order="obstime", kind="mergesort")
 
@@ -90,6 +107,21 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
         for d in data
     ]
 
+    guesses = []
+    if initial_guess is not None:
+        for i, d in enumerate(initial_guess):
+            guess_cov = np.array([d["cov_0{i}"] for i in range(10)] + [d[f"cov_{i}"] for i in range(10, 36)])
+            guess = FitResult()
+            guess.csq = d["csq"]
+            guess.ndof = d["ndof"]
+            guess.state = [d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"]]
+            guess.epoch = d["epoch"] + 2400000.5
+            guess.cov = guess_cov
+            guess.niter = d["niter"]
+            guess.method = d["method"]
+            guess.flag = d["flag"]
+            guesses.append(guess)
+
     # if cache_dir is not provided, use the default os_cache
     if cache_dir is None:
         kernels_loc = str(pooch.os_cache("layup"))
@@ -97,7 +129,10 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
         kernels_loc = str(cache_dir)
 
     # Perform the orbit fitting
-    res = run_from_vector(get_ephem(kernels_loc), observations)
+    if initial_guess is not None:
+        res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), observations, guesses)
+    else:
+        res = run_from_vector(get_ephem(kernels_loc), observations)
 
     # Populate our output structured array with the orbit fit results
     success = res.flag == 0
@@ -105,9 +140,10 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
     output = np.array(
         [
             (
-                data["provID"][0],
+                data[id_col][0],
                 (res.csq if success else np.nan),
                 res.ndof,
+                res.root,
             )
             + (tuple(res.state[i] for i in range(6)) if success else (np.nan,) * 6)  # Flat state vector
             + (
@@ -124,7 +160,7 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
     return output
 
 
-def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID"):
+def orbitfit(data, cache_dir: str, initial_guess=None, num_workers=1, primary_id_column_name="provID"):
     """This is the function that you would call interactively. i.e. from a notebook
 
     Parameters
@@ -133,6 +169,8 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
         The object data to derive an orbit for
     cache_dir : str
         The directory where the required orbital files are stored
+    initial_guess : numpy structured array
+        Optional initial guess data to use for the orbit fit. Default is None.
     num_workers : int
         The number of workers to use for parallel processing. Default is 1
     primary_id_column_name : str
@@ -150,7 +188,13 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
     return process_data_by_id(
-        data, num_workers, _orbitfit, primary_id_column_name=primary_id_column_name, cache_dir=cache_dir
+        data,
+        num_workers,
+        _orbitfit,
+        primary_id_column_name=primary_id_column_name,
+        id_col=primary_id_column_name,
+        cache_dir=cache_dir,
+        initial_guess=initial_guess,
     )
 
 
@@ -186,9 +230,11 @@ def orbitfit_cli(
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
         overwrite = cli_args.force
+        guess = cli_args.g
     else:
         cache_dir = None
         overwrite = False
+        guess = None
 
     _primary_id_column_name = "provID"
 
@@ -251,17 +297,27 @@ def orbitfit_cli(
         logger.error(f"File format {input_file_format} is not supported")
 
     reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name, sep=separator)
+    if guess is not None:
+        # We have a guess file, so verify that it has the same number of rows
+        # as the input file
+        guess_reader = reader_class(guess, primary_id_column_name=_primary_id_column_name, sep=separator)
+        if len(reader.read_rows()) != len(guess_reader.read_rows()):
+            raise ValueError("The guess file must have the same number of rows as the input file")
 
     chunks = _create_chunks(reader, chunk_size)
 
     first_write = True  # Flag to check if this is the first write to the output file
     for chunk in chunks:
         data = reader.read_objects(chunk)
+        guess_data = None
+        if guess is not None:
+            guess_data = guess_reader.read_objects(chunk)
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
         fit_orbits = orbitfit(
             data,
+            initial_guess=guess_data,
             cache_dir=cache_dir,
             num_workers=num_workers,
             primary_id_column_name=_primary_id_column_name,
