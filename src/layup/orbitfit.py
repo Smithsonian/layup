@@ -267,7 +267,6 @@ def orbitfit_cli(
             primary_id_column_name=_primary_id_column_name,
         )
 
-        
         if cli_args.separate_flagged:
             # Split the results into two files: one for successful fits and one for failed fits
             success_mask = fit_orbits["flag"] == 0

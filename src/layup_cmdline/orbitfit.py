@@ -12,6 +12,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def main():
     parser = LayupArgumentParser(
         prog="layup orbitfit",
@@ -130,8 +131,6 @@ def execute(args):
         find_directory_or_exit(args.ar_data_file_path, argname="--a --ar-data-path")
     if (args.type.lower()) not in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]:
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
-
-
 
     # check format of input file
     if args.output_format.lower() == "csv":
