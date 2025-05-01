@@ -78,15 +78,19 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, initial_guess=N
 
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
-    if id_col not in data.dtype.names:
-        raise ValueError(f"Column {id_col} not found in requested data to orbit fit.")
+    if primary_id_column_name not in data.dtype.names:
+        raise ValueError(f"Column {primary_id_column_name} not found in requested data to orbit fit.")
     if initial_guess is not None:
-        if id_col not in initial_guess.dtype.names:
-            raise ValueError(f"Column {id_col} not found in intial guess data to orbit fit.")
+        if primary_id_column_name not in initial_guess.dtype.names:
+            raise ValueError(f"Column {primary_id_column_name} not found in intial guess data to orbit fit.")
         # Filter the initial guess data to only include the row for this current object.
-        initial_guess = initial_guess[initial_guess[id_col] == data[id_col][0]]
+        initial_guess = initial_guess[
+            initial_guess[primary_id_column_name] == data[primary_id_column_name][0]
+        ]
         if len(initial_guess) == 0:
-            raise ValueError(f"Initial guess data does not contain any rows for {id_col} = {data[id_col][0]}")
+            raise ValueError(
+                f"Initial guess data does not contain any rows for {primary_id_column_name} = {data[primary_id_column_name][0]}"
+            )
         if initial_guess["flag"] != 0:
             logger.debug("Initial guess data is from a failed run. Using default initial guess.")
             initial_guess = None
