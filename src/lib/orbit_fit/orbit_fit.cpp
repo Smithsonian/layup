@@ -759,7 +759,7 @@ namespace orbit_fit
 	    printf("gauss rho: %le\n", res.value()[0].root);
 
 	    // This bit is for testing TNOs.
-	    double inner_root_thresh = 0.;
+	    double inner_root_thresh = 0.1;
 	    double outer_root_thresh = 1000.;	    
 	    if(res.value()[0].root>outer_root_thresh){
 		printf("Too far!\n");
