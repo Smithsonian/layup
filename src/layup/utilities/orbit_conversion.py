@@ -3,11 +3,12 @@ This file copies the orbit_conversion_utilities as well as the ecliptic rotation
 and adapts them to jax, implementing the autograd jacobians needed for this process
 """
 
-import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import config
 from jax.scipy.linalg import block_diag
+import numpy as np
+import numba
 
 config.update("jax_enable_x64", True)
 
@@ -43,7 +44,7 @@ ECL_TO_EQ_ROTATION_MATRIX = create_ecl_to_eq_rotation_matrix(OBLIQUITY_ECLIPTIC)
 EQ_TO_ECL_ROTATION_MATRIX = create_ecl_to_eq_rotation_matrix(-OBLIQUITY_ECLIPTIC)
 
 
-@jax.jit
+@numba.njit(fastmath=True)
 def stumpff(x):
     """
     Computes the Stumpff function c_k(x) for k = 0, 1, 2, 3
@@ -51,7 +52,7 @@ def stumpff(x):
     Parameters
     ----------
     x : float
-            Argument of the Stumpff function
+        Argument of the Stumpff function
 
     Returns
     ---------
@@ -63,7 +64,7 @@ def stumpff(x):
     n = 0
     xm = 0.1
 
-    while jnp.abs(x) > xm:
+    while np.abs(x) > xm:
         n += 1
         x /= 4
 
@@ -87,7 +88,7 @@ def stumpff(x):
     return d0, d1, d2, d3
 
 
-@jax.jit
+@numba.njit(fastmath=True)
 def root_function(s, mu, alpha, r0, r0dot, t):
     """
     Root function used in the Halley minimizer
@@ -97,28 +98,28 @@ def root_function(s, mu, alpha, r0, r0dot, t):
     Parameters
     ----------
     s : float
-            Eccentric anomaly
+        Eccentric anomaly
     mu : float
-            Standard gravitational parameter GM
+        Standard gravitational parameter GM
     alpha : float
-            Total energy
+        Total energy
     r0 : float
-            Initial position
+        Initial position
     r0dot : float
-            Initial velocity
+        Initial velocity
     t : float
-            Time
+        Time
 
     Returns
     -------
     f : float
-            universal Kepler equation)
+        universal Kepler equation)
     fp : float
-            (first derivative of f
+        (first derivative of f
     fpp : float
-            second derivative of f
+        second derivative of f
     fppp : float
-            third derivative of f
+        third derivative of f
 
     """
     c0, c1, c2, c3 = stumpff(alpha * s * s)
@@ -130,7 +131,7 @@ def root_function(s, mu, alpha, r0, r0dot, t):
     return f, fp, fpp, fppp
 
 
-@jax.jit
+@numba.njit
 def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
     """
     Applies the Halley root finding algorithm on the universal Kepler equation
@@ -138,32 +139,32 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
     Parameters
     ----------
     x1 : float
-            Previous guess used in minimization
+        Previous guess used in minimization
     x2 : float
-            Current guess for minimization
+        Current guess for minimization
     mu : float
-            Standard gravitational parameter GM
+        Standard gravitational parameter GM
     alpha : float
-            Total energy
+        Total energy
     r0 : float
-            Initial position
+        Initial position
     r0dot : float
-            Initial velocity
+        Initial velocity
     t : float
-            Time
+        Time
     xacc : float
-            Accuracy in x before algorithm declares convergence
+        Accuracy in x before algorithm declares convergence
     maxit : int
-            Maximum number of iterations
+        Maximum number of iterations
 
     Returns
     ----------
     : boolean
-            True if minimization converged, False otherwise
+        True if minimization converged, False otherwise
     : float
-            Solution
+        Solution
     : float
-            First derivative of solution
+        First derivative of solution
 
     """
     # verify the bracket
@@ -171,7 +172,7 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
     fl, fpl, fppl = root_function(x1, mu, alpha, r0, r0dot, t)[0:3]
     fh, fph, fpph = root_function(x2, mu, alpha, r0, r0dot, t)[0:3]
     if (fl > 0.0 and fh > 0.0) or (fl < 0.0 and fh < 0.0):
-        return False, jnp.nan, fl
+        return False, np.nan, fl
     if fl == 0:
         return True, x1, fpl
     if fh == 0:
@@ -185,22 +186,22 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
         xh = x1
         xl = x2
 
-    if jnp.abs(fl) < jnp.abs(fh):
+    if np.abs(fl) < np.abs(fh):
         rts, f, fp, fpp = xl, fl, fpl, fppl
     else:
         rts, f, fp, fpp = xh, fh, fph, fpph
 
     rts = 0.5 * (x1 + x2)  # Initialize the guess for root,
-    dxold = jnp.abs(x2 - x1)  # the “stepsize before last,”
+    dxold = np.abs(x2 - x1)  # the “stepsize before last,”
     dx = dxold  # and the last step.
     f, fp, fpp = root_function(rts, mu, alpha, r0, r0dot, t)[0:3]
     for j in range(maxit):  # Loop over allowed iterations.
-        if (((rts - xh) * fp - f) * ((rts - xl) * fp - f) > 0.0) or (jnp.abs(2.0 * f) > jnp.abs(dxold * fp)):
+        if (((rts - xh) * fp - f) * ((rts - xl) * fp - f) > 0.0) or (np.abs(2.0 * f) > np.abs(dxold * fp)):
             # Check the criteria.
             dxold = dx
             dx = 0.5 * (xh - xl)
             rts = xl + dx
-            if jnp.abs(dx / rts) < xacc:
+            if np.abs(dx / rts) < xacc:
                 return True, rts, fp
         else:
             dxold = dx
@@ -208,9 +209,9 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
             dx = 2 * f * fp / (2 * fp * fp - f * fpp)  # halley
             temp = rts
             rts -= dx
-            if jnp.abs(dx / rts) < xacc:
+            if np.abs(dx / rts) < xacc:
                 return True, rts, fp
-        if jnp.abs(dx / rts) < xacc:
+        if np.abs(dx / rts) < xacc:
             return True, rts, fp
         f, fp, fpp = root_function(rts, mu, alpha, r0, r0dot, t)[0:3]
         # Maintain the bracket on the root.
@@ -221,10 +222,10 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
             xh = rts
             fh = f
 
-    return False, jnp.nan, fp
+    return False, np.nan, fp
 
 
-@jax.jit
+@numba.njit(fastmath=True)
 def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
     """
     Converts from a series of orbital elements into state vectors
@@ -240,36 +241,36 @@ def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
     Parameters
     ----------
     mu : float
-            Standard gravitational parameter GM (see note above about units)
+        Standard gravitational parameter GM (see note above about units)
     q : float
-            Perihelion (see note above about units)
+        Perihelion (see note above about units)
     e : float
-            Eccentricity
+        Eccentricity
     incl : float
-            Inclination (radians)
+        Inclination (radians)
     longnode : float
-            Longitude of ascending node (radians)
+        Longitude of ascending node (radians)
     argperi : float
-            Argument of perihelion (radians)
+        Argument of perihelion (radians)
     tp : float
-            Time of perihelion passage in TDB scale (see note above about units)
+        Time of perihelion passage in TDB scale (see note above about units)
     epochMJD_TDB : float
-            Epoch (in TDB) when the elements are defined (see note above about units)
+        Epoch (in TDB) when the elements are defined (see note above about units)
 
     Returns
     ----------
     : float
-            x coordinate
+        x coordinate
     : float
-            y coordinate
+        y coordinate
     : float
-            z coordinate
+        z coordinate
     : float
-            x velocity
+        x velocity
     : float
-            y velocity
+        y velocity
     : float
-            z velocity
+        z velocity
     """
     # General constant
     p = q * (1 + e)
@@ -277,7 +278,7 @@ def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
 
     if e < 1:
         a = q / (1 - e)
-        per = 2 * jnp.pi / jnp.sqrt(mu / (a * a * a))
+        per = 2 * np.pi / np.sqrt(mu / (a * a * a))
         t = t % per
 
     # Establish constants for Kepler's equation,
@@ -287,7 +288,7 @@ def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
     v2 = mu * (1 + e) / q
     alpha = 2 * mu / r0 - v2
 
-    # print(alpha, jnp.sqrt(v2), mu/alpha)
+    # print(alpha, np.sqrt(v2), mu/alpha)
 
     # bracket the root
     ds = (t - 0) / 4
@@ -310,7 +311,7 @@ def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
         converged, ss, fp = halley_safe(s_prev, s, mu, alpha, r0, r0dot, t)
         count += 1
         if count > 10:
-            return jnp.nan, jnp.nan, jnp.nan, jnp.nan, jnp.nan, jnp.nan
+            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
     c0, c1, c2, c3 = stumpff(alpha * ss * ss)
 
@@ -327,8 +328,8 @@ def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
     gdot = 1.0 - (mu / r) * g2
 
     # define position and velocity at pericenter
-    x0 = jnp.array((q, 0.0, 0.0))
-    v0 = jnp.array((0.0, jnp.sqrt(v2), 0.0))
+    x0 = np.array((q, 0.0, 0.0))
+    v0 = np.array((0.0, np.sqrt(v2), 0.0))
 
     # compute position and velocity at time t (from pericenter)
     xt = f * x0 + g * v0
@@ -337,26 +338,26 @@ def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
     # Could probably make all these rotations separate routine
 
     # rotate by argument of perihelion in orbit plane
-    cosw = jnp.cos(argperi)
-    sinw = jnp.sin(argperi)
+    cosw = np.cos(argperi)
+    sinw = np.sin(argperi)
 
-    omega_matrix = jnp.array(((cosw, -sinw, 0), (sinw, cosw, 0), (0, 0, 1)))
+    omega_matrix = np.array(((cosw, -sinw, 0), (sinw, cosw, 0), (0, 0, 1)))
 
     xp = omega_matrix @ xt
     vp = omega_matrix @ vt
 
     # rotate by inclination about x axis
-    cosi = jnp.cos(incl)
-    sini = jnp.sin(incl)
-    incl_matrix = jnp.array(((1, 0, 0), (0, cosi, -sini), (0, sini, cosi)))
+    cosi = np.cos(incl)
+    sini = np.sin(incl)
+    incl_matrix = np.array(((1, 0, 0), (0, cosi, -sini), (0, sini, cosi)))
     xpp = incl_matrix @ xp
     vpp = incl_matrix @ vp
 
     # rotate by longitude of node about z axis
-    cosnode = jnp.cos(longnode)
-    sinnode = jnp.sin(longnode)
+    cosnode = np.cos(longnode)
+    sinnode = np.sin(longnode)
 
-    Omega_matrix = jnp.array(((cosnode, -sinnode, 0), (sinnode, cosnode, 0), (0, 0, 1)))
+    Omega_matrix = np.array(((cosnode, -sinnode, 0), (sinnode, cosnode, 0), (0, 0, 1)))
 
     xp = Omega_matrix @ xpp
     vp = Omega_matrix @ vpp
@@ -619,7 +620,6 @@ def universal_keplerian(mu, x, y, z, vx, vy, vz, epochMJD_TDB):
 
 jac_cometary_xyz = jax.jacobian(universal_cometary, argnums=(1, 2, 3, 4, 5, 6))
 jac_keplerian_xyz = jax.jacobian(universal_keplerian, argnums=(1, 2, 3, 4, 5, 6))
-jac_xyz_cometary = jax.jacobian(universal_cartesian, argnums=(1, 2, 3, 4, 5, 6))
 
 
 @jax.jit
@@ -652,28 +652,23 @@ def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     return covar
 
 
-@jax.jit
 def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance):
-    jj_elements = jnp.array(jac_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB))
-    jj_rotation = block_diag(ECL_TO_EQ_ROTATION_MATRIX.T, ECL_TO_EQ_ROTATION_MATRIX.T)
-    covar = jj_elements @ jj_rotation @ covariance @ jj_rotation.T @ jj_elements.T
+    x, y, z, vx, vy, vz = universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB)
+    jac = jac_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
+    jac_inv = np.linalg.inv(jac)
+    jj_rotation = np.array(block_diag(ECL_TO_EQ_ROTATION_MATRIX.T, ECL_TO_EQ_ROTATION_MATRIX.T))
+
+    covar = jj_rotation @ jac_inv @ covariance @ jac_inv.T @ jj_rotation.T
     return covar
 
 
-@jax.jit
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
     q = a * (1 - e)
-    tp = epochMJD_TDB - M * jnp.sqrt(a**3 / mu)
-    c = covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance)
-    jj_kep_com = jnp.array(
-        [
-            [1 - e, -a, 0, 0, 0, 0],
-            [0, 1, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0],
-            [0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 1, 0],
-            [-M * (3 / 2) * np.sqrt(a / mu), 0, 0, 0, 0, -np.sqrt(a**3 / mu)],
-        ]
-    )
-    covar = jj_kep_com @ c @ jj_kep_com.T
+    tp = epochMJD_TDB - M * np.sqrt(a**3 / mu)
+    x, y, z, vx, vy, vz = universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB)
+    jac = jac_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
+    jac_inv = np.linalg.inv(jac)
+    jj_rotation = np.array(block_diag(ECL_TO_EQ_ROTATION_MATRIX.T, ECL_TO_EQ_ROTATION_MATRIX.T))
+
+    covar = jj_rotation @ jac_inv @ covariance @ jac_inv.T @ jj_rotation.T
     return covar
