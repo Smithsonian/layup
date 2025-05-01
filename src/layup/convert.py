@@ -17,18 +17,6 @@ from layup.utilities.layup_configs import LayupConfigs
 
 logger = logging.getLogger(__name__)
 
-# Required column names for each orbit format
-REQUIRED_COLUMN_NAMES = {
-    "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "BKEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-    "CART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-}
-# Default column dtypes across all orbit formats. Note that the ordering of the dtypes matches
-# the ordering of the column names in REQUIRED_COLUMN_NAMES.
-DEFAULT_COLUMN_DTYPES = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
 
 # Columns which use degrees as units in each orbit format
 degree_columns = {
@@ -41,8 +29,66 @@ degree_columns = {
 # Add this to MJD to convert to JD
 MJD_TO_JD_CONVERSTION = 2400000.5
 
+INPUT_READERS = {
+    "csv": CSVDataReader,
+    "hdf5": HDF5DataReader,
+}
 
-def _apply_convert(data, convert_to, cache_dir=None):
+
+def get_output_column_names_and_types(primary_id_column_name):
+    """
+    Get the output column names and types for the converted data.
+
+    Parameters
+    ----------
+    primary_id_column_name : str
+        The name of the column in the data that contains the primary ID of the object.
+
+    Returns
+    -------
+    tuple
+        A tuple containing two elements:
+        - A dictionary mapping orbit formats to the required column names for that format.
+        - A list of default column dtypes for the output data.
+    """
+
+    # Required column names for each orbit format
+    required_column_names = {
+        "BCART": [primary_id_column_name, "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+        "BCOM": [
+            primary_id_column_name,
+            "FORMAT",
+            "q",
+            "e",
+            "inc",
+            "node",
+            "argPeri",
+            "t_p_MJD_TDB",
+            "epochMJD_TDB",
+        ],
+        "BKEP": [primary_id_column_name, "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
+        "CART": [primary_id_column_name, "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+        "COM": [
+            primary_id_column_name,
+            "FORMAT",
+            "q",
+            "e",
+            "inc",
+            "node",
+            "argPeri",
+            "t_p_MJD_TDB",
+            "epochMJD_TDB",
+        ],
+        "KEP": [primary_id_column_name, "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
+    }
+    # Default column dtypes across all orbit formats. Note that the ordering of the dtypes matches
+    # the ordering of the column names in REQUIRED_COLUMN_NAMES.
+    default_column_dtypes = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
+
+    return required_column_names, default_column_dtypes
+
+
+def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None):
     """
     Apply the appropriate conversion function to the data
 
@@ -52,6 +98,10 @@ def _apply_convert(data, convert_to, cache_dir=None):
         The data to convert.
     convert_to : str
         The orbital format to convert the data to. Must be one of: "BCART", "BCOM", "BKEP", "CART", "COM", "KEP"
+    cache_dir : str, optional
+        The base directory for downloaded files.
+    primary_id_column_name : str, optional
+        The name of the column in the data that contains the primary ID of the object.
 
     Returns
     -------
@@ -64,13 +114,15 @@ def _apply_convert(data, convert_to, cache_dir=None):
     if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
         raise ValueError("Invalid conversion type")
 
+    required_colum_names, default_column_dtypes = get_output_column_names_and_types(primary_id_column_name)
+
     # Fetch layup configs to get the necessary auxiliary data
     config = LayupConfigs()
     ephem, gm_sun, gm_total = _create_assist_ephemeris(config.auxiliary, cache_dir)
 
     # Construct the output dtype for the converted data
     output_dtype = [
-        (col, dtype) for col, dtype in zip(REQUIRED_COLUMN_NAMES[convert_to], DEFAULT_COLUMN_DTYPES)
+        (col, dtype) for col, dtype in zip(required_colum_names[convert_to], default_column_dtypes)
     ]
 
     # For each row in the data, convert the orbit to the desired format
@@ -145,7 +197,7 @@ def _apply_convert(data, convert_to, cache_dir=None):
 
         # Turn our converted row into a structured array
         result_struct_array = np.array(
-            [(d["ObjID"], convert_to) + row + (d["epochMJD_TDB"],)],
+            [(d[primary_id_column_name], convert_to) + row + (d["epochMJD_TDB"],)],
             dtype=output_dtype,
         )
         results.append(result_struct_array)
@@ -161,7 +213,7 @@ def _apply_convert(data, convert_to, cache_dir=None):
     return output
 
 
-def convert(data, convert_to, num_workers=1, cache_dir=None):
+def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_name="ObjID"):
     """
     Convert a structured numpy array to a different orbital format with support for parallel processing
 
@@ -173,6 +225,8 @@ def convert(data, convert_to, num_workers=1, cache_dir=None):
         The format to convert the data to. Must be one of: "BCART", "BCOM", "BKEP", "CART", "COM", "KEP"
     num_workers : int, optional (default=1)
         The number of workers to use for parallel processing.
+    primary_id_column_name : str, optional (default="ObjID")
+        The name of the column in the data that contains the primary ID of the object.
 
     Returns
     -------
@@ -181,9 +235,18 @@ def convert(data, convert_to, num_workers=1, cache_dir=None):
     """
 
     if num_workers == 1:
-        return _apply_convert(data, convert_to, cache_dir=cache_dir)
+        return _apply_convert(
+            data, convert_to, cache_dir=cache_dir, primary_id_column_name=primary_id_column_name
+        )
     # Parallelize the conversion of the data across the requested number of workers
-    return process_data(data, num_workers, _apply_convert, convert_to=convert_to, cache_dir=cache_dir)
+    return process_data(
+        data,
+        num_workers,
+        _apply_convert,
+        convert_to=convert_to,
+        cache_dir=cache_dir,
+        primary_id_column_name=primary_id_column_name,
+    )
 
 
 def convert_cli(
@@ -229,17 +292,22 @@ def convert_cli(
             else Path(f"{output_file_stem}.h5")
         )
 
+    primary_id_column_name = cli_args.primary_id_column_name if cli_args else "ObjID"
+
     if num_workers < 0:
         num_workers = os.cpu_count()
 
     # Open the input file and read the first line
-    if file_format == "hdf5":
-        sample_reader = HDF5DataReader(
-            input_file,
-            format_column_name="FORMAT",
-        )
-    else:
-        sample_reader = CSVDataReader(input_file, format_column_name="FORMAT")
+    reader_class = INPUT_READERS.get(file_format)
+    if reader_class is None:
+        logger.error(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
+        raise ValueError(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
+
+    sample_reader = reader_class(
+        input_file,
+        format_column_name="FORMAT",
+        primary_id_column_name=primary_id_column_name,
+    )
 
     sample_data = sample_reader.read_rows(block_start=0, block_size=1)
 
@@ -257,29 +325,34 @@ def convert_cli(
         logger.error("Input file is already in the desired format")
 
     # Reopen the file now that we know the input format and can validate the column names
-    required_columns = REQUIRED_COLUMN_NAMES[input_format]
-    if file_format == "hdf5":
-        reader = HDF5DataReader(
-            input_file, format_column_name="FORMAT", required_column_names=required_columns
-        )
-    else:
-        reader = CSVDataReader(
-            input_file, format_column_name="FORMAT", required_column_names=required_columns
-        )
+    required_columns_names, _ = get_output_column_names_and_types(primary_id_column_name)
+    required_columns = required_columns_names[input_format]
+    full_reader = reader_class(
+        input_file,
+        format_column_name="FORMAT",
+        primary_id_column_name=primary_id_column_name,
+        required_column_names=required_columns,
+    )
 
     # Calculate the start and end indices for each chunk, as a list of tuples
     # of the form (start, end) where start is the starting index of the chunk
     # and the last index of the chunk + 1.
-    total_rows = reader.get_row_count()
+    total_rows = full_reader.get_row_count()
     chunks = [(i, min(i + chunk_size, total_rows)) for i in range(0, total_rows, chunk_size)]
 
     cache_dir = cli_args.ar_data_file_path if cli_args else None
 
     for chunk_start, chunk_end in chunks:
         # Read the chunk of data
-        chunk_data = reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
+        chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
         # Parallelize conversion of this chunk of data.
-        converted_data = convert(chunk_data, convert_to, num_workers=num_workers, cache_dir=cache_dir)
+        converted_data = convert(
+            chunk_data,
+            convert_to,
+            num_workers=num_workers,
+            cache_dir=cache_dir,
+            primary_id_column_name=primary_id_column_name,
+        )
         # Write out the converted data in in the requested file format.
         if file_format == "hdf5":
             write_hdf5(converted_data, output_file, key="data")

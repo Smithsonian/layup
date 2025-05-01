@@ -25,30 +25,33 @@ INPUT_FORMAT_READERS = {
     "ADES_hdf5": (HDF5DataReader, None),
 }
 
-# Define a structured dtype to match the OrbfitResult fields
-_RESULT_DTYPES = np.dtype(
-    [
-        ("provID", "O"),  # Object ID
-        ("csq", "f8"),  # Chi-square value
-        ("ndof", "i4"),  # Number of degrees of freedom
-        ("x", "f8"),  # The first of 6 state vector elements
-        ("y", "f8"),
-        ("z", "f8"),
-        ("xdot", "f8"),
-        ("ydot", "f8"),
-        ("zdot", "f8"),  # The last of 6 state vector elements
-        ("epochMJD_TDB", "f8"),  # Epoch
-        ("niter", "i4"),  # Number of iterations
-        ("method", "O"),  # Method used for orbit fitting
-        ("flag", "i4"),  # Single-character flag indicating success of the fit
-        ("FORMAT", "O"),  # Orbit format
-    ]
-    + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
-    + [(f"cov_{i}", "f8") for i in range(10, 36)]  # Flat covariance matrix (remaining 26 elements)
-)
+
+def _get_result_dtypes(primary_id_column_name: str):
+    """Helper function to create the result dtype with the correct primary ID column name."""
+    # Define a structured dtype to match the OrbfitResult fields
+    return np.dtype(
+        [
+            (primary_id_column_name, "O"),  # Object ID
+            ("csq", "f8"),  # Chi-square value
+            ("ndof", "i4"),  # Number of degrees of freedom
+            ("x", "f8"),  # The first of 6 state vector elements
+            ("y", "f8"),
+            ("z", "f8"),
+            ("xdot", "f8"),
+            ("ydot", "f8"),
+            ("zdot", "f8"),  # The last of 6 state vector elements
+            ("epochMJD_TDB", "f8"),  # Epoch
+            ("niter", "i4"),  # Number of iterations
+            ("method", "O"),  # Method used for orbit fitting
+            ("flag", "i4"),  # Single-character flag indicating success of the fit
+            ("FORMAT", "O"),  # Orbit format
+        ]
+        + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
+        + [(f"cov_{i}", "f8") for i in range(10, 36)]  # Flat covariance matrix (remaining 26 elements)
+    )
 
 
-def _orbitfit(data, cache_dir: str, sort_array=True):
+def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: bool = True):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
     should correspond to the same object.
@@ -61,11 +64,15 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
         The object data to derive an orbit for
     cache_dir : str
         The directory where the required orbital files are stored
+    primary_id_column_name : str
+        The name of the primary identifier column for the objects.
+    sort_array : bool
+        Whether to sort the observations by obstime before processing. Default is True.
     """
+    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
 
     # temporary - we should remove when in full production mode
-
-    print(data["provID"][0])
+    print(data[primary_id_column_name][0])
 
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
@@ -105,7 +112,7 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
     output = np.array(
         [
             (
-                data["provID"][0],
+                data[primary_id_column_name][0],
                 (res.csq if success else np.nan),
                 res.ndof,
             )
@@ -190,7 +197,7 @@ def orbitfit_cli(
         cache_dir = None
         overwrite = False
 
-    _primary_id_column_name = "provID"
+    _primary_id_column_name = cli_args.primary_id_column_name
 
     input_file = Path(input)
     if output_file_format == "csv":
@@ -292,14 +299,18 @@ def orbitfit_cli(
 
                 if len(fit_orbits_failed) > 0:
                     write_hdf5(
-                        fit_orbits_failed[["provID", "method", "flag"]], output_file_flagged, key="data"
+                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]],
+                        output_file_flagged,
+                        key="data",
                     )
             else:  # csv output format
                 if len(fit_orbits_success) > 0:
                     write_csv(fit_orbits_success, output_file)
 
                 if len(fit_orbits_failed) > 0:
-                    write_csv(fit_orbits_failed[["provID", "method", "flag"]], output_file_flagged)
+                    write_csv(
+                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged
+                    )
 
         else:  # All results go to a single output file
             if output_file_format == "hdf5":
@@ -324,7 +335,7 @@ def _create_chunks(reader, chunk_size):
 
     Returns
     -------
-    chunks : list[list[ObjIds]]
+    chunks : list[list[object ids]]
         A list of lists of object ids that can be passed to the reader's read_objects
         method.
     """

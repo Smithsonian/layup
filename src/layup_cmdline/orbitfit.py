@@ -98,6 +98,16 @@ def main():
     )
 
     optional.add_argument(
+        "-pid",
+        "--primary-id-column-name",
+        help="Column name in input file that contains the primary ID of the object.",
+        dest="primary_id_column_name",
+        type=str,
+        default="provID",
+        required=False,
+    )
+
+    optional.add_argument(
         "-sf",
         "--separate-flagged",
         help="Split flagged results into separate output file. Flagged results file is called `output_file_stem` + '_flagged', i.e. 'output_flagged.csv'. Default is False.",
