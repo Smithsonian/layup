@@ -720,7 +720,7 @@ namespace orbit_fit
         size_t start_i = detections_full.size() - 1;
 
         // First find a triple of detections in the full data set.
-        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);
+        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 10000.0, 2.0, 10000.0, 3, start_i);
 
         int success = 1;
         size_t iters;
@@ -756,10 +756,18 @@ namespace orbit_fit
                 continue;
             }
 
+	    printf("gauss rho: %le\n", res.value()[0].root);
+
+	    double root_thresh = 1000.;
+	    if(res.value()[0].root>root_thresh){
+		printf("Too far!\n");
+		continue;
+	    }
+
             // Now get a segment of data that spans the triplet and that uses up to
             // a certain number of points, if they are available in a time window.
             // This should be a parameter
-            size_t num = 40;
+            size_t num = 1000;
 
             size_t curr_num = id2 - id1 + 1;
 
