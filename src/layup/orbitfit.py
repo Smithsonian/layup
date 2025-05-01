@@ -48,7 +48,7 @@ _RESULT_DTYPES = np.dtype(
 )
 
 
-def _orbitfit(data, cache_dir: str):
+def _orbitfit(data, cache_dir: str, sort_array=True):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
     should correspond to the same object.
@@ -62,8 +62,18 @@ def _orbitfit(data, cache_dir: str):
     cache_dir : str
         The directory where the required orbital files are stored
     """
+
+    # temporary - we should remove when in full production mode
+
+    print(data["provID"][0])
+
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
+
+    # sort the observations by the obstime if specified by the user
+
+    if sort_array:
+        data = np.sort(data, order="obstime", kind="mergesort")
 
     # Convert the astrometry data to a list of Observations
     # Reminder to label the units.  Within an Observation struct,
