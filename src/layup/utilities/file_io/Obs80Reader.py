@@ -2,22 +2,6 @@ import numpy as np
 
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
-# The output data type for the structured array of the obs80 reader
-_OUTPUT_DTYPE = [
-    ("provID", "U10"),
-    ("obstime", "U25"),
-    ("ra", "f8"),
-    ("dec", "f8"),
-    ("mag", "f4"),
-    ("filt", "U1"),
-    ("stn", "U3"),
-    ("cat", "U1"),
-    ("prg", "U1"),
-    ("obs_geo_x", "f8"),
-    ("obs_geo_y", "f8"),
-    ("obs_geo_z", "f8"),
-]
-
 
 def two_line_row_start(line):
     """Checks if the MPC Obs80 line is the first line of a two-line row format."""
@@ -88,6 +72,7 @@ def mpctime_to_isotime(mpc_time):
     return format_string % (yr, mn, day, hrs, mins, secs)
 
 
+#! Need to fix this function???
 def get_obs80_id(line):
     """Get the object ID from the Obs80 line. Using the object name if provided,
     otherwise using the provisional ID."""
@@ -102,6 +87,7 @@ def get_obs80_id(line):
     return obj_id
 
 
+#! Need to fix this function???
 def convert_obs80(line, second_line=None):
     """
     Converts a row of obs80 data to a tuple of values.
@@ -191,7 +177,21 @@ class Obs80DataReader(ObjectDataReader):
         super().__init__(**kwargs)
         self.filename = filename
 
-        self._primary_id_column_name = "provID"
+        # The output data type for the structured array of the obs80 reader
+        self.output_dtype = [
+            (self._primary_id_column_name, "U10"),
+            ("obstime", "U25"),
+            ("ra", "f8"),
+            ("dec", "f8"),
+            ("mag", "f4"),
+            ("filt", "U1"),
+            ("stn", "U3"),
+            ("cat", "U1"),
+            ("prg", "U1"),
+            ("obs_geo_x", "f8"),
+            ("obs_geo_y", "f8"),
+            ("obs_geo_z", "f8"),
+        ]
 
         # A table holding just the object ID for each row. Only populated
         # if we try to read data for specific object IDs.
@@ -304,7 +304,7 @@ class Obs80DataReader(ObjectDataReader):
                         records.append(convert_obs80(curr_line))
                 curr_block += 1
 
-        return np.array(records, dtype=_OUTPUT_DTYPE)
+        return np.array(records, dtype=self.output_dtype)
 
     def _build_id_map(self):
         """Builds a table of just the object IDs"""
@@ -329,7 +329,7 @@ class Obs80DataReader(ObjectDataReader):
                 # Count the number of times we see this object ID.
                 self.obj_id_counts[obj_id] = self.obj_id_counts.get(obj_id, 0) + 1
 
-        self.obj_id_table = np.array(obj_ids, dtype=np.dtype([("provID", "U10")]))
+        self.obj_id_table = np.array(obj_ids, dtype=np.dtype([(self._primary_id_column_name, "U10")]))
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
 
     def _read_objects_internal(self, obj_ids, **kwargs):
@@ -384,7 +384,7 @@ class Obs80DataReader(ObjectDataReader):
                 else:
                     # Our row is a single line to process.
                     records.append(convert_obs80(curr_line))
-        return np.array(records, dtype=_OUTPUT_DTYPE)
+        return np.array(records, dtype=self.output_dtype)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
         """Perform any input-specific processing and validation on the input table.

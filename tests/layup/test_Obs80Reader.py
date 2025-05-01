@@ -51,7 +51,7 @@ def test_read_objects_with_multiple_ids():
     """Test reading in a group of objects from an MPC Obs80 data file."""
     expected_object_ids = ["DES0028", "DES0007", "DES0075"]
 
-    reader = Obs80DataReader(get_test_filepath("newy6_tiny.txt"))
+    reader = Obs80DataReader(get_test_filepath("newy6_tiny.txt"), primary_id_column_name="provID")
     full_data = reader.read_rows()
 
     # Because test file has multiple object than we read in we expect less than the full data.
