@@ -84,6 +84,9 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
         initial_guess = initial_guess[initial_guess[id_col] == data[id_col][0]]
         if len(initial_guess) == 0:
             raise ValueError(f"Initial guess data does not contain any rows for {id_col} = {data[id_col][0]}")
+        if initial_guess["flag"] != 0:
+            logger.debug("Initial guess data is from a failed run. Using default initial guess.")
+            initial_guess = None
 
     # sort the observations by the obstime if specified by the user
     if sort_array:
@@ -131,10 +134,10 @@ def _orbitfit(data, id_col: str, cache_dir: str, initial_guess=None, sort_array=
         kernels_loc = str(cache_dir)
 
     # Perform the orbit fitting
-    if initial_guess is not None:
-        res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
-    else:
+    if initial_guess is None or initial_guess["flag"] != 0:
         res = run_from_vector(get_ephem(kernels_loc), observations)
+    else:
+        res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
 
     # Populate our output structured array with the orbit fit results
     success = res.flag == 0
@@ -231,7 +234,7 @@ def orbitfit_cli(
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
         overwrite = cli_args.force
-        guess_file = Path(cli_args.g)
+        guess_file = Path(cli_args.g) if cli_args.g is not None else None
     else:
         cache_dir = None
         overwrite = False

@@ -1,7 +1,7 @@
+import math
 import os
 
 import numpy as np
-import math
 import pooch
 import pytest
 from numpy.testing import assert_equal
@@ -23,24 +23,27 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     """Test that the orbit_fit cli works for a small CSV file."""
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
     os.chdir(tmpdir)
+    guess_file_stem = "test_guess"
+    temp_guess_file = os.path.join(tmpdir, f"{guess_file_stem}.csv")
     output_file_stem = "test_output"
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
 
     # Write an empty file to temp_out_file path to test the overwrite functionality
-    with open(temp_out_file, "w") as f:
+    with open(temp_guess_file, "w") as f:
         f.write("")
 
     class FakeCliArgs:
-        def __init__(self, force):
+        def __init__(self, force=False, g=None):
             self.ar_data_file_path = None
             self.separate_flagged = False
             self.force = force
+            self.g = g  # Command line argument for initial guesses file
 
     with pytest.raises(FileExistsError):
         orbitfit_cli(
             input=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
             input_file_format="ADES_csv",
-            output_file_stem=output_file_stem,
+            output_file_stem=guess_file_stem,  # Our first run will create our initial guess file
             output_file_format="csv",
             chunk_size=chunk_size,
             num_workers=num_workers,
@@ -50,11 +53,26 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     orbitfit_cli(
         input=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
         input_file_format="ADES_csv",
-        output_file_stem=output_file_stem,
+        output_file_stem=guess_file_stem,  # Our first run will create our initial guess file
         output_file_format="csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
         cli_args=FakeCliArgs(force=True),
+    )
+
+    # Use the output of our first orbit fit as the initial guesses for our
+    # final orbit fit run
+    orbitfit_cli(
+        input=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
+        input_file_format="ADES_csv",
+        output_file_stem=output_file_stem,
+        output_file_format="csv",
+        chunk_size=chunk_size,
+        num_workers=num_workers,
+        cli_args=FakeCliArgs(
+            force=True,
+            g=temp_guess_file,  # Use our first run for the initial guesses
+        ),
     )
 
     # Verify the orbit fit produced an output file
