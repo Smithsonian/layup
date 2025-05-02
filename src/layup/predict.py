@@ -36,8 +36,6 @@ def _predict(data, obs_pos_vel, times, cache_dir):
             cov.append(row[f"cov_{i}"])
         cov = np.array(cov)
 
-        print(cov)
-
         predict_results.append(
             predict_sequence(
                 get_ephem(kernels_loc),

@@ -15,7 +15,6 @@ extern "C"
 using std::cout;
 using namespace Eigen;
 
-
 double AU_M = 149597870700;
 double SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M;
 
@@ -37,11 +36,12 @@ namespace orbit_fit
             double dy = r->particles[np].y - r_obs.y;
             double dz = r->particles[np].z - r_obs.z;
             double rho_mag = sqrt(dx * dx + dy * dy + dz * dz);
-            if(r->status == REB_STATUS_GENERIC_ERROR){
-		printf("barf %lf %le %lf\n", t, lt, rho_mag);
+            if (r->status == REB_STATUS_GENERIC_ERROR)
+            {
+                printf("barf %lf %le %lf\n", t, lt, rho_mag);
                 return 1;
             }
-	    
+
             lt = rho_mag / speed_of_light;
         }
 
@@ -73,10 +73,10 @@ namespace orbit_fit
     }
 
     PredictResult predict(struct assist_ephem *ephem,
-                         struct reb_particle p0, double epoch,
-                         Observation this_det,
-                         Eigen::MatrixXd &cov,
-                         Eigen::MatrixXd &obs_cov)
+                          struct reb_particle p0, double epoch,
+                          Observation this_det,
+                          Eigen::MatrixXd &cov,
+                          Eigen::MatrixXd &obs_cov)
     {
 
         // Takes an ephemeris object, a simulation,
@@ -187,7 +187,7 @@ namespace orbit_fit
 
             dx_resid[i] = -(drho_x[i] * Ax + drho_y[i] * Ay + drho_z[i] * Az);
             dy_resid[i] = -(drho_x[i] * Dx + drho_y[i] * Dy + drho_z[i] * Dz);
-            }
+        }
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> B;
         B.resize(2, 6);
@@ -198,12 +198,8 @@ namespace orbit_fit
             B(1, j) = dy_resid[j];
         }
 
-        std::cout << B << std::endl;
-
         // Eigen::MatrixXd obs_cov(6, 6);
         obs_cov = B * cov * B.transpose();
-
-        std::cout << obs_cov << std::endl;
 
         assist_free(ax);
         reb_simulation_free(r);
@@ -221,7 +217,11 @@ namespace orbit_fit
         return result;
     }
 
-    PredictResult predict_from_fit_result(struct assist_ephem *ephem, FitResult fit, Observation obs_position, Eigen::MatrixXd &cov, Eigen::MatrixXd &obs_cov)
+    PredictResult predict_from_fit_result(struct assist_ephem *ephem,
+                                          FitResult fit,
+                                          Observation obs_position,
+                                          Eigen::MatrixXd &cov,
+                                          Eigen::MatrixXd &obs_cov)
     {
         struct reb_particle particle;
         particle.x = fit.state[0];
@@ -237,16 +237,15 @@ namespace orbit_fit
             fit.epoch,
             obs_position,
             cov,
-            obs_cov
-        );
+            obs_cov);
 
         return res;
     }
 
     std::vector<PredictResult> predict_sequence(struct assist_ephem *ephem,
-                                        FitResult fit,
-                                        std::vector<Observation> &detections,
-                                        Eigen::MatrixXd &cov)
+                                                FitResult fit,
+                                                std::vector<Observation> &detections,
+                                                Eigen::MatrixXd &cov)
     {
         std::vector<PredictResult> results;
 
