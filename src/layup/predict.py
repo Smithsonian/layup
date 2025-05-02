@@ -31,7 +31,25 @@ def _get_result_dtypes(primary_id_column_name: str):
 
 
 def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
-    """This function is called by the parallelization function to call the C++ code."""
+    """This function is called by the parallelization function to call the C++ code.
+
+    Parameters
+    ----------
+    data : nump structured array
+        The data to be processed.
+    obs_pos_vel : numpy structured array
+        The observer position and velocity.
+    times : list
+        The times for the predictions, in jd_tdb.
+    cache_dir : str
+        The directory to the cached kernels.
+    primary_id_column_name : str
+        The name of the primary ID column.
+
+    Returns
+    -------
+    numpy structured array with the flattened results
+    """
     if cache_dir is None:
         kernels_loc = str(pooch.os_cache("layup"))
     else:
@@ -77,7 +95,27 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
 
 
 def predict(data, obscode, times, primary_id_column_name="provID", num_workers=-1, cache_dir=None):
-    """This is the stub that will be used when calling predict from a notebook"""
+    """The function to all that predict functionality interactively, i.e from a notebook or a script.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to be processed.
+    obscode : str
+        The observer code.
+    times : list
+        The times for the predictions, in jd_tdb.
+    primary_id_column_name : str
+        The name of the primary ID column.
+    num_workers : int
+        The number of workers to use for parallelization. If -1, use all available cores.
+    cache_dir : str or None
+        The directory to the cached kernels. If None, use the default cache directory.
+
+    Returns
+    -------
+    numpy structured array with the flattened results
+    """
     if num_workers < 0:
         num_workers = os.cpu_count()
 
@@ -109,16 +147,34 @@ def predict_cli(
     output_file: str,
     cache_dir: Path,
 ):
-    """This is the stub that will used when calling predict from the command line"""
+    """The function for calling predict through the command line interface.
 
-    print(cli_args)
+    Parameters
+    ----------
+    cli_args : Namespace
+        The command line arguments.
+    input_file : str
+        The input file to read the data from.
+    start_date : float
+        The start date for the predictions, in jd_tdb.
+    end_date : float
+        The end date for the predictions, in jd_tdb.
+    timestep_day : float
+        The time step for the predictions, in days.
+    output_file : str
+        The output file to write the predictions to.
+    cache_dir : Path
+        The directory to the cached kernels.
+    """
+
     num_workers = cli_args.n
     _primary_id_column_name = "provID"
 
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    times = np.arange(start_date, end_date + 1, step=timestep_day)
+    times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
+    print(times)
 
     reader = CSVDataReader(input_file, primary_id_column_name=_primary_id_column_name, sep="csv")
 
