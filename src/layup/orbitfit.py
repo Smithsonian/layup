@@ -101,12 +101,14 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, initial_guess=N
         # sort the observations by the obstime if specified by the user
         if sort_array:
             data = np.sort(data, order="obstime", kind="mergesort")
+
         # Convert the astrometry data to a list of Observations
         # Reminder to label the units.  Within an Observation struct,
         # and internal to the C++ code in general, we are using
         # radians.
         observations = [
-            Observation.from_astrometry(
+            Observation.from_astrometry_with_id(
+                str(d["provID"]),
                 d["ra"] * np.pi / 180.0,
                 d["dec"] * np.pi / 180.0,
                 convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
