@@ -34,11 +34,17 @@ def main():
         required=False,
     )
     optional.add_argument(
+        "--orbit_type",
+        help="orbit reference frame of orbit from [COM, BCOM, KEP, BKEP, CART, BCART]",
+        dest="orbit_type",
+        type=str,
+    )
+    optional.add_argument(
         "-n",
         "--num",
         help="random number of orbits to take from input file",
         dest="n",
-        type=str,
+        type=int,
         default=1000,
         required=False,
     )
@@ -69,6 +75,38 @@ def main():
         default="output",
         required=False,
     )
+    optional.add_argument(
+        "--fade",
+        help="fade out the orbits of input objects",
+        dest="fade",
+        action='store_true'
+    )
+    optional.add_argument(
+        "--planets",
+        "-p",
+        help="choose which planets to overplot",
+        dest="planets",
+        nargs='+',
+        required=False
+    )
+    optional.add_argument(
+        "--no_planets",
+        help="overplot the planets. default is True",
+        dest="no_planets",
+        action="store_true"
+    )
+    optional.add_argument(
+        "--no_sun",
+        help="overplot the sun. default is True",
+        dest="no_sun",
+        action="store_true"
+    )
+    optional.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite output file",
+    )
 
     args = parser.parse_args()
 
@@ -76,7 +114,8 @@ def main():
 
 
 def execute(args):
-
+    from layup.visualize import visualize_cli
+    from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
 
     # from layup.visualize import visualize_cli
@@ -95,11 +134,27 @@ def execute(args):
     else:
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
+    # check for overwriting output file
+    warn_or_remove_file(str(output_file), args.force, logger)
+
     if args.d.upper() not in ["2D", "3D"]:
         sys.exit("ERROR: -d --dimensions must be '2D' or '3D'")
 
     if args.b not in ["matplot", "plotly"]:
         sys.exit("ERROR: -b --backend must be 'matplot' or 'plotly'")
+
+    visualize_cli(
+        input=args.input,
+        output_file_stem=args.o,
+        planets=args.planets,
+        input_format=args.orbit_type,
+        backend=args.b,
+        dimensions=args.d,
+        num_orbs=args.n,
+        no_planets=args.no_planets,
+        no_sun=args.no_sun,
+        fade=args.fade
+    )
 
 
 if __name__ == "__main__":
