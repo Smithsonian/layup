@@ -708,7 +708,7 @@ namespace orbit_fit
         return ephem;
     }
 
-    FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
+    FitResult run_from_vector_prev(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
     {
 
         size_t start_i = detections_full.size() - 1;
@@ -953,13 +953,15 @@ namespace orbit_fit
 
     std::optional<FitResult> run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
     {
-        int success = 0;
+        int success = 1;
         size_t iters;
         double chi2_final;
         size_t dof;
 
         std::vector<residuals> resid_vec(detections.size());
         std::vector<partials> partials_vec(detections.size());
+
+	printf("run_from_vector_with_initial_guess %lu\n", detections.size());	
 
         // Make these parameters flexible.
         size_t iter_max = 100;
@@ -995,6 +997,8 @@ namespace orbit_fit
 
         if (flag == 0)
         {
+
+	    printf("run_from_vector_with_initial_guess flag: %d\n", flag);
 
             Eigen::MatrixXd obs_cov(2, 2);
             predict(
@@ -1045,6 +1049,173 @@ namespace orbit_fit
             return std::nullopt;
         }
     }
+
+    FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
+    {
+
+        size_t start_i = detections_full.size() - 1;
+
+	printf("run_from_vector %lu\n", start_i);
+	
+
+        // First find a triple of detections in the full data set.
+        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 0.5, 100.0, 0.01, 100.0, 3, start_i);
+
+        int success = 1;
+        size_t iters;
+        double chi2_final;
+        double result_epoch;
+        size_t dof;
+        struct reb_particle p1;
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> final_cov;
+        size_t iter_max = 100;
+        double eps = 1e-12;
+
+        for (size_t i = 0; i < idx.size(); i++)
+        {
+
+            std::vector<size_t> indices = idx[i];
+            size_t id0 = indices[0];
+            size_t id1 = indices[1];
+            size_t id2 = indices[2];
+
+            printf("gauss indices: %lu %lu %lu\n", id0, id1, id2);
+            fflush(stdout);
+
+            Observation d0 = detections_full[id0];
+            Observation d1 = detections_full[id1];
+            Observation d2 = detections_full[id2];
+
+            // Put this in a better place
+            double GMtotal = 0.00029630927487993194;
+
+            std::optional<std::vector<FitResult>> res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
+            if (!res.has_value())
+            {
+                printf("gauss failed.  Try another triplet.\n");
+                fflush(stdout);
+                continue;
+            }
+
+            // Now get a segment of data that spans the triplet and that uses up to
+            // a certain number of points, if they are available in a time window.
+            // This should be a parameter
+            size_t num = 40;
+
+	    // This part should be a function that returns start_index and
+	    // end_index.
+            size_t curr_num = id2 - id1 + 1;
+
+            size_t start_index;
+            size_t end_index;
+            if (curr_num >= num)
+            {
+                // We already have enough data and
+                // don't need to move the limits
+                start_index = id0;
+                end_index = id1;
+            }
+            else if ((detections_full.size() - id0) >= num)
+            {
+                // There are enough points if we include
+                // only the later points, we only need to
+                // later limit.
+                start_index = id0;
+                end_index = id0 + num;
+            }
+            else if (detections_full.size() >= num)
+            {
+                end_index = detections_full.size();
+                start_index = detections_full.size() - num;
+            }
+            else
+            {
+                start_index = 0;
+                end_index = detections_full.size();
+            }
+
+            std::vector<Observation>::const_iterator first_d = detections_full.begin() + start_index;
+            std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
+            std::vector<Observation> detections(first_d, last_d);
+
+	    std::optional<FitResult> first_fit_res = run_from_vector_with_initial_guess(ephem, res.value()[0], detections);
+            if (!first_fit_res.has_value()){
+		continue;
+	    }
+
+	    FitResult ffr = first_fit_res.value();
+
+	    // Should check if num is already larger than the full set of detections.
+            num = detections_full.size();
+
+            first_d = detections_full.begin() + detections_full.size() - num;
+            last_d = detections_full.end();
+            std::vector<Observation> detections2(first_d, last_d);
+
+	    std::optional<FitResult> second_fit_res = run_from_vector_with_initial_guess(ephem, ffr, detections2);
+            if (!second_fit_res.has_value()){
+		continue;
+	    }
+
+	    FitResult sfr = second_fit_res.value();
+
+	    int flag = sfr.flag;
+	    
+            if (flag != 0)
+            {
+                // At this point there is a good gauss solution and a good
+                // short interval solution, but the full data set is still failing.
+                // That probably means that the data set should be gradually enlarged.
+                printf("flag: %d iters: %lu, stage 3 failed.  Try another triplet %lu\n", flag, sfr.niter, i);
+                continue;
+            }else{
+		break;
+	    }
+        }
+        if (success != 0)
+        {
+            printf("fully failed\n");
+            fflush(stdout);
+        }
+
+        FitResult result;
+
+        result.method = "orbit_fit";
+        result.flag = success;
+
+        result.epoch = result_epoch;
+        result.csq = chi2_final;
+        result.ndof = dof;
+        result.niter = iters;
+        result.state[0] = p1.x;
+        result.state[1] = p1.y;
+        result.state[2] = p1.z;
+        result.state[3] = p1.vx;
+        result.state[4] = p1.vy;
+        result.state[5] = p1.vz;
+
+        if (success == 0) {
+            // Populate our covariance matrix
+            for (int i = 0; i < 6; i++)
+            {
+                for (int j = 0; j < 6; j++)
+                {
+                    // flatten the covariance matrix
+                    result.cov[(i * 6) + j] = final_cov(i, j);
+                }
+            }
+        }
+        // Important issues:
+        // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
+        // 2. Making sure the weight matrix is as good as it can be
+        // 3. Identifying and removing outliers
+
+        // Later issues:
+        // 1. Deflection of light
+
+        return result;
+    }
+    
 
 #ifdef Py_PYTHON_H
     static void orbit_fit_bindings(py::module &m)
