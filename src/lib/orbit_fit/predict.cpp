@@ -106,16 +106,16 @@ namespace orbit_fit
         double ye = this_det.observer_position[1];
         double ze = this_det.observer_position[2];
 
-        Eigen::Vector3d Av = this_det.a_vec;
-        Eigen::Vector3d Dv = this_det.d_vec;
+        // Eigen::Vector3d Av = this_det.a_vec;
+        // Eigen::Vector3d Dv = this_det.d_vec;
 
-        double Ax = Av.x();
-        double Ay = Av.y();
-        double Az = Av.z();
+        // double Ax = Av.x();
+        // double Ay = Av.y();
+        // double Az = Av.z();
 
-        double Dx = Dv.x();
-        double Dy = Dv.y();
-        double Dz = Dv.z();
+        // double Dx = Dv.x();
+        // double Dy = Dv.y();
+        // double Dz = Dv.z();
 
         // 5. compare the model result to the observation.
         //   This means dotting the model unit vector with the
@@ -140,6 +140,22 @@ namespace orbit_fit
         rho_x /= rho;
         rho_y /= rho;
         rho_z /= rho;
+
+        Eigen::Vector3d rho_matrix;
+        rho_matrix.x() = rho_x;
+        rho_matrix.y() = rho_y;
+        rho_matrix.z() = rho_z;
+
+        Eigen::Vector3d Av = a_vec_from_rho_hat(rho_matrix);
+        Eigen::Vector3d Dv = d_vec_from_rho_hat(rho_matrix);
+
+        double Ax = Av.x();
+        double Ay = Av.y();
+        double Az = Av.z();
+
+        double Dx = Dv.x();
+        double Dy = Dv.y();
+        double Dz = Dv.z();
 
         // Calculate the partial deriviatives of the model
         // observations with respect to the initial conditions
@@ -223,6 +239,8 @@ namespace orbit_fit
             cov,
             obs_cov
         );
+
+        return res;
     }
 
     std::vector<PredictResult> predict_sequence(struct assist_ephem *ephem,

@@ -4,7 +4,7 @@ from pathlib import Path
 from layup.utilities.data_processing_utilities import process_data
 from layup.routines import predict_sequence, Observation, FitResult, get_ephem, numpy_to_eigen
 from layup.utilities.file_io import CSVDataReader
-from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
+from layup.utilities.data_processing_utilities import LayupObservatory, parse_fit_result
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 import spiceypy as spice
 import numpy as np
@@ -27,14 +27,7 @@ def _predict(data, obs_pos_vel, times, cache_dir):
 
     predict_results = []
     for row in data:
-        initial_position = [
-            row["x"],
-            row["y"],
-            row["z"],
-            row["xdot"],
-            row["ydot"],
-            row["zdot"],
-        ]
+        fit = parse_fit_result(row)
 
         cov = []
         for i in range(10):
@@ -48,7 +41,7 @@ def _predict(data, obs_pos_vel, times, cache_dir):
         predict_results.append(
             predict_sequence(
                 get_ephem(kernels_loc),
-                initial_position,
+                fit,
                 observations,
                 numpy_to_eigen(cov, 6, 6)
             )
