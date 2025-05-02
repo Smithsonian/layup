@@ -179,7 +179,6 @@ def predict_cli(
         num_workers = os.cpu_count()
 
     times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
-    print(times)
 
     reader = CSVDataReader(input_file, primary_id_column_name=_primary_id_column_name, sep="csv")
 
