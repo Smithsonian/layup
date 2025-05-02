@@ -102,36 +102,36 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         "cov_03",
         "cov_04",
         "cov_05",
-        "cov_06",
-        "cov_07",
-        "cov_08",
-        "cov_09",
         "cov_10",
         "cov_11",
         "cov_12",
         "cov_13",
         "cov_14",
         "cov_15",
-        "cov_16",
-        "cov_17",
-        "cov_18",
-        "cov_19",
         "cov_20",
         "cov_21",
         "cov_22",
         "cov_23",
         "cov_24",
         "cov_25",
-        "cov_26",
-        "cov_27",
-        "cov_28",
-        "cov_29",
         "cov_30",
         "cov_31",
         "cov_32",
         "cov_33",
         "cov_34",
         "cov_35",
+        "cov_40",
+        "cov_41",
+        "cov_42",
+        "cov_43",
+        "cov_44",
+        "cov_45",
+        "cov_50",
+        "cov_51",
+        "cov_52",
+        "cov_53",
+        "cov_54",
+        "cov_55",
     ]
     assert set(output_data.dtype.names) == set(expected_cols)
 
@@ -145,7 +145,12 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     for row in output_data:
         # Check that the covariance matrix is non-zero
         cov_matrix = np.array(
-            [row[f"cov_0{i}"] for i in range(10)] + [row[f"cov_{i}"] for i in range(10, 36)]
+            [row[f"cov_1{i}"] for i in range(6)]
+            + [row[f"cov_1{i}"] for i in range(6)]
+            + [row[f"cov_2{i}"] for i in range(6)]
+            + [row[f"cov_3{i}"] for i in range(6)]
+            + [row[f"cov_4{i}"] for i in range(6)]
+            + [row[f"cov_5{i}"] for i in range(6)]
         )
         # Check if the cov_matrix has any NaN values indicating a failed fit
         nan_mask = np.isnan(cov_matrix)
@@ -222,6 +227,15 @@ def test_orbitfit_result_parsing():
             assert fit_res.niter == row["niter"]
 
             # Check our flattened covariance matrix against each covariance matrix column in the results.
+
+            cov_matrix = np.array(
+                [(f"cov_0{i}") for i in range(6)]  # Flat covariance matrix (6x6)
+                + [(f"cov_1{i}") for i in range(6)]
+                + [(f"cov_2{i}") for i in range(6)]
+                + [(f"cov_3{i}") for i in range(6)]
+                + [(f"cov_4{i}") for i in range(6)]
+                + [(f"cov_5{i}") for i in range(6)]
+            )
             for i in range(36):
-                cov_col_name = f"cov_0{i}" if i < 10 else f"cov_{i}"
+                cov_col_name = cov_matrix[i]
                 assert fit_res.cov[i] == row[cov_col_name]

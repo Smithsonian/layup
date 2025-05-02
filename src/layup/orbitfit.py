@@ -46,8 +46,12 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("flag", "i4"),  # Single-character flag indicating success of the fit
             ("FORMAT", "O"),  # Orbit format
         ]
-        + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
-        + [(f"cov_{i}", "f8") for i in range(10, 36)]  # Flat covariance matrix (remaining 26 elements)
+        + [(f"cov_0{i}", "f8") for i in range(6)]  # Flat covariance matrix (6x6)
+        + [(f"cov_1{i}", "f8") for i in range(6)]
+        + [(f"cov_2{i}", "f8") for i in range(6)]
+        + [(f"cov_3{i}", "f8") for i in range(6)]
+        + [(f"cov_4{i}", "f8") for i in range(6)]
+        + [(f"cov_5{i}", "f8") for i in range(6)]
     )
 
 

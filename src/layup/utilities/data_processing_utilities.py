@@ -128,7 +128,12 @@ def parse_fit_result(fit_result_row):
 
     # Construct the flattened covariance matrix from the columns of the fit result
     res.cov = np.array(
-        [fit_result_row[f"cov_0{i}"] for i in range(10)] + [fit_result_row[f"cov_{i}"] for i in range(10, 36)]
+        [fit_result_row[f"cov_0{i}"] for i in range(6)]
+        + [fit_result_row[f"cov_1{i}"] for i in range(6)]
+        + [fit_result_row[f"cov_2{i}"] for i in range(6)]
+        + [fit_result_row[f"cov_3{i}"] for i in range(6)]
+        + [fit_result_row[f"cov_4{i}"] for i in range(6)]
+        + [fit_result_row[f"cov_5{i}"] for i in range(6)]
     )
     # The number of iterations used during the fitting process.
     res.niter = fit_result_row["niter"]
