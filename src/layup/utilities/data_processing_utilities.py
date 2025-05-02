@@ -5,6 +5,7 @@ from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
 
+from layup.routines import FitResult
 from layup.utilities.layup_configs import LayupConfigs
 
 """ A module for utilities useful for processing data in structured numpy arrays """
@@ -40,7 +41,7 @@ def process_data(data, n_workers, func, **kwargs):
         return data
 
     # Divide our data into blocks to be processed by each worker
-    block_size = max(1, int(len(data) / n_workers))
+    block_size = max(1, int(np.ceil(len(data) / n_workers)))
     # Create a list of tuples of the form (start, end) where start is the starting index of the block
     # and end is the last index of the block + 1.
     blocks = [(i, min(i + block_size, len(data))) for i in range(0, len(data), block_size)]
@@ -85,6 +86,7 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
     if len(data) == 0:
         return data
 
+    kwargs["primary_id_column_name"] = primary_id_column_name
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         # Create a future applying the function to each block of data for a given object id
         futures = [
@@ -93,6 +95,44 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
         ]
         # Concatenate all processed blocks together as our final result
         return np.concatenate([future.result() for future in futures])
+
+
+def parse_fit_result(fit_result_row):
+    """
+    Parse the initial guess data from a structured numpy array representing our
+    orbit fit output result.
+
+    Parameters
+    ----------
+    fit_result_row : numpy structured array
+        The row of the structured array representing the orbit fit result.
+    Returns
+    -------
+    res : FitResult
+        The parsed fit result.
+    """
+    res = FitResult()
+    res.csq = fit_result_row["csq"]  # The chi-squared value of the fit
+    res.ndof = fit_result_row["ndof"]  # The number of degrees of freedom
+    # The state vector of the fit result
+    res.state = [
+        fit_result_row["x"],
+        fit_result_row["y"],
+        fit_result_row["z"],
+        fit_result_row["xdot"],
+        fit_result_row["ydot"],
+        fit_result_row["zdot"],
+    ]
+    # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
+    res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
+
+    # Construct the flattened covariance matrix from the columns of the fit result
+    res.cov = np.array(
+        [fit_result_row[f"cov_0{i}"] for i in range(10)] + [fit_result_row[f"cov_{i}"] for i in range(10, 36)]
+    )
+    # The number of iterations used during the fitting process.
+    res.niter = fit_result_row["niter"]
+    return res
 
 
 class LayupObservatory(SorchaObservatory):

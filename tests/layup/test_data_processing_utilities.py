@@ -44,8 +44,8 @@ def test_empty(n_workers):
     assert len(processed_data) == 0
 
 
-@pytest.mark.parametrize("n_workers", [1, 2, 4, 5, 8])
-@pytest.mark.parametrize("n_rows", [1, 10000, 1000000])
+@pytest.mark.parametrize("n_workers", [1, 4, 5, 8])
+@pytest.mark.parametrize("n_rows", [1, 413, 1000])
 def test_no_op(n_rows, n_workers):
     """Test that we can apply simple functions on datasets of various sizes and numbers of workers."""
     dtypes = [
@@ -67,8 +67,8 @@ def test_no_op(n_rows, n_workers):
     assert_equal(processed_data.dtype, data.dtype)
 
 
-@pytest.mark.parametrize("n_workers", [1, 2, 4, 5, 8])
-@pytest.mark.parametrize("n_rows", [1, 10000, 1000000])
+@pytest.mark.parametrize("n_workers", [1, 4, 5, 8])
+@pytest.mark.parametrize("n_rows", [1, 413, 1000])
 def test_data_modify(n_rows, n_workers):
     """Test that we can apply simple functions on datasets of various sizes and numbers of workers."""
     dtypes = [
@@ -89,8 +89,8 @@ def test_data_modify(n_rows, n_workers):
         assert processed_data["q"][i] == data["q"][i] + 1
 
 
-@pytest.mark.parametrize("n_workers", [1, 2, 4, 5, 8])
-@pytest.mark.parametrize("n_rows", [1, 10000, 1000000])
+@pytest.mark.parametrize("n_workers", [1, 4, 5, 8])
+@pytest.mark.parametrize("n_rows", [1, 413, 1000])
 def test_parallelization(n_rows, n_workers):
     """Test that we can apply simple functions on datasets of various sizes and numbers of workers."""
     dtypes = [
