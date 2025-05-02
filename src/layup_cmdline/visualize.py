@@ -79,7 +79,12 @@ def main():
         "--fade", help="fade out the orbits of input objects", dest="fade", action="store_true"
     )
     optional.add_argument(
-        "--planets", "-p", help="choose which planets to overplot", dest="planets", nargs="+", required=False
+        "--planets",
+        "-p",
+        help="choose which planets to overplot. must be from ['Me', 'V', 'E', 'Ma', 'J', 'S', 'U', 'N']",
+        dest="planets",
+        nargs="+",
+        required=False,
     )
     optional.add_argument(
         "--no_planets", help="overplot the planets. default is True", dest="no_planets", action="store_true"
