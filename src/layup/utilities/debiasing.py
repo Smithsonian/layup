@@ -4,52 +4,69 @@ from pathlib import Path
 import numpy as np
 import healpy as hp
 import pandas as pd
+import pooch
 import spiceypy as spice
 
 # From Siegfried Eggl's code
 mpc_catalogs = {
-    "a": "USNOA1",
-    "b": "USNOSA1",
-    "c": "USNOA2",
-    "d": "USNOSA2",
-    "e": "UCAC1",
-    "g": "Tyc2",
-    "i": "GSC1.1",
-    "j": "GSC1.2",
-    "l": "ACT",
-    "m": "GSCACT",
-    "n": "SDSS8",
-    "o": "USNOB1",
-    "p": "PPM",
-    "q": "UCAC4",
-    "r": "UCAC2",
-    "t": "PPMXL",
-    "u": "UCAC3",
-    "v": "NOMAD",
-    "w": "CMC14",
-    "L": "2MASS",
-    "N": "SDSS7",
-    "Q": "CMC15",
-    "R": "SSTRC4",
-    "S": "URAT1",
-    "U": "Gaia1",
-    "W": "Gaia3",
+    "USNOA1": "a",
+    "USNOSA1": "b",
+    "USNOA2": "c",
+    "USNOSA2": "d",
+    "UCAC1": "e",
+    "Tyc2": "g",
+    "GSC1.1": "i",
+    "GSC1.2": "j",
+    "ACT": "l",
+    "GSCACT": "m",
+    "SDSS8": "n",
+    "USNOB1": "o",
+    "PPM": "p",
+    "UCAC4": "q",
+    "UCAC2": "r",
+    "PPMXL": "t",
+    "UCAC3": "u",
+    "NOMAD": "v",
+    "CMC14": "w",
+    "2MASS": "L",
+    "SDSS7": "N",
+    "CMC15": "Q",
+    "SSTRC4": "R",
+    "URAT1": "S",
+    "Gaia1": "U",
+    "Gaia3": "W",
 }
 coords = ["ra", "dec", "pm_ra", "pm_dec"]
 
-columns = ["_".join(pair) for pair in product(mpc_catalogs.keys(), coords)]
+columns = ["_".join(pair) for pair in product(mpc_catalogs.values(), coords)]
 
 
 def generate_bias_dict(cache_dir=None):
+    """Convert the bias.dat file into a dictionary for fast access.
 
-    #! We need to include this in the bootstrap files
-    #! curl ftp://ssd.jpl.nasa.gov/pub/ssd/debias/debias_hires2018.tgz --output debias_hires2018.tgz
-    #! tar -xvzf debias_hires2018.tgz
+    Parameters
+    ----------
+    cache_dir : str, optional
+        Directory containing cache files for layup, by default None
+
+    Returns
+    -------
+    dict
+        Dictionary representation of bias.dat file indexed by catalog keys.
+    """
+    if cache_dir is None:
+        cache_dir = pooch.os_cache("layup")
+
+    bias_file_path = Path(cache_dir) / "bias.dat"
+    if not bias_file_path.exists():
+        raise FileNotFoundError(f"The bias.dat file was not found in the cache directory: {cache_dir}")
+
+    # Read in the bias.dat file as a pandas DataFrame
     biasdf = pd.read_csv(Path(cache_dir) / "bias.dat", sep="\\s+", skiprows=23, names=columns)
 
     # Turn this into a dictionary for speed
     bias_dict = {}
-    for catalog in mpc_catalogs:
+    for catalog in mpc_catalogs.values():
         colnames = [f"{catalog}_ra", f"{catalog}_dec", f"{catalog}_pm_ra", f"{catalog}_pm_dec"]
         bias_dict[catalog] = {}
         for col in colnames:
@@ -60,16 +77,18 @@ def generate_bias_dict(cache_dir=None):
 
 def debias(ra, dec, epoch, catalog, bias_dict, nside=256):
 
-    if catalog not in bias_dict:
+    catalog_key = mpc_catalogs[catalog]
+    if catalog_key not in bias_dict.keys():
         return ra, dec
 
     # find pixel from RADEC
     idx = hp.ang2pix(nside, ra, dec, nest=False, lonlat=True)
 
-    ra_off = bias_dict[catalog]["ra"][idx]
-    pm_ra = bias_dict[catalog]["pm_ra"][idx]
-    dec_off = bias_dict[catalog]["dec"][idx]
-    pm_dec = bias_dict[catalog]["pm_dec"][idx]
+    # Retrieve the offsets and proper motions from the bias dictionary
+    ra_off = bias_dict[catalog_key]["ra"][idx]
+    pm_ra = bias_dict[catalog_key]["pm_ra"][idx]
+    dec_off = bias_dict[catalog_key]["dec"][idx]
+    pm_dec = bias_dict[catalog_key]["pm_dec"][idx]
 
     # time from epoch in Julian years
     dt_jy = (epoch - spice.j2000()) / 365.25
