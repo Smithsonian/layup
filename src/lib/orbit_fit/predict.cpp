@@ -32,13 +32,15 @@ namespace orbit_fit
         {
             assist_integrate_or_interpolate(ax, t - lt);
 
-            if(r->status == REB_STATUS_GENERIC_ERROR){
-                return 1;
-            }
             double dx = r->particles[np].x - r_obs.x;
             double dy = r->particles[np].y - r_obs.y;
             double dz = r->particles[np].z - r_obs.z;
             double rho_mag = sqrt(dx * dx + dy * dy + dz * dz);
+            if(r->status == REB_STATUS_GENERIC_ERROR){
+		printf("barf %lf %le %lf\n", t, lt, rho_mag);
+                return 1;
+            }
+	    
             lt = rho_mag / speed_of_light;
         }
 
