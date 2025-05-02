@@ -36,6 +36,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
             self.primary_id_column_name = "provID"
             self.separate_flagged = False
             self.force = force
+            self.debias = False
 
     with pytest.raises(FileExistsError):
         orbitfit_cli(

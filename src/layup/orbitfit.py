@@ -12,6 +12,7 @@ from numpy.lib import recfunctions as rfn
 from layup.routines import Observation, get_ephem, run_from_vector
 from layup.utilities.data_processing_utilities import LayupObservatory, process_data_by_id
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
+from layup.utilities.debiasing import debias, generate_bias_dict
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
@@ -51,7 +52,7 @@ def _get_result_dtypes(primary_id_column_name: str):
     )
 
 
-def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: bool = True):
+def _orbitfit(data, cache_dir: str, primary_id_column_name: str, bias_dict: dict, sort_array: bool = True):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
     should correspond to the same object.
@@ -66,6 +67,8 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: boo
         The directory where the required orbital files are stored
     primary_id_column_name : str
         The name of the primary identifier column for the objects.
+    bias_dict : dict
+        A dictionary containing bias corrections for different catalogs.
     sort_array : bool
         Whether to sort the observations by obstime before processing. Default is True.
     """
@@ -81,6 +84,25 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: boo
 
     if sort_array:
         data = np.sort(data, order="obstime", kind="mergesort")
+
+    # Accommodate occultation measurements. These measurements are implied when
+    # the "ra" and "dec" columns are None. In this case, we will use the "starra"
+    # and "stardec" columns.
+    for d in data:
+        if d["ra"] is None or d["dec"] is None:
+            d["ra"] = d["starra"] + d["deltra"] / np.cos(d["stardec"])
+            d["dec"] = d["stardec"] + d["deltadec"]
+
+    # bias_dict will be a dictionary when the debias flag is set to True.
+    if bias_dict is not None:
+        for d in data:
+            d["ra"], d["dec"] = debias(
+                ra=d["ra"],
+                dec=d["dec"],
+                epoch=d["obstime"],  #! Is there any change needed here?
+                catalog=d["astcat"],
+                bias_dict=bias_dict,
+            )
 
     # Convert the astrometry data to a list of Observations
     # Reminder to label the units.  Within an Observation struct,
@@ -131,7 +153,7 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, sort_array: boo
     return output
 
 
-def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID"):
+def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID", debias=False):
     """This is the function that you would call interactively. i.e. from a notebook
 
     Parameters
@@ -144,6 +166,8 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
         The number of workers to use for parallel processing. Default is 1
     primary_id_column_name : str
         The name of the primary identifier column for the objects. Default is "provID".
+    debias : bool
+        Whether to apply debiasing corrections to the observations. Default is False.
     """
 
     layup_observatory = LayupObservatory()
@@ -156,8 +180,17 @@ def orbitfit(data, cache_dir: str, num_workers=1, primary_id_column_name="provID
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
+    bias_dict = None
+    if debias:
+        bias_dict = generate_bias_dict(cache_dir)
+
     return process_data_by_id(
-        data, num_workers, _orbitfit, primary_id_column_name=primary_id_column_name, cache_dir=cache_dir
+        data,
+        num_workers,
+        _orbitfit,
+        primary_id_column_name=primary_id_column_name,
+        cache_dir=cache_dir,
+        bias_dict=bias_dict,
     )
 
 
@@ -193,9 +226,11 @@ def orbitfit_cli(
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
         overwrite = cli_args.force
+        debias = cli_args.debias
     else:
         cache_dir = None
         overwrite = False
+        debias = False
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -272,6 +307,7 @@ def orbitfit_cli(
             cache_dir=cache_dir,
             num_workers=num_workers,
             primary_id_column_name=_primary_id_column_name,
+            debias=debias,
         )
 
         # Before writing our first chunk, check if the output file already exists.
