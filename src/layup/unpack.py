@@ -17,7 +17,7 @@ INPUT_READERS = {
 
 def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
     """Helper function to create the result dtype with the correct primary ID column name."""
-    # Define a structured dtype for outputting unpacked file
+    # Define a structured dtype for format of unpacked output file
 
     return np.dtype(
         [
@@ -45,32 +45,12 @@ def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
     )
 
 
-def unpack(res, input_format, primary_id_column_name, name):
+def unpack(res, name,orbit_para,_RESULT_DTYPES):
     """
     unpacks a file containing a covarience matrix into assoicated uncertainties.
     e.g. name, values (x6), covariance (6x6) ---> name, value_i, sigma_value_i, ....
 
     """
-    format = input_format
-
-    if format in ["CART", "BCART"]:
-        orbit_para = ["x", "y", "z", "xdot", "ydot", "zdot"]
-        orbit_para_sigma = ["sigma_x", "sigma_y", "sigma_z", "sigma_xdot", "sigma_ydot", "sigma_zdot"]
-    elif format in ["KEP", "BKEP"]:
-        orbit_para = ["a", "e", "inc", "node", "argPeri", "ma"]
-        orbit_para_sigma = ["sigma_a", "sigma_e", "sigma_inc", "sigma_node", "sigma_argPeri", "sigma_ma"]
-    elif format in ["COM", "BCOM"]:
-        orbit_para = ["q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB"]
-        orbit_para_sigma = [
-            "sigma_q",
-            "sigma_e",
-            "sigma_inc",
-            "sigma_node",
-            "sigma_argPeri",
-            "sigma_t_p_MJD_TDB",
-        ]
-
-    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, orbit_para, orbit_para_sigma)
 
     j = [0, 7, 14, 21, 28, 35]  # location of cov_ii [00,11,22,33,44,55]
     error_list = []
@@ -97,7 +77,7 @@ def unpack(res, input_format, primary_id_column_name, name):
                 error_list[4],
                 res.state[5],
                 error_list[5],
-            )  # Corrected sigma values
+            )  
             + (
                 res.epoch - 2400000.5,
                 res.niter,
@@ -147,6 +127,29 @@ def unpack_cli(
     else:
         logger.error("Input file does not contain 'FORMAT' column")
 
+    format = input_format
+
+    if format in ["CART", "BCART"]:
+        orbit_para = ["x", "y", "z", "xdot", "ydot", "zdot"]
+        orbit_para_sigma = ["sigma_x", "sigma_y", "sigma_z", "sigma_xdot", "sigma_ydot", "sigma_zdot"]
+    elif format in ["KEP", "BKEP"]:
+        orbit_para = ["a", "e", "inc", "node", "argPeri", "ma"]
+        orbit_para_sigma = ["sigma_a", "sigma_e", "sigma_inc", "sigma_node", "sigma_argPeri", "sigma_ma"]
+    elif format in ["COM", "BCOM"]:
+        orbit_para = ["q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB"]
+        orbit_para_sigma = [
+            "sigma_q",
+            "sigma_e",
+            "sigma_inc",
+            "sigma_node",
+            "sigma_argPeri",
+            "sigma_t_p_MJD_TDB",
+        ]
+
+
+
+    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, orbit_para, orbit_para_sigma)
+
     # read data
     data = reader_class(
         input_file,
@@ -154,11 +157,15 @@ def unpack_cli(
         primary_id_column_name=primary_id_column_name,
     ).read_rows()
 
+
+
+
+
     # loop that parses each row/object and unpacked
     for row in data:
 
         res = parse_fit_result(row)
-        res_unpacked = unpack(res, input_format, primary_id_column_name, row[0])
+        res_unpacked = unpack(res, row[0],orbit_para,_RESULT_DTYPES)
 
         # All results go to a single output file
         if file_format == "hdf5":
