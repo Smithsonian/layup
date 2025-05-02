@@ -17,7 +17,7 @@ INPUT_READERS = {
 
 def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
     """Helper function to create the result dtype with the correct primary ID column name."""
-    # Define a structured dtype to match the OrbfitResult fields
+    # Define a structured dtype for outputting unpacked file
 
     return np.dtype(
         [
@@ -43,60 +43,6 @@ def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
             ("FORMAT", "O"),  # Orbit format
         ]
     )
-
-
-def unpack_cli(
-    input,
-    file_format,
-    output_file_stem,
-):
-
-    primary_id_column_name = "provID"
-    input_file = Path(input)
-    if file_format == "csv":
-        output_file = Path(f"{output_file_stem}.{file_format.lower()}")
-    else:
-        output_file = (
-            Path(f"{output_file_stem}")
-            if output_file_stem.endswith(".h5")
-            else Path(f"{output_file_stem}.h5")
-        )
-
-    # Open the input file and read the first line
-    reader_class = INPUT_READERS.get(file_format)
-
-    sample_reader = reader_class(
-        input_file,
-        format_column_name="FORMAT",
-        primary_id_column_name=primary_id_column_name,
-    )
-
-    sample_data = sample_reader.read_rows(block_start=0, block_size=1)
-
-    # Check orbit format in the file
-    input_format = None
-    if "FORMAT" in sample_data.dtype.names:
-        input_format = sample_data["FORMAT"][0]
-    else:
-        logger.error("Input file does not contain 'FORMAT' column")
-
-    data = reader_class(
-        input_file,
-        format_column_name="FORMAT",
-        primary_id_column_name=primary_id_column_name,
-    ).read_rows()
-    for row in data:
-
-        res = parse_fit_result(row)
-        res_unpacked = unpack(res, input_format, primary_id_column_name, row[0])
-
-    else:  # All results go to a single output file
-        if file_format == "hdf5":
-            write_hdf5(res_unpacked, output_file, key="data")
-        else:
-            write_csv(res_unpacked, output_file)
-
-    print(f"Data has been written to {output_file}")
 
 
 def unpack(res, input_format, primary_id_column_name, name):
@@ -163,3 +109,61 @@ def unpack(res, input_format, primary_id_column_name, name):
         dtype=_RESULT_DTYPES,
     )
     return output
+
+
+def unpack_cli(
+    input,
+    file_format,
+    output_file_stem,
+):
+
+    primary_id_column_name = "provID"
+
+    input_file = Path(input)
+    if file_format == "csv":
+        output_file = Path(f"{output_file_stem}.{file_format.lower()}")
+    else:
+        output_file = (
+            Path(f"{output_file_stem}")
+            if output_file_stem.endswith(".h5")
+            else Path(f"{output_file_stem}.h5")
+        )
+
+    # Open the input file and read the first line
+    reader_class = INPUT_READERS.get(file_format)
+
+    sample_reader = reader_class(
+        input_file,
+        format_column_name="FORMAT",
+        primary_id_column_name=primary_id_column_name,
+    )
+
+    sample_data = sample_reader.read_rows(block_start=0, block_size=1)
+
+    # Check orbit format in the file
+    input_format = None
+    if "FORMAT" in sample_data.dtype.names:
+        input_format = sample_data["FORMAT"][0]
+    else:
+        logger.error("Input file does not contain 'FORMAT' column")
+
+    # read data
+    data = reader_class(
+        input_file,
+        format_column_name="FORMAT",
+        primary_id_column_name=primary_id_column_name,
+    ).read_rows()
+
+    # loop that parses each row/object and unpacked
+    for row in data:
+
+        res = parse_fit_result(row)
+        res_unpacked = unpack(res, input_format, primary_id_column_name, row[0])
+
+        # All results go to a single output file
+        if file_format == "hdf5":
+            write_hdf5(res_unpacked, output_file, key="data")
+        else:
+            write_csv(res_unpacked, output_file)
+
+    print(f"Data has been written to {output_file}")
