@@ -10,7 +10,12 @@ import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
 from layup.routines import Observation, get_ephem, run_from_vector, run_from_vector_with_initial_guess
-from layup.utilities.data_processing_utilities import LayupObservatory, parse_fit_result, process_data_by_id
+from layup.utilities.data_processing_utilities import (
+    LayupObservatory,
+    parse_fit_result,
+    process_data_by_id,
+    create_chunks,
+)
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -312,7 +317,7 @@ def orbitfit_cli(
         # as the input file.
         guess_reader = reader_class(guess_file, primary_id_column_name=_primary_id_column_name, sep=separator)
 
-    chunks = _create_chunks(reader, chunk_size)
+    chunks = create_chunks(reader, chunk_size)
 
     for chunk in chunks:
         data = reader.read_objects(chunk)
@@ -363,63 +368,6 @@ def orbitfit_cli(
                 write_csv(fit_orbits, output_file)
 
     print(f"Data has been written to {output_file}")
-
-
-def _create_chunks(reader, chunk_size):
-    """For a given reader create a list of lists of object ids such that the total
-    number of entries in the file for all object ids in a given list, will be
-    less than the chunk size.
-
-    Parameters
-    ----------
-    reader : ObjectDataReader
-        The file reader object for the input file
-    chunk_size : int
-        The maximum number of rows to be included in a single list of ids
-
-    Returns
-    -------
-    chunks : list[list[object ids]]
-        A list of lists of object ids that can be passed to the reader's read_objects
-        method.
-    """
-    # Force the reader to build the id table and id count dictionary
-    reader._build_id_map()
-
-    # Find all object ids with more rows than the max allowed number of rows.
-    exceeds_id_list = []
-    for k, v in reader.obj_id_counts.items():
-        if v > chunk_size:
-            exceeds_id_list.append(k)
-
-    # Log an error if the any of the objects have more rows than the chunk size
-    if exceeds_id_list:
-        logger.error("The following objects have more rows than the max allowed number of rows.")
-        for k in exceeds_id_list:
-            logger.error(f"Object id {k} has {reader.obj_id_counts[k]} rows")
-        raise ValueError("At least one object has more rows than the max allowed number of rows.")
-
-    chunks = []
-    obj_ids_in_chunk = []
-    accumulator = 0
-
-    # Loop over the object id counts dictionary
-    for k, v in reader.obj_id_counts.items():
-        # Check if the chunk size is exceeded, if so, save the current chunk and start a new chunk
-        if accumulator + v > chunk_size:
-            chunks.append(obj_ids_in_chunk)
-            obj_ids_in_chunk = []
-            accumulator = 0
-
-        # Increase the accumulator and add the object id to the current chunk
-        accumulator += v
-        obj_ids_in_chunk.append(k)
-
-    # Add the last chunk if it is not empty
-    if obj_ids_in_chunk:
-        chunks.append(obj_ids_in_chunk)
-
-    return chunks
 
 
 def _is_valid_data(data):
