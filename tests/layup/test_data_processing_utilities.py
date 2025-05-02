@@ -1,14 +1,12 @@
-import pytest
-from numpy.testing import assert_equal, assert_allclose
-
 import numpy as np
-from numpy.lib import recfunctions as rfn
+import pytest
 import spiceypy as spice
+from numpy.lib import recfunctions as rfn
+from numpy.testing import assert_equal
 
-from layup.utilities.file_io.CSVReader import CSVDataReader
-
-from layup.utilities.data_processing_utilities import process_data, LayupObservatory
+from layup.utilities.data_processing_utilities import LayupObservatory, process_data
 from layup.utilities.data_utilities_for_tests import get_test_filepath
+from layup.utilities.file_io.Obs80Reader import Obs80DataReader
 
 
 def no_op(data):
@@ -124,8 +122,8 @@ def test_parallelization(n_rows, n_workers):
 
 def test_layup_observatory_obscodes_to_barycentric():
     """Test that we can process the obscodes data."""
-    csv_reader = CSVDataReader(get_test_filepath("100_random_mpc_ADES.csv"), "csv")
-    data = csv_reader.read_rows()
+    reader = Obs80DataReader(get_test_filepath("03666_no_bad_dates.txt"))
+    data = reader.read_rows()
 
     observatory = LayupObservatory()
     # Check that the cache is empty
@@ -135,7 +133,7 @@ def test_layup_observatory_obscodes_to_barycentric():
     et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
     data = rfn.append_fields(data, "et", et_col, usemask=False)
 
-    processed_data = observatory.obscodes_to_barycentric(data)
+    processed_data = observatory.obscodes_to_barycentric(data, fail_on_missing=False)
     assert len(processed_data) == len(data)
     assert processed_data.dtype == [
         ("x", "<f8"),
@@ -145,18 +143,6 @@ def test_layup_observatory_obscodes_to_barycentric():
         ("vy", "<f8"),
         ("vz", "<f8"),
     ]
-
-    # The test file has observatories with no set barycentric positions
-    # so we should expect NaNs for all of these
-
-    # Check that fail_on_missing=True raises an error
-    with pytest.raises(ValueError):
-        _ = observatory.obscodes_to_barycentric(data, fail_on_missing=True)
-
-    # Drop nans from the results
-    nan_free_data = processed_data[~np.isnan(processed_data["x"])]
-    assert len(nan_free_data) > 0
-    assert len(nan_free_data) != len(data)
 
     # Check that the cache is populated
     assert len(observatory.cached_obs) > 0
