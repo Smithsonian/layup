@@ -1,13 +1,13 @@
 import argparse
+import os
+
+import pytest
+from numpy.testing import assert_allclose, assert_equal
+
 from layup.convert import convert, convert_cli
 from layup.utilities.data_utilities_for_tests import get_test_filepath
-
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
-
-from numpy.testing import assert_equal, assert_allclose
-import os
-import pytest
 
 
 def create_argparse_object():
@@ -147,6 +147,88 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
             assert_allclose(
                 input_data[column_name],
                 output_data_BCOM[column_name],
+                err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype}",
+            )
+
+
+@pytest.mark.parametrize(
+    "chunk_size, num_workers",
+    [
+        (10_0000, 1),
+    ],
+)
+def test_convert_round_trip_csv_with_covariance(tmpdir, chunk_size, num_workers):
+    """Test that the convert function works for a small CSV file."""
+    cli_args = create_argparse_object()
+    cli_args.primary_id_column_name = "provID"
+    input_file = get_test_filepath("test_convert_BCART.csv")
+    input_csv_reader = CSVDataReader(input_file, "csv", primary_id_column_name="provID")
+    input_data = input_csv_reader.read_rows()
+
+    # Since the convert CLI outputs to the current working directory, we need to change to our temp directory
+    output_file_stem_BKEP = "test_output_BKEP"
+    os.chdir(tmpdir)
+    temp_BKEP_out_file = os.path.join(tmpdir, f"{output_file_stem_BKEP}.csv")
+    # Convert our BCART CSV file to a BKEP CSV file
+    convert_cli(
+        input_file,
+        output_file_stem_BKEP,
+        "BKEP",
+        "csv",
+        chunk_size=chunk_size,
+        num_workers=num_workers,
+        cli_args=cli_args,
+    )
+
+    # Verify the conversion produced an output file
+    assert os.path.exists(temp_BKEP_out_file)
+
+    # Create a new CSV reader to read in our output BKEP file
+    output_csv_reader = CSVDataReader(temp_BKEP_out_file, "csv", primary_id_column_name="provID")
+    output_data_BKEP = output_csv_reader.read_rows()
+    # Verify that the number of rows in the input and output files are the same
+    assert_equal(len(input_data), len(output_data_BKEP))
+
+    # Now convert back to BCART so we can verify the round trip conversion.
+    output_file_stem_BCART = "test_output_BCART"
+    temp_BCART_out_file = os.path.join(tmpdir, f"{output_file_stem_BCART}.csv")
+    convert_cli(
+        temp_BKEP_out_file,
+        output_file_stem_BCART,
+        "BCART",
+        "csv",
+        chunk_size=chunk_size,
+        num_workers=num_workers,
+        cli_args=cli_args,
+    )
+
+    # Verify the conversion produced an output file
+    assert os.path.exists(temp_BCART_out_file)
+    output_csv_reader = CSVDataReader(temp_BCART_out_file, "csv", primary_id_column_name="provID")
+    output_data_BCART = output_csv_reader.read_rows()
+
+    # Test that the file has the same number of rows and columns as our input file
+    assert_equal(len(input_data), len(output_data_BCART))
+    # assert_equal(set(input_data.dtype.names), set(output_data_BCOM.dtype.names))
+
+    # Test that the columns have equivalent values, note that column order may have changed.
+    for column_name in output_data_BCART.dtype.names:
+        # For non-numeric columns, we can't use assert_allclose, so we use assert_equal.
+        if (
+            input_data[column_name].dtype.kind == "S"
+            or input_data[column_name].dtype.kind == "U"
+            or input_data[column_name].dtype.kind == "O"
+        ):
+            assert_equal(
+                input_data[column_name],
+                output_data_BCART[column_name],
+                err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype}",
+            )
+        else:
+            # Test that we convert back to our original numeric values within a small tolerance of lost precision.
+            assert_allclose(
+                input_data[column_name],
+                output_data_BCART[column_name],
                 err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype}",
             )
 
