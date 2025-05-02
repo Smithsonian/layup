@@ -45,7 +45,7 @@ def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
     )
 
 
-def unpack(res, name,orbit_para,_RESULT_DTYPES):
+def unpack(res, name, orbit_para, _RESULT_DTYPES):
     """
     unpacks a file containing a covarience matrix into assoicated uncertainties.
     e.g. name, values (x6), covariance (6x6) ---> name, value_i, sigma_value_i, ....
@@ -77,7 +77,7 @@ def unpack(res, name,orbit_para,_RESULT_DTYPES):
                 error_list[4],
                 res.state[5],
                 error_list[5],
-            )  
+            )
             + (
                 res.epoch - 2400000.5,
                 res.niter,
@@ -146,8 +146,6 @@ def unpack_cli(
             "sigma_t_p_MJD_TDB",
         ]
 
-
-
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, orbit_para, orbit_para_sigma)
 
     # read data
@@ -157,15 +155,11 @@ def unpack_cli(
         primary_id_column_name=primary_id_column_name,
     ).read_rows()
 
-
-
-
-
     # loop that parses each row/object and unpacked
     for row in data:
 
         res = parse_fit_result(row)
-        res_unpacked = unpack(res, row[0],orbit_para,_RESULT_DTYPES)
+        res_unpacked = unpack(res, row[0], orbit_para, _RESULT_DTYPES)
 
         # All results go to a single output file
         if file_format == "hdf5":
