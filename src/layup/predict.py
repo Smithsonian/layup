@@ -6,7 +6,7 @@ import numpy as np
 import pooch
 import spiceypy as spice
 
-from layup.routines import Observation, get_ephem, numpy_to_eigen, predict_sequence
+from layup.routines import FitResult, Observation, get_ephem, numpy_to_eigen, predict_sequence
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,

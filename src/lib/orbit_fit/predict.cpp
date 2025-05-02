@@ -106,21 +106,6 @@ namespace orbit_fit
         double ye = this_det.observer_position[1];
         double ze = this_det.observer_position[2];
 
-        // Eigen::Vector3d Av = this_det.a_vec;
-        // Eigen::Vector3d Dv = this_det.d_vec;
-
-        // double Ax = Av.x();
-        // double Ay = Av.y();
-        // double Az = Av.z();
-
-        // double Dx = Dv.x();
-        // double Dy = Dv.y();
-        // double Dz = Dv.z();
-
-        // 5. compare the model result to the observation.
-        //   This means dotting the model unit vector with the
-        //   A and D vectors of the observation
-
         reb_vec3d r_obs = {xe, ye, ze};
         double t_obs = jd_tdb - ephem->jd_ref;
 
