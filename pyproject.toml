@@ -21,7 +21,9 @@ dependencies = [
     "astropy",
     "pooch",
     "tqdm",
-    "sorcha @ git+https://github.com/dirac-institute/sorcha.git"
+    "sorcha @ git+https://github.com/dirac-institute/sorcha.git",
+    "jax",
+    "scipy"
 ]
 
 [project.scripts]

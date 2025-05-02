@@ -166,6 +166,16 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-pid",
+        "--primary-id-column-name",
+        help="Column name in input file that contains the primary ID of the object.",
+        dest="primary_id_column_name",
+        type=str,
+        default="provID",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -218,6 +228,7 @@ def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
 def execute(args):
     import astropy.units as u
     import re
+    from layup.predict import predict_cli
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
     import sys
@@ -273,7 +284,14 @@ def execute(args):
 
     timestep_day = (value * UNIT_DICT[unit_str]).to(u.day).value  # converting value into day units
 
-    print("Hello world this would start predict")
+    predict_cli(
+        cli_args=args,
+        start_date=start_date,
+        end_date=end_date,
+        timestep_day=timestep_day,
+        output_file=output_file,
+        cache_dir=cache_dir,
+    )
 
 
 if __name__ == "__main__":
