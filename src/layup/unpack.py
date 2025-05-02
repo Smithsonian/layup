@@ -88,7 +88,7 @@ def unpack_cli(
     for row in data:
 
         res = parse_fit_result(row)
-        res_unpacked = unpack(res, input_format, primary_id_column_name)
+        res_unpacked = unpack(res, input_format, primary_id_column_name,row[0])
 
     else:  # All results go to a single output file
         if file_format == "hdf5":
@@ -99,7 +99,7 @@ def unpack_cli(
     print(f"Data has been written to {output_file}")
 
 
-def unpack(res, input_format, primary_id_column_name):
+def unpack(res, input_format, primary_id_column_name,name):
     """
     unpacks a file containing a covarience matrix into assoicated uncertainties.
     e.g. name, values (x6), covariance (6x6) ---> name, value_i, sigma_value_i, ....
@@ -134,7 +134,7 @@ def unpack(res, input_format, primary_id_column_name):
     output = np.array(
         [
             (
-                primary_id_column_name,
+                name,
                 res.csq,
                 res.ndof,
             )
