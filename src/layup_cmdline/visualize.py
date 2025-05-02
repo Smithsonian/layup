@@ -76,30 +76,16 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "--fade",
-        help="fade out the orbits of input objects",
-        dest="fade",
-        action='store_true'
+        "--fade", help="fade out the orbits of input objects", dest="fade", action="store_true"
     )
     optional.add_argument(
-        "--planets",
-        "-p",
-        help="choose which planets to overplot",
-        dest="planets",
-        nargs='+',
-        required=False
+        "--planets", "-p", help="choose which planets to overplot", dest="planets", nargs="+", required=False
     )
     optional.add_argument(
-        "--no_planets",
-        help="overplot the planets. default is True",
-        dest="no_planets",
-        action="store_true"
+        "--no_planets", help="overplot the planets. default is True", dest="no_planets", action="store_true"
     )
     optional.add_argument(
-        "--no_sun",
-        help="overplot the sun. default is True",
-        dest="no_sun",
-        action="store_true"
+        "--no_sun", help="overplot the sun. default is True", dest="no_sun", action="store_true"
     )
     optional.add_argument(
         "-f",
@@ -153,7 +139,7 @@ def execute(args):
         num_orbs=args.n,
         no_planets=args.no_planets,
         no_sun=args.no_sun,
-        fade=args.fade
+        fade=args.fade,
     )
 
 
