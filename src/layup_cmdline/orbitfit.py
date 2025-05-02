@@ -121,6 +121,15 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-of",
+        "--output-orbit-format",
+        help="Orbit format for output file. [KEP, CART, COM, BKEP, BCART, BCOM]",
+        default="BCART",
+        dest="output_orbit_format",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -142,6 +151,9 @@ def execute(args):
     if (args.type.lower()) not in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]:
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
 
+    # check orbit format
+    if args.output_orbit_format not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        logger.error("ERROR: output orbit format must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
     # check format of input file
     if args.output_format.lower() == "csv":
         output_file = args.o + ".csv"
