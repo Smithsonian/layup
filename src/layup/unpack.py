@@ -25,22 +25,22 @@ def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
             ("csq", "f8"),  # Chi-square value
             ("ndof", "i4"),  # Number of degrees of freedom
             (state[0], "f8"),  # The first of 6 state vector elements
+            (sigma[0], "f8"),  # The first of 6 sigma vector elements
             (state[1], "f8"),
+            (sigma[1], "f8"),
             (state[2], "f8"),
+            (sigma[2], "f8"),
             (state[3], "f8"),
+            (sigma[3], "f8"),
             (state[4], "f8"),
+            (sigma[4], "f8"),
             (state[5], "f8"),  # The last of 6 state vector elements
+            (sigma[5], "f8"),  # The last of 6 state vector elements
             ("epochMJD_TDB", "f8"),  # Epoch
             ("niter", "i4"),  # Number of iterations
             ("method", "O"),  # Method used for orbit fitting
             ("flag", "i4"),  # Single-character flag indicating success of the fit
             ("FORMAT", "O"),  # Orbit format
-            (sigma[0], "f8"),  # The first of 6 state vector elements
-            (sigma[1], "f8"),
-            (sigma[2], "f8"),
-            (sigma[3], "f8"),
-            (sigma[4], "f8"),
-            (sigma[5], "f8"),  # The last of 6 state vector elements
         ]
     )
 
@@ -138,7 +138,20 @@ def unpack(res, input_format, primary_id_column_name):
                 res.csq,
                 res.ndof,
             )
-            + tuple(res.state[i] for i in range(6))  # Flat state vector
+            + (
+                res.state[0],
+                error_list[0],
+                res.state[1],
+                error_list[1],
+                res.state[2],
+                error_list[2],
+                res.state[3],
+                error_list[3],
+                res.state[4],
+                error_list[4],
+                res.state[5],
+                error_list[5],
+            )  # Corrected sigma values
             + (
                 res.epoch - 2400000.5,
                 res.niter,
@@ -146,14 +159,6 @@ def unpack(res, input_format, primary_id_column_name):
                 res.flag,
                 "BCART",  # The base format returned by the C++ code
             )
-            + (
-                error_list[0],
-                error_list[1],
-                error_list[2],
-                error_list[3],
-                error_list[4],
-                error_list[5],
-            )  # Corrected sigma values
         ],
         dtype=_RESULT_DTYPES,
     )
