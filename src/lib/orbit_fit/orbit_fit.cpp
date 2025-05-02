@@ -730,8 +730,6 @@ namespace orbit_fit
         struct reb_particle p1;
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> final_cov;
 
-	printf("objID: %s\n", detections_full[0].objID.c_str());
-
         for (size_t i = 0; i < idx.size(); i++)
         {
 
