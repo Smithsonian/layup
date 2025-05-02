@@ -16,6 +16,7 @@ correct_auxciliary_URLs = {
     "naif0012.tls": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls",
     "ObsCodes.json.gz": "https://minorplanetcenter.net/Extended_Files/obscodes_extended.json.gz",
     "pck00010.pck": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc",
+    "debias_hires2018.tgz": "ftp://ssd.jpl.nasa.gov/pub/ssd/debias/debias_hires2018.tgz",
 }
 correct_auxciliary_filenames = [
     "de440s.bsp",
@@ -29,6 +30,8 @@ correct_auxciliary_filenames = [
     "ObsCodes.json.gz",
     "ObsCodes.json",
     "pck00010.pck",
+    "debias_hires2018.tgz",
+    "bias.dat",
 ]
 
 ##################################################################################################################################
