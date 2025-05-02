@@ -183,8 +183,8 @@ def orbitfit(data, cache_dir: str, initial_guess=None, num_workers=1, primary_id
         data,
         num_workers,
         _orbitfit,
-        primary_id_column_name=primary_id_column_name,
         cache_dir=cache_dir,
+        primary_id_column_name=primary_id_column_name,
         initial_guess=initial_guess,
     )
 
@@ -220,11 +220,9 @@ def orbitfit_cli(
 
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
-        overwrite = cli_args.force
         guess_file = Path(cli_args.g) if cli_args.g is not None else None
     else:
         cache_dir = None
-        overwrite = False
         guess_file = None
 
     _primary_id_column_name = cli_args.primary_id_column_name
@@ -259,10 +257,6 @@ def orbitfit_cli(
                 if output_file_stem_flagged.endswith(".h5")
                 else Path(f"{output_file_stem_flagged}.h5")
             )
-
-        if output_file_flagged.exists() and not overwrite:
-            logger.error(f"Output flagged file {output_file_flagged} already exists")
-            raise FileExistsError(f"Output flagged file {output_file_flagged} already exists")
 
     if num_workers < 0:
         num_workers = os.cpu_count()
@@ -303,7 +297,6 @@ def orbitfit_cli(
 
     chunks = _create_chunks(reader, chunk_size)
 
-    first_write = True  # Flag to check if this is the first write to the output file
     for chunk in chunks:
         data = reader.read_objects(chunk)
         initial_guess = None
@@ -315,24 +308,11 @@ def orbitfit_cli(
 
         fit_orbits = orbitfit(
             data,
-            initial_guess=initial_guess,
             cache_dir=cache_dir,
+            initial_guess=initial_guess,
             num_workers=num_workers,
             primary_id_column_name=_primary_id_column_name,
         )
-
-        # Before writing our first chunk, check if the output file already exists.
-        if first_write and os.path.exists(output_file):
-            if overwrite:
-                logger.warning(f"Output file {output_file} already exists. Overwriting.")
-                os.remove(output_file)
-                if cli_args.separate_flagged and os.path.exists(output_file_flagged):
-                    logger.warning(f"Output file {output_file_flagged} already exists. Overwriting.")
-                    os.remove(output_file_flagged)
-            else:
-                logger.error(f"Output file {output_file} already exists")
-                raise FileExistsError(f"Output file {output_file} already exists")
-            first_write = False
 
         if cli_args.separate_flagged:
             # Split the results into two files: one for successful fits and one for failed fits
