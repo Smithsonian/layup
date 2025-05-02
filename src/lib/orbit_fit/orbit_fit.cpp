@@ -711,12 +711,6 @@ namespace orbit_fit
     FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
     {
 
-        std::vector<double> times_full(detections_full.size());
-        for (int i = 0; i < times_full.size(); i++)
-        {
-            times_full[i] = detections_full[i].epoch;
-        }
-
         size_t start_i = detections_full.size() - 1;
 
         // First find a triple of detections in the full data set.
@@ -795,10 +789,6 @@ namespace orbit_fit
             std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
             std::vector<Observation> detections(first_d, last_d);
 
-            std::vector<double>::const_iterator first_t = times_full.begin() + start_index;
-            std::vector<double>::const_iterator last_t = times_full.begin() + end_index;
-            std::vector<double> times(first_t, last_t);
-
             std::vector<residuals> resid_vec(detections.size());
             std::vector<partials> partials_vec(detections.size());
 
@@ -808,9 +798,6 @@ namespace orbit_fit
 
             Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
             int flag;
-            // size_t iters;
-
-            // struct reb_particle p1;
 
             p1.x = res.value()[0].state[0];
             p1.y = res.value()[0].state[1];
@@ -868,10 +855,6 @@ namespace orbit_fit
             first_d = detections_full.begin() + detections_full.size() - num;
             last_d = detections_full.end();
             std::vector<Observation> detections2(first_d, last_d);
-
-            first_t = times_full.begin() + times_full.size() - num;
-            last_t = times_full.end();
-            std::vector<double> times2(first_t, last_t);
 
             std::vector<residuals> resid_vec2(detections2.size());
             std::vector<partials> partials_vec2(detections2.size());
