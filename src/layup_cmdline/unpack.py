@@ -24,7 +24,7 @@ def main():
     )
 
     optional = parser.add_argument_group("Optional arguments")
-    
+
     optional.add_argument(
         "-f",
         "--force",
@@ -49,7 +49,6 @@ def main():
         default="unpacked_output",
         required=False,
     )
-
 
     args = parser.parse_args()
 
@@ -79,11 +78,9 @@ def execute(args):
 
     unpack_cli(
         input=args.input,
-        input_type = args.i,
-        output_file= output_file,
+        file_format=args.i,
+        output_file_stem=args.o,
     )
-   
-
 
 
 if __name__ == "__main__":
