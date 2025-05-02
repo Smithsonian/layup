@@ -720,7 +720,7 @@ namespace orbit_fit
         size_t start_i = detections_full.size() - 1;
 
         // First find a triple of detections in the full data set.
-        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 100.0, 2.0, 100.0, 10, start_i);
+        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 0.5, 100.0, 0.01, 100.0, 3, start_i);
 
         int success = 1;
         size_t iters;
@@ -756,10 +756,25 @@ namespace orbit_fit
                 continue;
             }
 
+	    printf("gauss rho: %le\n", res.value()[0].root);
+
+	    // This bit is for testing TNOs.
+	    double inner_root_thresh = 0.1;
+	    double outer_root_thresh = 1000.;	    
+	    if(res.value()[0].root>outer_root_thresh){
+		printf("Too far!\n");
+		continue;
+	    }
+
+	    if(res.value()[0].root<=inner_root_thresh){
+		printf("Too close!\n");
+		continue;
+	    }
+	    
             // Now get a segment of data that spans the triplet and that uses up to
             // a certain number of points, if they are available in a time window.
             // This should be a parameter
-            size_t num = 40;
+            size_t num = 1000;
 
             size_t curr_num = id2 - id1 + 1;
 
@@ -833,7 +848,7 @@ namespace orbit_fit
                 iter_max);
 
             dof = 2 * detections.size() - 6;
-
+	    /*
             if (flag == 0)
             {
                 printf("flag: %d iters: %lu dof: %lu chi2: %lf %lu\n", flag, iters, dof, chi2_final, i);
@@ -844,6 +859,7 @@ namespace orbit_fit
                 printf("flag: %d iters: %lu, stage 2 failed.  Try another triplet %lu\n", flag, iters, i);
                 continue;
             }
+	    */
 
             Eigen::MatrixXd obs_cov(6, 6);
             PredictResult pred_first = predict(

@@ -40,7 +40,7 @@ def process_data(data, n_workers, func, **kwargs):
         return data
 
     # Divide our data into blocks to be processed by each worker
-    block_size = max(1, int(len(data) / n_workers))
+    block_size = max(1, int(np.ceil(len(data) / n_workers)))
     # Create a list of tuples of the form (start, end) where start is the starting index of the block
     # and end is the last index of the block + 1.
     blocks = [(i, min(i + block_size, len(data))) for i in range(0, len(data), block_size)]
@@ -85,6 +85,7 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
     if len(data) == 0:
         return data
 
+    kwargs["primary_id_column_name"] = primary_id_column_name
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         # Create a future applying the function to each block of data for a given object id
         futures = [
