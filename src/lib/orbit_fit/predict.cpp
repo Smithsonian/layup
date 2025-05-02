@@ -12,6 +12,7 @@ extern "C"
 
 #include "predict_result.cpp"
 
+using std::cout;
 using namespace Eigen;
 
 
@@ -179,8 +180,12 @@ namespace orbit_fit
             B(1, j) = dy_resid[j];
         }
 
+        std::cout << B << std::endl;
+
         // Eigen::MatrixXd obs_cov(6, 6);
         obs_cov = B * cov * B.transpose();
+
+        std::cout << obs_cov << std::endl;
 
         assist_free(ax);
         reb_simulation_free(r);
@@ -198,21 +203,32 @@ namespace orbit_fit
         return result;
     }
 
+    PredictResult predict_from_fit_result(struct assist_ephem *ephem, FitResult fit, Observation obs_position, Eigen::MatrixXd &cov, Eigen::MatrixXd &obs_cov)
+    {
+        struct reb_particle particle;
+        particle.x = fit.state[0];
+        particle.y = fit.state[1];
+        particle.z = fit.state[2];
+        particle.vx = fit.state[3];
+        particle.vy = fit.state[4];
+        particle.vz = fit.state[5];
+
+        PredictResult res = predict(
+            ephem,
+            particle,
+            fit.epoch,
+            obs_position,
+            cov,
+            obs_cov
+        );
+    }
+
     std::vector<PredictResult> predict_sequence(struct assist_ephem *ephem,
-                                        std::array<double, 6> object_state,
+                                        FitResult fit,
                                         std::vector<Observation> &detections,
                                         Eigen::MatrixXd &cov)
     {
         std::vector<PredictResult> results;
-
-        // Set up the initial conditions for the particle
-        struct reb_particle particle;
-        particle.x = object_state[0];
-        particle.y = object_state[1];
-        particle.z = object_state[2];
-        particle.vx = object_state[3];
-        particle.vy = object_state[4];
-        particle.vz = object_state[5];
 
         Eigen::MatrixXd obs_cov(6, 6);
 
@@ -220,7 +236,7 @@ namespace orbit_fit
         {
             double this_epoch = detections[i].epoch;
             Observation this_det = detections[i];
-            PredictResult this_result = predict(ephem, particle, this_epoch, this_det, cov, obs_cov);
+            PredictResult this_result = predict_from_fit_result(ephem, fit, this_det, cov, obs_cov);
             results.push_back(this_result);
         }
 

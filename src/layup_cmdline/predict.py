@@ -276,6 +276,7 @@ def execute(args):
 
     predict_cli(
         cli_args=args,
+        input_file=args.input,
         start_date=start_date,
         end_date=end_date,
         timestep_day=timestep_day,
