@@ -57,6 +57,14 @@ def main():
         default=10000,
         required=False,
     )
+    optional.add_argument(
+        "-d",
+        "--debias",
+        action="store_true",
+        help="Perform dibiasing of the input astrometry based on catalog and epoch.",
+        required=False,
+        dest="debias",
+    )
 
     optional.add_argument(
         "-f",

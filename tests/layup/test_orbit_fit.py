@@ -33,6 +33,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
             self.ar_data_file_path = None
             self.primary_id_column_name = "provID"
             self.separate_flagged = False
+            self.force = False
+            self.debias = False
             self.g = g  # Command line argument for initial guesses file
 
     # Now run the orbit_fit cli with overwrite set to True
