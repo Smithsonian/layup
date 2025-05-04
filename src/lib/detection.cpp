@@ -81,6 +81,7 @@ namespace orbit_fit
     // Now, Observation has private constructors and public static factory methods.
     struct Observation
     {
+	std::string objID; 	
         double epoch; // utc jd
         ObservationType observation_type;
         std::array<double, 3> observer_position;
