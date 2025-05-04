@@ -675,6 +675,62 @@ namespace orbit_fit
         return res;
     }
 
+        // Go through the detections in reverse order, looking for
+    // a set of three detections such that each adjacent pair is
+    // separated by more than interval_min and less than interval_max.
+    std::vector<std::vector<size_t>> IOD_indices_forward(std::vector<Observation> &detections,
+							 double interval0_min,
+							 double interval0_max,
+							 double interval1_min,
+							 double interval1_max,
+							 size_t max_count,
+							 size_t i_start)
+    {
+
+        size_t cnt = 0;
+        std::vector<std::vector<size_t>> res;
+	size_t ndets = detections.size();
+        for (int i = i_start; i <= ndets-3; i++)
+        {
+
+            size_t idx_i = (size_t)i;
+            Observation d0 = detections[idx_i];
+            double t0 = d0.epoch;
+
+            for (int j = i + 1; j <= ndets-2; j++)
+            {
+
+                size_t idx_j = (size_t)j;
+                Observation d1 = detections[j];
+                double t1 = d1.epoch;
+
+                if (fabs(t1 - t0) < interval0_min || fabs(t1 - t0) >= interval0_max)
+                    continue;
+
+                for (int k = j + 1; k <= ndets-1; k++)
+                {
+
+                    size_t idx_k = (size_t)k;
+                    Observation d2 = detections[idx_k];
+                    double t2 = d2.epoch;
+
+                    if (fabs(t2 - t1) < interval1_min || fabs(t2 - t1) >= interval1_max)
+                        continue;
+
+                    cnt++;
+
+                    if (cnt > max_count)
+                        return res;
+
+                    res.push_back({idx_i, idx_j, idx_k});
+                    // printf("%lu %lu %lu %lf %lf %lf\n", idx_k, idx_j, idx_i, t0, t1, t2);
+                }
+            }
+        }
+
+        return res;
+    }
+
     // Initial orbit and covariance matrix
     // Table of times, observations and uncertainties:
     // x, y, z unit vectors; dRA, dDec (and possibly covariance)
@@ -998,8 +1054,6 @@ namespace orbit_fit
         if (flag == 0)
         {
 
-	    printf("run_from_vector_with_initial_guess flag: %d\n", flag);
-
             Eigen::MatrixXd obs_cov(2, 2);
             predict(
                 ephem,
@@ -1050,17 +1104,60 @@ namespace orbit_fit
         }
     }
 
+    std::pair<size_t, size_t> adjust_limits(size_t curr_num, size_t num, size_t dfs, size_t id0, size_t id1, size_t id2){
+	    
+	size_t start_index;
+	size_t end_index;
+	if (curr_num >= num)
+            {
+                // We already have enough data and
+                // don't need to move the limits
+                start_index = id0;
+                end_index = id1;
+            }
+            else if ((dfs - id0) >= num)
+		{
+		    // There are enough points if we include
+		    // only the later points, we only need to
+		    // later limit.
+		    start_index = id0;
+		    end_index = id0 + num;
+		}
+            else if (dfs >= num)
+		{
+		    end_index = dfs;
+		    start_index = dfs - num;
+            }
+            else
+		{
+		    start_index = 0;
+		    end_index = dfs;
+		}
+	return std::make_pair(start_index, end_index);
+    }
+
+    std::vector<Observation> select_detections(std::vector<Observation>& detections_full, size_t start_index, size_t end_index){
+	std::vector<Observation>::const_iterator first_d = detections_full.begin() + start_index;
+	std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
+	std::vector<Observation> selected_detections(first_d, last_d);
+	return selected_detections;
+    }
+    
     FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
     {
 
-        size_t start_i = detections_full.size() - 1;
+        size_t end_i = detections_full.size() - 1;
+
+	size_t start_i = 0;
 
 	printf("run_from_vector %lu\n", start_i);
-	
 
         // First find a triple of detections in the full data set.
-        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 0.5, 100.0, 0.01, 100.0, 3, start_i);
-
+        //std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);
+        std::vector<std::vector<size_t>> idx = IOD_indices_forward(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);	
+        std::vector<std::vector<size_t>> idx_bwd = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, end_i);
+	idx.insert(idx.end(), idx_bwd.begin(), idx_bwd.end());
+	
         int success = 1;
         size_t iters;
         double chi2_final;
@@ -1100,64 +1197,63 @@ namespace orbit_fit
             // Now get a segment of data that spans the triplet and that uses up to
             // a certain number of points, if they are available in a time window.
             // This should be a parameter
-            size_t num = 40;
-
-	    // This part should be a function that returns start_index and
-	    // end_index.
+	    size_t dfs = detections_full.size();
             size_t curr_num = id2 - id1 + 1;
 
-            size_t start_index;
-            size_t end_index;
-            if (curr_num >= num)
-            {
-                // We already have enough data and
-                // don't need to move the limits
-                start_index = id0;
-                end_index = id1;
-            }
-            else if ((detections_full.size() - id0) >= num)
-            {
-                // There are enough points if we include
-                // only the later points, we only need to
-                // later limit.
-                start_index = id0;
-                end_index = id0 + num;
-            }
-            else if (detections_full.size() >= num)
-            {
-                end_index = detections_full.size();
-                start_index = detections_full.size() - num;
-            }
-            else
-            {
-                start_index = 0;
-                end_index = detections_full.size();
-            }
+	    std::pair<size_t, size_t> limits;
+	    size_t num;
 
-            std::vector<Observation>::const_iterator first_d = detections_full.begin() + start_index;
-            std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
-            std::vector<Observation> detections(first_d, last_d);
+	    FitResult guess = res.value()[0];
+	    std::optional<FitResult> fit_res;
 
-	    std::optional<FitResult> first_fit_res = run_from_vector_with_initial_guess(ephem, res.value()[0], detections);
-            if (!first_fit_res.has_value()){
+	    num = 10;		
+	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
+            size_t start_index = limits.first;
+            size_t end_index = limits.second;
+
+	    printf("limits %lu %lu\n", start_index, end_index);
+
+	    std::vector<Observation> detections = select_detections(detections_full, start_index, end_index);
+	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections);
+            if (!fit_res.has_value()){
 		continue;
 	    }
 
-	    FitResult ffr = first_fit_res.value();
+	    guess = fit_res.value();
 
-	    // Should check if num is already larger than the full set of detections.
-            num = detections_full.size();
+	    curr_num = num;
+            num = 50;
+	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
+	    start_index = limits.first;
+            end_index = limits.second;
 
-            first_d = detections_full.begin() + detections_full.size() - num;
-            last_d = detections_full.end();
-            std::vector<Observation> detections2(first_d, last_d);
+	    printf("limits %lu %lu\n", start_index, end_index);
 
-	    std::optional<FitResult> second_fit_res = run_from_vector_with_initial_guess(ephem, ffr, detections2);
-            if (!second_fit_res.has_value()){
+	    std::vector<Observation> detections2 = select_detections(detections_full, start_index, end_index);
+
+	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections2);
+            if (!fit_res.has_value()){
 		continue;
 	    }
 
-	    FitResult sfr = second_fit_res.value();
+	    guess = fit_res.value();
+
+	    curr_num = num;
+            num = dfs;
+	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
+	    start_index = limits.first;
+            end_index = limits.second;
+
+	    printf("limits %lu %lu\n", start_index, end_index);
+
+	    std::vector<Observation> detections3 = select_detections(detections_full, start_index, end_index);
+
+	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections3);
+            if (!fit_res.has_value()){
+		continue;
+	    }
+	    
+	    FitResult sfr = fit_res.value();
 
 	    int flag = sfr.flag;
 	    
@@ -1169,12 +1265,14 @@ namespace orbit_fit
                 printf("flag: %d iters: %lu, stage 3 failed.  Try another triplet %lu\n", flag, sfr.niter, i);
                 continue;
             }else{
+		printf("SUCCESS\n\n");
+		success = 0;
 		break;
 	    }
         }
         if (success != 0)
         {
-            printf("fully failed\n");
+            printf("fully failed\n\n");
             fflush(stdout);
         }
 
