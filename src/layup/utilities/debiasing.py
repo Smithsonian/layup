@@ -75,7 +75,7 @@ def generate_bias_dict(cache_dir=None):
     return bias_dict
 
 
-def debias(ra, dec, epoch, catalog, bias_dict, nside=256):
+def debias(ra, dec, epoch_jd_tdb, catalog, bias_dict, nside=256):
 
     catalog_key = mpc_catalogs[catalog]
     if catalog_key not in bias_dict.keys():
@@ -91,7 +91,7 @@ def debias(ra, dec, epoch, catalog, bias_dict, nside=256):
     pm_dec = bias_dict[catalog_key]["pm_dec"][idx]
 
     # time from epoch in Julian years
-    dt_jy = (epoch - spice.j2000()) / 365.25
+    dt_jy = epoch_jd_tdb / 365.25
 
     # bias correction
     ddec = dec_off + dt_jy * pm_dec / 1000
