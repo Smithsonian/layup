@@ -12,9 +12,10 @@ from numpy.lib import recfunctions as rfn
 from layup.routines import Observation, get_ephem, run_from_vector, run_from_vector_with_initial_guess
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
+    create_chunks,
+    get_cov_columns,
     parse_fit_result,
     process_data_by_id,
-    create_chunks,
 )
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
@@ -51,8 +52,7 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("flag", "i4"),  # Single-character flag indicating success of the fit
             ("FORMAT", "O"),  # Orbit format
         ]
-        + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
-        + [(f"cov_{i}", "f8") for i in range(10, 36)]  # Flat covariance matrix (remaining 26 elements)
+        + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
     )
 
 

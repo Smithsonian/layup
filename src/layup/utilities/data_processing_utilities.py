@@ -97,6 +97,20 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
         return np.concatenate([future.result() for future in futures])
 
 
+def get_cov_columns():
+    """
+    Get the covariance columns from a structured numpy array representing our
+    orbit fit output result.
+
+    Returns
+    -------
+    cov_columns : list[str]
+        The covariance columns in the data.
+    """
+    # Get the covariance columns from the data
+    return [f"cov_0{i}" for i in range(10)] + [f"cov_{i}" for i in range(10, 36)]
+
+
 def has_cov_columns(data):
     """
     Check if the data has covariance columns.
@@ -112,27 +126,7 @@ def has_cov_columns(data):
         True if the data has covariance columns, False otherwise.
     """
     # Check if the data has the expected covariance columns
-    return all(f"cov_0{i}" in data.dtype.names for i in range(10)) and all(
-        f"cov_{i}" in data.dtype.names for i in range(10, 36)
-    )
-
-
-def flatten_cov(cov):
-    """
-    Flatten the covariance matrix into a 1D array.
-
-    Parameters
-    ----------
-    cov : numpy array
-        The covariance matrix to flatten.
-
-    Returns
-    -------
-    cov_flat : numpy array
-        The flattened covariance matrix.
-    """
-    # Flatten the covariance matrix into a 1D array
-    return np.concatenate([cov[i, j] for i in range(6) for j in range(6)])
+    return all(col in data.dtype.names for col in get_cov_columns())
 
 
 def parse_cov(row):
@@ -152,9 +146,7 @@ def parse_cov(row):
     if not has_cov_columns(row):
         raise ValueError("The row does not have the expected covariance columns.")
     # Construct the flattened covariance matrix from the columns of the fit result
-    return np.array([row[f"cov_0{i}"] for i in range(10)] + [row[f"cov_{i}"] for i in range(10, 36)]).reshape(
-        (6, 6)
-    )
+    return np.array([row[col] for col in get_cov_columns()]).reshape((6, 6))
 
 
 def parse_fit_result(fit_result_row):
@@ -187,9 +179,7 @@ def parse_fit_result(fit_result_row):
     res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
 
     # Construct the flattened covariance matrix from the columns of the fit result
-    res.cov = np.array(
-        [fit_result_row[f"cov_0{i}"] for i in range(10)] + [fit_result_row[f"cov_{i}"] for i in range(10, 36)]
-    )
+    res.cov = np.array([fit_result_row[col] for col in get_cov_columns()])
     # The number of iterations used during the fitting process.
     res.niter = fit_result_row["niter"]
     return res
