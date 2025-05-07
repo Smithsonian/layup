@@ -156,11 +156,13 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
     "chunk_size, num_workers, output_format",
     [
         (10_0000, 1, "BKEP"),
+        (10_0000, 1, "BCOM"),
+        (10_0000, 1, "COM"),
         (10_0000, 1, "KEP"),
         (10_0000, 1, "CART"),
     ],
 )
-def test_convert_round_trip_csv_with_covariance(tmpdir, chunk_size, num_workers, output_format):
+def test_convert_BCART_csv_with_covariance(tmpdir, chunk_size, num_workers, output_format):
     """Test that the convert function works for a small CSV file."""
     cli_args = create_argparse_object()
     cli_args.primary_id_column_name = "provID"
@@ -169,7 +171,8 @@ def test_convert_round_trip_csv_with_covariance(tmpdir, chunk_size, num_workers,
     input_data = input_csv_reader.read_rows()
 
     # Since the convert CLI outputs to the current working directory, we need to change to our temp directory
-    output_file_stem = "test_output_BKEP"
+    output_file_stem = f"test_output_{output_format}"
+    # tmpdir = "/Users/wilsonbb/lincc/layup"
     os.chdir(tmpdir)
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
     # Convert our BCART CSV file to a different format CSV file
@@ -232,8 +235,6 @@ def test_convert_round_trip_csv_with_covariance(tmpdir, chunk_size, num_workers,
             assert_allclose(
                 input_data[column_name],
                 output_data_BCART[column_name],
-                rtol=0.001,  # TODO This is a big tolerance??? Works fine for BKEP but needed this for CART?
-                # atol=0.01,
                 err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype}",
             )
 
