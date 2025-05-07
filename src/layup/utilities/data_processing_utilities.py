@@ -108,7 +108,7 @@ def get_cov_columns():
         The covariance columns in the data.
     """
     # Get the covariance columns from the data
-    return [f"cov_0{i}" for i in range(10)] + [f"cov_{i}" for i in range(10, 36)]
+    return [f"cov_{i}{j}" for i in range(6) for j in range(6)]
 
 
 def has_cov_columns(data):
@@ -129,24 +129,28 @@ def has_cov_columns(data):
     return all(col in data.dtype.names for col in get_cov_columns())
 
 
-def parse_cov(row):
+def parse_cov(orbit_row, flatten=False):
     """
     Parse the covariance matrix from a structured numpy array representing our
     orbit fit output result.
 
     Parameters
     ----------
-    row : numpy structured array
-        The row of the structured array representing the orbit fit result.
+    orbit_row : numpy structured array
+        The row of the structured array representing an orbit.
+    flatten: bool, optional
+        If True, return a flattened covariance matrix. If False, return a 6x6 covariance matrix.
+        Default is False.
     Returns
     -------
     cov : numpy array
         The parsed covariance matrix.
     """
-    if not has_cov_columns(row):
+    if not has_cov_columns(orbit_row):
         raise ValueError("The row does not have the expected covariance columns.")
     # Construct the flattened covariance matrix from the columns of the fit result
-    return np.array([row[col] for col in get_cov_columns()]).reshape((6, 6))
+    res = np.array([orbit_row[col] for col in get_cov_columns()])
+    return res if flatten else res.reshape((6, 6))
 
 
 def parse_fit_result(fit_result_row):

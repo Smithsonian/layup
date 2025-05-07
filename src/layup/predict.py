@@ -6,7 +6,7 @@ import numpy as np
 import pooch
 import spiceypy as spice
 
-from layup.routines import FitResult, Observation, get_ephem, numpy_to_eigen, predict_sequence
+from layup.routines import Observation, get_ephem, numpy_to_eigen, predict_sequence
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,
@@ -71,15 +71,7 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     predict_results = []
     for row in data:
         fit = parse_fit_result(row)
-
-        cov = []
-        for i in range(10):
-            cov.append(row[f"cov_0{i}"])
-        for i in range(10, 36):
-            cov.append(row[f"cov_{i}"])
-        cov = np.array(cov)
-
-        pred_res = predict_sequence(get_ephem(kernels_loc), fit, observations, numpy_to_eigen(cov, 6, 6))
+        pred_res = predict_sequence(get_ephem(kernels_loc), fit, observations, numpy_to_eigen(fit.cov, 6, 6))
 
         for pred in pred_res:
             predict_results.append(

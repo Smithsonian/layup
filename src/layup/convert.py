@@ -8,7 +8,7 @@ from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.simulation_setup import _create_assist_ephemeris
 
-from layup.utilities.data_processing_utilities import has_cov_columns, process_data
+from layup.utilities.data_processing_utilities import get_cov_columns, has_cov_columns, process_data
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.layup_configs import LayupConfigs
@@ -93,12 +93,11 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance):
     default_column_dtypes = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
     if has_covariance:
         # Flattened 6x6 covariance matrix
-        default_column_dtypes += ["<f8"] * 36
+        default_column_dtypes += ["f8"] * 36
     for format in required_column_names:
         # Add the covariance columns to the required column names
         if has_covariance:
-            required_column_names[format] += [f"cov_0{i}" for i in range(10)]
-            required_column_names[format] += [f"cov_{i}" for i in range(10, 36)]
+            required_column_names[format] += get_cov_columns()
 
     return required_column_names, default_column_dtypes
 
