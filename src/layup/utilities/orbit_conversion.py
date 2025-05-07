@@ -5,10 +5,12 @@ and adapts them to jax, implementing the autograd jacobians needed for this proc
 
 import jax
 import jax.numpy as jnp
+import numba
+import numpy as np
 from jax import config
 from jax.scipy.linalg import block_diag
-import numpy as np
-import numba
+
+from layup.utilities.data_processing_utilities import parse_cov
 
 config.update("jax_enable_x64", True)
 
@@ -672,3 +674,63 @@ def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB,
 
     covar = jj_rotation @ jac_inv @ covariance @ jac_inv.T @ jj_rotation.T
     return covar
+
+
+def parse_covariance_row_to_CART(row, gm_total, gm_sun):
+    """
+    Converts a covariance matrix cartesian format.
+
+    If the input matrix is in in [CART, COM, KEP] we convert it to CART.
+
+    If the input matrix is in [BCART, BCOM, BKEP] we convert it to BCART.
+
+    Parameters
+    ----------
+    row : numpy structured array
+        The row of data to convert.
+    gm_total : float
+        The gravitational parameter for the total system.
+    gm_sun : float
+        The gravitational parameter for the Sun.
+    """
+    init_format = row["FORMAT"]
+    if init_format not in ["CART", "BCART", "COM", "BCOM", "KEP", "BKEP"]:
+        raise ValueError(f"Unknown format: {init_format}")
+
+    # Parse our 6x6 covariance matrix
+    cov = parse_cov(row)
+
+    # Converts the covariance row and a covariance matrix into BCART
+    if init_format == "BCART" or init_format == "CART":
+        # It is simply a translation of the covariance matrix
+        return cov
+    elif init_format in ["COM", "BCOM"]:
+        # Convert the covariance matrix from COM/BCOM to CART/BCART
+        mu = gm_total if init_format == "BCOM" else gm_sun
+        cov = covariance_xyz_cometary(
+            mu,
+            row["q"],
+            row["e"],
+            # Convert from degrees to radians
+            row["inc"] * np.pi / 180.0,
+            row["node"] * np.pi / 180.0,
+            row["argPeri"] * np.pi / 180.0,
+            row["t_p_MJD_TDB"],
+            row["epochMJD_TDB"],
+            cov,
+        )
+    elif init_format in ["KEP", "BKEP"]:
+        # Convert the covariance matrix from BKEP to BCART/CART
+        a = row["a"]
+        e = row["e"]
+        # Convert from degrees to radians
+        incl = row["inc"] * np.pi / 180.0
+        longnode = row["node"] * np.pi / 180.0
+        argperi = row["argPeri"] * np.pi / 180.0
+        M = row["ma"] * np.pi / 180
+        if np.pi < M:
+            M -= 2 * np.pi
+
+        mu = gm_total if init_format == "BKEP" else gm_sun
+        cov = covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, row["epochMJD_TDB"], cov)
+    return cov

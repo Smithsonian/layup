@@ -97,6 +97,66 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
         return np.concatenate([future.result() for future in futures])
 
 
+def has_cov_columns(data):
+    """
+    Check if the data has covariance columns.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to check.
+
+    Returns
+    -------
+    bool
+        True if the data has covariance columns, False otherwise.
+    """
+    # Check if the data has the expected covariance columns
+    return all(f"cov_0{i}" in data.dtype.names for i in range(10)) and all(
+        f"cov_{i}" in data.dtype.names for i in range(10, 36)
+    )
+
+
+def flatten_cov(cov):
+    """
+    Flatten the covariance matrix into a 1D array.
+
+    Parameters
+    ----------
+    cov : numpy array
+        The covariance matrix to flatten.
+
+    Returns
+    -------
+    cov_flat : numpy array
+        The flattened covariance matrix.
+    """
+    # Flatten the covariance matrix into a 1D array
+    return np.concatenate([cov[i, j] for i in range(6) for j in range(6)])
+
+
+def parse_cov(row):
+    """
+    Parse the covariance matrix from a structured numpy array representing our
+    orbit fit output result.
+
+    Parameters
+    ----------
+    row : numpy structured array
+        The row of the structured array representing the orbit fit result.
+    Returns
+    -------
+    cov : numpy array
+        The parsed covariance matrix.
+    """
+    if not has_cov_columns(row):
+        raise ValueError("The row does not have the expected covariance columns.")
+    # Construct the flattened covariance matrix from the columns of the fit result
+    return np.array([row[f"cov_0{i}"] for i in range(10)] + [row[f"cov_{i}"] for i in range(10, 36)]).reshape(
+        (6, 6)
+    )
+
+
 def parse_fit_result(fit_result_row):
     """
     Parse the initial guess data from a structured numpy array representing our
