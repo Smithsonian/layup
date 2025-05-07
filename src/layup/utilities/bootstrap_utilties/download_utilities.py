@@ -88,6 +88,11 @@ def _decompress(fname: str, action: str, pup: pooch.Pooch) -> None:  # pragma: n
     if os.path.splitext(fname)[-1] in known_extentions:
         pooch.Decompress(method="auto", name=os.path.splitext(fname)[0]).__call__(fname, action, pup)
 
+    tar_extentions = [".tar.gz", ".tgz"]
+    if os.path.splitext(fname)[-1] in tar_extentions:
+        print(f"Trying to decompress tar file: {fname}")
+        pooch.Untar(extract_dir=".").__call__(fname, action, pup)
+
 
 def _remove_files(aux_config: AuxiliaryConfigs, retriever: pooch.Pooch) -> None:
     """Utility to remove all the files tracked by the pooch retriever. This includes
