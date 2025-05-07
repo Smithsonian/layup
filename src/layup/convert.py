@@ -104,17 +104,14 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance):
     return required_column_names, default_column_dtypes
 
 
-def parse_covariance_row(row, cov, ephem, gm_total, gm_sun):
+def parse_covariance_row_to_BCART(row, init_format, cov, ephem, gm_total, gm_sun):
     # Converts the covariance row and a covariance matrix into BCART
-    init_format = row["FORMAT"]
     if init_format == "BCART" or init_format == "CART":
         # It is simply a translation of the covariance matrix
         return cov
     elif init_format == "BCOM":
         # Convert the covariance matrix from BCOM to BCART
-
-        # tp = epochJD_TDB - M * np.sqrt(row["a"] ** 3 / gm_sun) - 2400000.5  # jd to mjd
-
+        # TODO how to actually handle this.
         cov = covariance_xyz_cometary(
             gm_total,
             row["q"],
@@ -128,22 +125,15 @@ def parse_covariance_row(row, cov, ephem, gm_total, gm_sun):
         )
     elif init_format == "COM":
         # Convert the covariance matrix from COM to BCART
-        sun = ephem.get_particle("Sun", row["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-        row["x"] -= sun.x
-        row["y"] -= sun.y
-        row["z"] -= sun.z
-        row["xdot"] -= sun.vx
-        row["ydot"] -= sun.vy
-        row["zdot"] -= sun.vz
-
-        cov = covariance_cometary_xyz(
+        # TODO actually handle this
+        cov = covariance_xyz_cometary(
             gm_sun,
-            row["x"],
-            row["y"],
-            row["z"],
-            row["xdot"],
-            row["ydot"],
-            row["zdot"],
+            row["q"],
+            row["e"],
+            row["inc"],
+            row["node"],
+            row["argPeri"],
+            row["tp"],
             row["epochMJD_TDB"],
             cov,
         )
@@ -153,7 +143,7 @@ def parse_covariance_row(row, cov, ephem, gm_total, gm_sun):
             # TODO how to appropriately use the Sun?
             sun = ephem.get_particle("Sun", row["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
         # Convert the covariance matrix from BKEP to BCART
-        a = row["a"]  # (row["a"] * (1 - row["e"]),)
+        a = row["a"]
         e = row["e"]
         incl = row["inc"] * np.pi / 180.0
         longnode = row["node"] * np.pi / 180.0
@@ -164,6 +154,7 @@ def parse_covariance_row(row, cov, ephem, gm_total, gm_sun):
 
         mu = gm_total if init_format == "BKEP" else gm_sun
         cov = covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, row["epochMJD_TDB"], cov)
+
     else:
         raise ValueError(f"Invalid input format: {init_format}")
     return cov
@@ -219,6 +210,15 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         if d["FORMAT"] in ["BCART", "CART"]:
             # We don't use parse_orbit_row here because we already have the equatorial coordinates
             x, y, z, xdot, ydot, zdot = d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"]
+            if d["FORMAT"] == "CART":
+                # Convert to BCART by adding the Sun's position and velocity to the Cartesian coordinates
+                sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
+                x += sun.x
+                y += sun.y
+                z += sun.z
+                xdot += sun.vx
+                ydot += sun.vy
+                zdot += sun.vz
         else:
             x, y, z, xdot, ydot, zdot = parse_orbit_row(
                 d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total
@@ -231,14 +231,9 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
                 for j in range(6):
                     # flatten the covariance matrix
                     cov[i][j] = flat_cov[(i * 6) + j]
-            cov = parse_covariance_row(d, cov, ephem, gm_total, gm_sun)
+            cov = parse_covariance_row_to_BCART(d, d["FORMAT"], cov, ephem, gm_total, gm_sun)
         if convert_to == "BCART":
-            # Convert back to ecliptic from parse_orbit_row's equatorial output.
-            # ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
-            # ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
-
-            # Since parse_orbit_row returns BCART, we can just use the output directly.
-            # row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+            # Already in equatorial BCART so simply use the parsed coordinates
             row = x, y, z, xdot, ydot, zdot
 
         elif convert_to == "CART":
@@ -247,11 +242,6 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
             equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
 
-            # Convert back to ecliptic from parse_orbit_row's equatorial output.
-            # ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
-            # ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
-
-            # row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
             row = tuple(np.concatenate([equatorial_coords, equatorial_velocities]))
 
         elif convert_to == "BCOM":
