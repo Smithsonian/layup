@@ -127,14 +127,7 @@ def parse_fit_result(fit_result_row):
     res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
 
     # Construct the flattened covariance matrix from the columns of the fit result
-    res.cov = np.array(
-        [fit_result_row[f"cov_0{i}"] for i in range(6)]
-        + [fit_result_row[f"cov_1{i}"] for i in range(6)]
-        + [fit_result_row[f"cov_2{i}"] for i in range(6)]
-        + [fit_result_row[f"cov_3{i}"] for i in range(6)]
-        + [fit_result_row[f"cov_4{i}"] for i in range(6)]
-        + [fit_result_row[f"cov_5{i}"] for i in range(6)]
-    )
+    res.cov = np.array([fit_result_row[f"cov_{j}{i}"] for j in range(6) for i in range(6)])
     # The number of iterations used during the fitting process.
     res.niter = fit_result_row["niter"]
     return res
