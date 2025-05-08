@@ -7,6 +7,8 @@ def data_weight_Veres2017(obsCode, jd_tdb, catalog=None, program=None):
     """Return data weighting given an observatory, Julian date, and optionally
     catalog and program. The weighting is based on the work of Veres et al.
 
+    See: Veres et al. 20217 https://arxiv.org/pdf/1703.03479
+
     Parameters
     ----------
     obsCode : str
@@ -14,9 +16,9 @@ def data_weight_Veres2017(obsCode, jd_tdb, catalog=None, program=None):
     jd_tdb : float
         Julian date in TDB of the observation
     catalog : str, optional
-        The survey catalog that included the observation, by default None
+        The stellar catalog used for measuring the astrometry, by default None
     program : str, optional
-        Not entirely sure, by default None #TODO: Correct this docstring!!!
+        The program code assigned by the Minor Planet Center, by default None
 
     Returns
     -------
