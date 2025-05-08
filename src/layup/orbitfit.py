@@ -74,8 +74,17 @@ def _is_occultation(data):
     return data["ra"] is None or data["dec"] is None
 
 
-def _use_star_astronmetry(data):
-    """The use occulting star's astrometry to replace the ra and dec values.
+def _use_star_astrometry(data):
+    """Use occulting star's astrometry to replace the ra and dec values.
+
+    Notes
+    -----
+    The units are a bit odd here. starra and stardec are in degrees. However, deltara
+    and deltadec are in arcseconds. Thus will either convert to degrees or radians
+    depending on the context.
+
+    For more details see the ADES description here:
+    https://github.com/IAU-ADES/ADES-Master/blob/master/ADES_Description.pdf
 
     Parameters
     ----------
@@ -161,7 +170,7 @@ def _orbitfit(
         # and "stardec" columns.
         for d in data:
             if _is_occultation(d):
-                d = _use_star_astronmetry(d)
+                d = _use_star_astrometry(d)
 
         # bias_dict will be a dictionary when the debias flag is set to True.
         if bias_dict is not None:

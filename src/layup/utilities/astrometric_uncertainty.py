@@ -1,87 +1,42 @@
-early_703 = 2456658.5
-early_691 = 2452640.5
-early_644 = 2452883.5
-
-cat_codes = {
-    "a": "USNO-A1.0",
-    "b": "USNO-SA1.0",
-    "c": "USNO-A2.0",
-    "d": "USNO-SA2.0",
-    "e": "UCAC-1",
-    "f": "Tycho-1",
-    "g": "Tycho-2",
-    "h": "GSC-1.0",
-    "i": "GSC-1.1",
-    "j": "GSC-1.2",
-    "k": "GSC-2.2",
-    "l": "ACT",
-    "m": "GSC-ACT",
-    "n": "SDSS-DR8",
-    "o": "USNO-B1.0",
-    "p": "PPM",
-    "q": "UCAC-4",
-    "r": "UCAC-2",
-    "s": "USNO-B2.0",
-    "t": "PPMXL",
-    "u": "UCAC-3",
-    "v": "NOMAD",
-    "w": "CMC-14",
-    "x": "Hipparcos 2",
-    "y": "Hipparcos",
-    "z": "GSC (version unspecified)",
-    "A": "AC",
-    "B": "SAO 1984",
-    "C": "SAO",
-    "D": "AGK 3",
-    "E": "FK4",
-    "F": "ACRS",
-    "G": "Lick Gaspra Catalogue",
-    "H": "Ida93 Catalogue",
-    "I": "Perth 70",
-    "J": "COSMOS/UKST Southern Sky Catalogue",
-    "K": "Yale",
-    "L": "2MASS",
-    "M": "GSC-2.3",
-    "N": "SDSS-DR7",
-    "O": "SST-RC1",
-    "P": "MPOSC3",
-    "Q": "CMC-15",
-    "R": "SST-RC4",
-    "S": "URAT-1",
-    "T": "URAT-2",
-    "U": "Gaia-DR1",
-    "V": "Gaia-DR2",
-    "W": "Gaia-DR3",
-    "X": "Gaia-EDR3",
-    "Y": "UCAC-5",
-    "Z": "ATLAS-2",
-    "0": "IHW",
-    "1": "PS1-DR1",
-    "2": "PS1-DR2",
-    "3": "Gaia_Int  ",
-    "4": "GZ",
-    "5": "USNO-UBAD",
-    "6": "Gaia2016",
-}
+EARLY_703_JD = 2456658.5
+EARLY_691_JD = 2452640.5
+EARLY_644_JD = 2452883.5
 
 
 def data_weight_Veres2017(obsCode, jd_tdb, catalog=None, program=None):
-    # Need to put in the photographic and other observation
-    # types
+    """Return data weighting given an observatory, Julian date, and optionally
+    catalog and program. The weighting is based on the work of Veres et al.
+
+    Parameters
+    ----------
+    obsCode : str
+        The observatory code
+    jd_tdb : float
+        Julian date in TDB of the observation
+    catalog : str, optional
+        The survey catalog that included the observation, by default None
+    program : str, optional
+        Not entirely sure, by default None #TODO: Correct this docstring!!!
+
+    Returns
+    -------
+    float
+        Astrometric uncertainty in arcseconds
+    """
 
     dw = 1.5
     if obsCode == "703":
-        if jd_tdb <= early_703:
+        if jd_tdb <= EARLY_703_JD:
             dw = 1.0
         else:
             dw = 0.8
     elif obsCode == "691":
-        if jd_tdb <= early_691:
+        if jd_tdb <= EARLY_691_JD:
             dw = 0.6
         else:
             dw = 0.5
     elif obsCode == "644":
-        if jd_tdb <= early_644:
+        if jd_tdb <= EARLY_644_JD:
             dw = 0.6
         else:
             dw = 0.4
@@ -143,7 +98,7 @@ def data_weight_Veres2017(obsCode, jd_tdb, catalog=None, program=None):
             dw = 1.5
     elif obsCode == "568":
         if catalog:
-            if catalog in ["USNOB1", "USNOB2"]:  #! Unsure if "USNOB2" is correct abbreviation
+            if catalog in ["USNOB1", "USNOB2"]:  # TODO Unsure if "USNOB2" is correct abbreviation!!!
                 dw = 0.5
             elif catalog in ["Gaia1", "Gaia2", "Gaia3", "Gaia3E"]:
                 dw = 0.1
