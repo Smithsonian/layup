@@ -2,9 +2,10 @@
 # The `layup convert` subcommand implementation
 #
 import argparse
-from layup_cmdline.layupargumentparser import LayupArgumentParser
 import logging
 import sys
+
+from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ def main():
     )
 
     positionals.add_argument(
-        help="orbit reference frame to transform to [COM, BCOM, KEP, BKEP, CART, BCART]",
+        help="orbit reference frame to transform to [COM, BCOM, KEP, BKEP, CART, BCART, BCART_EQ]",
         dest="orbit_type",
         type=str,
     )
@@ -108,7 +109,7 @@ def main():
 def execute(args):
     from layup.convert import convert_cli
     from layup.utilities.cli_utilities import warn_or_remove_file
-    from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
+    from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 
     # check ar directory exists if specified
     if args.ar_data_file_path:
@@ -131,8 +132,10 @@ def execute(args):
     warn_or_remove_file(str(output_file), args.force, logger)
 
     # Check that the conversion type is valid
-    if args.orbit_type not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        logger.error("ERROR: Conversion type must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
+    if args.orbit_type not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        logger.error(
+            "ERROR: Conversion type must be 'BCART', 'BCART_EQ', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'"
+        )
 
     # Check that chunk size is a positive integer
     if not isinstance(args.chunk, int) or args.chunk <= 0:

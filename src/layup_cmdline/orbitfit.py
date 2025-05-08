@@ -2,13 +2,12 @@
 # The `layup orbitfit` subcommand implementation
 #
 import argparse
+import logging
 import sys
 
-from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup.utilities.cli_utilities import warn_or_remove_file
+from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-import logging
-
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +131,8 @@ def main():
     optional.add_argument(
         "-of",
         "--output-orbit-format",
-        help="Orbit format for output file. [KEP, CART, COM, BKEP, BCART, BCOM]",
-        default="BCART",
+        help="Orbit format for output file. [KEP, CART, COM, BKEP, BCART, BCART_EQ, BCOM]",
+        default="BCART_EQ",
         dest="output_orbit_format",
         required=False,
     )
@@ -169,8 +168,10 @@ def execute(args):
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
 
     # check orbit format
-    if args.output_orbit_format not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        logger.error("ERROR: output orbit format must be 'BCART', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'")
+    if args.output_orbit_format not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        logger.error(
+            "ERROR: output orbit format must be 'BCART', 'BCART_EQ', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'"
+        )
     # check format of input file
     if args.output_format.lower() == "csv":
         output_file = args.o + ".csv"

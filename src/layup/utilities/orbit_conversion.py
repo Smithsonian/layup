@@ -676,7 +676,7 @@ def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB,
     return covar
 
 
-def parse_covariance_row_to_CART(row, gm_total, gm_sun):
+def parse_covariance_row_to_BCART_EQ(row, gm_total, gm_sun):
     """
     Parses a row of orbit data, unpacking the flattened covariance matrix
     and converting it to a cartesian format regardless of the input format.
@@ -704,7 +704,7 @@ def parse_covariance_row_to_CART(row, gm_total, gm_sun):
     cov = parse_cov(row)
 
     # Now we want to convert the covariance matrix to a cartesian format
-    if init_format == "BCART" or init_format == "CART":
+    if init_format in ["BCART", "BCART_EQ", "CART"]:
         # It is simply a translation of the covariance matrix between,
         # the two formats so return it as is.
         return cov
