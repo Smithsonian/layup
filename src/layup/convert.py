@@ -94,9 +94,8 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance):
     if has_covariance:
         # Flattened 6x6 covariance matrix
         default_column_dtypes += ["f8"] * 36
-    for format in required_column_names:
-        # Add the covariance columns to the required column names
-        if has_covariance:
+        for format in required_column_names:
+            # Add the covariance columns to the required column names
             required_column_names[format] += get_cov_columns()
 
     return required_column_names, default_column_dtypes
@@ -127,7 +126,6 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
 
     if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
         raise ValueError("Invalid conversion type")
-    # TODO validate all cov column names are present. Maybe make helper function
     has_covariance = has_cov_columns(data)
     logger.debug(f"Data does not have covariance: {not has_covariance}")
 
@@ -148,7 +146,7 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # For each row in the data, convert the orbit to the desired format
     results = []
     for d in data:
-        # First we conver our data into barycentric cartesian coordinates,
+        # First we convert our data into barycentric cartesian coordinates,
         # regardless of the input format. That allows us to simplify the conversion
         # process below by only having the logic to convert from BCART to the other formats.
         sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
@@ -167,13 +165,15 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             x, y, z, xdot, ydot, zdot = parse_orbit_row(
                 d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total
             )
-        cov = np.full((6, 6), np.nan)
-        if has_covariance:
-            cov = parse_covariance_row_to_CART(d, gm_total, gm_sun)
+        # Parse our 6x6 cartesian covariance matrix if it exists regardless of the input format.
+        # Note that this does not differentiate between BCART and CART covariance matrices, and
+        # we handle whether or not it will be barycentric further below.
+        cov = parse_covariance_row_to_CART(d, gm_total, gm_sun) if has_covariance else np.full((6, 6), np.nan)
+
+        # For each possible output format, covert our BCART coordinates to the requested format.
         if convert_to == "BCART":
             # Already in equatorial BCART so simply use the parsed coordinates
             row = x, y, z, xdot, ydot, zdot
-
         elif convert_to == "CART":
             # Convert to CART by subtracting the Sun's position and velocity from the Barycentric Cartesian coordinates
             sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
@@ -184,8 +184,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
 
         elif convert_to == "BCOM":
             if has_covariance:
-                # Our covariance matrix is already in equatorial BCART so no tranformation
-                # is needed to get to BCOM.
+                # Our covariance matrix is already in equatorial cartesian so no tranformation
+                # and we can use the BCART coordinates to convert our covariance matrix to the cometary format.
                 cov = covariance_cometary_xyz(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"], cov)
             # Convert back to ecliptic from parse_orbit_row's equatorial output.
             ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
@@ -199,8 +199,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
             equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
             if has_covariance:
-                # We now use our cartesian equatorial coordinates, to convert our covariance matrix to
-                # the cometary format.
+                # We now use our cartesian equatorial coordinates, which have been adjusted to
+                # no longer be barycentric, to convert our covariance matrix to the cometary format.
                 cov = covariance_cometary_xyz(
                     gm_sun,
                     equatorial_coords[0],
@@ -223,8 +223,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
 
         elif convert_to == "BKEP":
             if has_covariance:
-                # Our covariance matrix is already in equatorial BCART so no tranformation
-                # is needed to get to BKEP.
+                # Our covariance matrix is already in equatorial cartesian so using the BCART coordinates
+                # we can convert our covariance matrix to barycentric keplerian.
                 cov = covariance_keplerian_xyz(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"], cov)
 
             # Convert back to ecliptic from parse_orbit_row's equatorial output.
@@ -241,8 +241,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
 
             if has_covariance:
-                # We now use our cartesian equatorial coordinates, to convert our covariance matrix to
-                # the keplerian format.
+                # We now use our cartesian equatorial coordinates, which have been adjusted to
+                # no longer be barycentric, to convert our covariance matrix to the keplerian format.
                 cov = covariance_keplerian_xyz(
                     gm_sun,
                     equatorial_coords[0],
@@ -263,7 +263,7 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
             row = universal_keplerian(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
 
-        # If the covariance matrix is present, convert it to a flattened tuple.
+        # If the covariance matrix is present, convert it to a flattened tuple for output.
         cov_res = tuple(val for val in cov.flatten()) if has_covariance else tuple()
 
         # Turn our converted row into a structured array

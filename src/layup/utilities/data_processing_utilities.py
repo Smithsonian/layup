@@ -99,8 +99,16 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
 
 def get_cov_columns():
     """
-    Get the covariance columns from a structured numpy array representing our
-    orbit fit output result.
+    Get the covariance columns that are expected in the structured numpy array
+    representing our orbit fit output result.
+
+    Columns are a flattened version of the covariance matrix, which is a 6x6 matrix
+    where the first first row and first 6 items are:
+
+    [cov_00, cov_01, cov_02, cov_03, cov_04, cov_05]
+
+    and the last row and last 6 items of the flattened matrix are:
+    [cov_50, cov_51, cov_52, cov_53, cov_54, cov_55]
 
     Returns
     -------
@@ -113,7 +121,7 @@ def get_cov_columns():
 
 def has_cov_columns(data):
     """
-    Check if the data has covariance columns.
+    Check if the data has the expected covariance columns.
 
     Parameters
     ----------

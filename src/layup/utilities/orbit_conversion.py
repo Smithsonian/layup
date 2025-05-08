@@ -678,16 +678,19 @@ def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB,
 
 def parse_covariance_row_to_CART(row, gm_total, gm_sun):
     """
-    Converts a covariance matrix cartesian format.
+    Parses a row of orbit data, unpacking the flattened covariance matrix
+    and converting it to a cartesian format regardless of the input format.
 
-    If the input matrix is in in [CART, COM, KEP] we convert it to CART.
+    Note that there is not a meaningful distinction between cartesian and
+    barycentric cartesian coordinates here.
 
-    If the input matrix is in [BCART, BCOM, BKEP] we convert it to BCART.
+    The input format of the row is read from the "FORMAT" column and
+    acceptable input formats are CART, COM, KEP, BCART, BCOM, and BKEP.
 
     Parameters
     ----------
     row : numpy structured array
-        The row of data to convert.
+        The row of data to parse the covariance matrix from.
     gm_total : float
         The gravitational parameter for the total system.
     gm_sun : float
@@ -695,17 +698,18 @@ def parse_covariance_row_to_CART(row, gm_total, gm_sun):
     """
     init_format = row["FORMAT"]
     if init_format not in ["CART", "BCART", "COM", "BCOM", "KEP", "BKEP"]:
-        raise ValueError(f"Unknown format: {init_format}")
+        raise ValueError(f"Unknown orbit format: {init_format}")
 
     # Parse our 6x6 covariance matrix
     cov = parse_cov(row)
 
-    # Converts the covariance row and a covariance matrix into BCART
+    # Now we want to convert the covariance matrix to a cartesian format
     if init_format == "BCART" or init_format == "CART":
-        # It is simply a translation of the covariance matrix
+        # It is simply a translation of the covariance matrix between,
+        # the two formats so return it as is.
         return cov
     elif init_format in ["COM", "BCOM"]:
-        # Convert the covariance matrix from COM/BCOM to CART/BCART
+        # Convert the covariance matrix from COM/BCOM to cartesian
         mu = gm_total if init_format == "BCOM" else gm_sun
         cov = covariance_xyz_cometary(
             mu,
@@ -720,7 +724,7 @@ def parse_covariance_row_to_CART(row, gm_total, gm_sun):
             cov,
         )
     elif init_format in ["KEP", "BKEP"]:
-        # Convert the covariance matrix from BKEP to BCART/CART
+        # Convert the covariance matrix from BKEP to cartesian.
         a = row["a"]
         e = row["e"]
         # Convert from degrees to radians
