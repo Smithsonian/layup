@@ -718,7 +718,7 @@ def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB,
 def parse_covariance_row_to_CART(row, gm_total, gm_sun):
     """
     Parses a row of orbit data, unpacking the flattened covariance matrix
-    and converting it to a cartesian format regardless of the input format.
+    and converting it to an equatorial cartesian format regardless of the input format.
 
     Note that there is not a meaningful distinction between cartesian and
     barycentric cartesian coordinates here.
