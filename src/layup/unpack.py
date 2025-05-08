@@ -79,7 +79,7 @@ def unpack(res, name, orbit_para, _RESULT_DTYPES):
                 error_list[5],
             )
             + (
-                res.epoch - 2400000.5,
+                res.epoch - 2400000.5, # changing from jd back to mjd
                 res.niter,
                 res.method,
                 res.flag,
@@ -158,7 +158,7 @@ def unpack_cli(
     # loop that parses each row/object and unpacked
     for row in data:
 
-        res = parse_fit_result(row)
+        res = parse_fit_result(row) # res.epoch is converted to jd in this function. It is converted back to mjd in output
         res_unpacked = unpack(res, row[0], orbit_para, _RESULT_DTYPES)
 
         # All results go to a single output file
