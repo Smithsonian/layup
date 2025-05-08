@@ -14,6 +14,7 @@ from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.layup_configs import LayupConfigs
 from layup.utilities.orbit_conversion import (
     covariance_cometary_xyz,
+    covariance_eq_to_ecl,
     covariance_keplerian_xyz,
     universal_cometary,
     universal_keplerian,
@@ -168,7 +169,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             # Already in equatorial BCART so simply use the parsed coordinates
             row = x, y, z, xdot, ydot, zdot
         elif convert_to == "BCART":
-            # TODO rotate our covariance matrix from equatorial to ecliptic.
+            # Convert our covariance matrix from equatorial to ecliptic.
+            cov = covariance_eq_to_ecl(cov)
 
             # Convert to BCART by converting to ecliptic coordinates
             equatorial_coords = np.array((x, y, z))
@@ -179,7 +181,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
         elif convert_to == "CART":
-            # TODO rotate our covariance matrix from equatorial to ecliptic.
+            # Convert our covariance matrix from equatorial to ecliptic.
+            cov = covariance_eq_to_ecl(cov)
 
             # Convert to CART by subtracting the Sun's position and velocity from the Barycentric Cartesian equatorial coordinates
             sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
