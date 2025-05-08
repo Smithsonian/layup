@@ -3,7 +3,7 @@ import pooch
 import numpy as np
 
 
-from layup.utilities.debiasing import debias, generate_bias_dict, mpc_catalogs
+from layup.utilities.debiasing import debias, generate_bias_dict, MPC_CATALOGS
 
 
 def test_generate_bias_dict():
@@ -17,7 +17,7 @@ def test_generate_bias_dict():
     assert isinstance(bias_dict, dict), "The returned object should be a dictionary."
 
     # Check that the dictionary contains expected keys
-    bias_keys = mpc_catalogs.values()
+    bias_keys = MPC_CATALOGS.values()
     for key in bias_keys:
         assert key in bias_dict, f"The key '{key}' is missing from the bias dictionary."
 

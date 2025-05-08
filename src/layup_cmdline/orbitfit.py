@@ -61,7 +61,7 @@ def main():
         "-d",
         "--debias",
         action="store_true",
-        help="Perform dibiasing of the input astrometry based on catalog and epoch.",
+        help="Perform debiasing of the input astrometry based on catalog and epoch.",
         required=False,
         dest="debias",
     )
@@ -136,6 +136,15 @@ def main():
         default="BCART",
         dest="output_orbit_format",
         required=False,
+    )
+
+    optional.add_argument(
+        "-wd",
+        "--weight-data",
+        action="store_true",
+        help="Apply data weighting based on the observation code, date, catalog and program. ",
+        required=False,
+        dest="weight_data",
     )
 
     args = parser.parse_args()

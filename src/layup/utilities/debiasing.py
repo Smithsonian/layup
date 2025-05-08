@@ -5,10 +5,9 @@ import numpy as np
 import healpy as hp
 import pandas as pd
 import pooch
-import spiceypy as spice
 
 # From Siegfried Eggl's code
-mpc_catalogs = {
+MPC_CATALOGS = {
     "USNOA1": "a",
     "USNOSA1": "b",
     "USNOA2": "c",
@@ -36,9 +35,9 @@ mpc_catalogs = {
     "Gaia1": "U",
     "Gaia3": "W",
 }
-coords = ["ra", "dec", "pm_ra", "pm_dec"]
+COORDS = ["ra", "dec", "pm_ra", "pm_dec"]
 
-columns = ["_".join(pair) for pair in product(mpc_catalogs.values(), coords)]
+COLUMNS = ["_".join(pair) for pair in product(MPC_CATALOGS.values(), COORDS)]
 
 
 def generate_bias_dict(cache_dir=None):
@@ -62,11 +61,11 @@ def generate_bias_dict(cache_dir=None):
         raise FileNotFoundError(f"The bias.dat file was not found in the cache directory: {cache_dir}")
 
     # Read in the bias.dat file as a pandas DataFrame
-    biasdf = pd.read_csv(Path(cache_dir) / "bias.dat", sep="\\s+", skiprows=23, names=columns)
+    biasdf = pd.read_csv(Path(cache_dir) / "bias.dat", sep="\\s+", skiprows=23, names=COLUMNS)
 
     # Turn this into a dictionary for speed
     bias_dict = {}
-    for catalog in mpc_catalogs.values():
+    for catalog in MPC_CATALOGS.values():
         colnames = [f"{catalog}_ra", f"{catalog}_dec", f"{catalog}_pm_ra", f"{catalog}_pm_dec"]
         bias_dict[catalog] = {}
         for col in colnames:
@@ -75,9 +74,9 @@ def generate_bias_dict(cache_dir=None):
     return bias_dict
 
 
-def debias(ra, dec, epoch, catalog, bias_dict, nside=256):
+def debias(ra, dec, epoch_jd_tdb, catalog, bias_dict, nside=256):
 
-    catalog_key = mpc_catalogs[catalog]
+    catalog_key = MPC_CATALOGS[catalog]
     if catalog_key not in bias_dict.keys():
         return ra, dec
 
@@ -91,7 +90,7 @@ def debias(ra, dec, epoch, catalog, bias_dict, nside=256):
     pm_dec = bias_dict[catalog_key]["pm_dec"][idx]
 
     # time from epoch in Julian years
-    dt_jy = (epoch - spice.j2000()) / 365.25
+    dt_jy = epoch_jd_tdb / 365.25
 
     # bias correction
     ddec = dec_off + dt_jy * pm_dec / 1000
