@@ -127,7 +127,7 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
         raise ValueError("Invalid conversion type")
     has_covariance = has_cov_columns(data)
-    logger.debug(f"Data does not have covariance: {not has_covariance}")
+    logger.debug(f"Data has covariance: {has_covariance}")
 
     required_colum_names, default_column_dtypes = get_output_column_names_and_types(
         primary_id_column_name, has_covariance
