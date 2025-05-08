@@ -654,6 +654,7 @@ def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     return covar
 
 
+@jax.jit
 def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance):
     x, y, z, vx, vy, vz = universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB)
     jac = jac_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
@@ -664,6 +665,7 @@ def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB,
     return covar
 
 
+@jax.jit
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
     q = a * (1 - e)
     tp = epochMJD_TDB - M * np.sqrt(a**3 / mu)
@@ -676,7 +678,7 @@ def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB,
     return covar
 
 
-def parse_covariance_row_to_BCART_EQ(row, gm_total, gm_sun):
+def parse_covariance_row_to_CART(row, gm_total, gm_sun):
     """
     Parses a row of orbit data, unpacking the flattened covariance matrix
     and converting it to a cartesian format regardless of the input format.
@@ -704,9 +706,13 @@ def parse_covariance_row_to_BCART_EQ(row, gm_total, gm_sun):
     cov = parse_cov(row)
 
     # Now we want to convert the covariance matrix to a cartesian format
-    if init_format in ["BCART", "BCART_EQ", "CART"]:
-        # It is simply a translation of the covariance matrix between,
-        # the two formats so return it as is.
+    if init_format == "BCART_EQ":
+        # We are in equatorial barycentric cartesian coordinates
+        return cov
+    elif init_format in ["CART", "BCART"]:
+        # TODO we should rotate from equatorial to ecliptic coordinates
+        # Since this is a translation we do not need to do anything
+        # differently for CART vs BCART
         return cov
     elif init_format in ["COM", "BCOM"]:
         # Convert the covariance matrix from COM/BCOM to cartesian

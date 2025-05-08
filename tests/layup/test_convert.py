@@ -158,7 +158,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
         (10_0000, 1, "BCOM"),
         (10_0000, 1, "COM"),
         (10_0000, 1, "KEP"),
-        #        (10_0000, 1, "BCART"),
+        (10_0000, 1, "BCART"),
         (10_0000, 1, "CART"),
     ],
 )
