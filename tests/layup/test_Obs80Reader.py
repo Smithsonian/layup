@@ -73,3 +73,15 @@ def test_unsupported_pid_raises():
             e.value.args[0]
             == "The primary_id_column_name 'unsupported_id' is not supported for Obs80DataReader."
         )
+
+
+def test_read_primary_id_as_str():
+    """Test reading in an MPC Obs80 data file with primary ID as string."""
+    reader = Obs80DataReader(
+        get_test_filepath("newy6_10_row_numeric_ids.txt"), primary_id_column_name="provID"
+    )
+
+    data = reader.read_rows()
+    assert len(data) == 10
+    assert all(isinstance(i, str) for i in data["provID"])
+    assert data["provID"][0] == "0000024"

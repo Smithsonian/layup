@@ -212,28 +212,19 @@ class CSVDataReader(ObjectDataReader):
         # Read in the data from self.filename, extracting the header row, and skipping in all of
         # block_size rows, skipping all of the skip_rows.
         if self.sep == "whitespace":
-            res_df = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                skiprows=skip_rows,
-                nrows=block_size,
-            )
+            data_seperator = "\\s+"
         elif self.sep == "pipe" or self.sep == "psv" or self.sep == "|":
-            res_df = pd.read_csv(
-                self.filename,
-                sep="|",
-                skiprows=skip_rows,
-                nrows=block_size,
-                # This dtype will only work if the spaces are removed from the column names.
-                dtype={self._primary_id_column_name: str},
-            )
+            data_seperator = "|"
         else:
-            res_df = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                skiprows=skip_rows,
-                nrows=block_size,
-            )
+            data_seperator = ","
+
+        res_df = pd.read_csv(
+            self.filename,
+            sep=data_seperator,
+            skiprows=skip_rows,
+            nrows=block_size,
+            dtype={self._primary_id_column_name: str},
+        )
 
         res_df.columns = [col.strip() for col in res_df.columns]
         records = res_df.to_records(index=False)
