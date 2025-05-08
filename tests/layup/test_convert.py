@@ -66,7 +66,6 @@ def test_convert_round_trip():
                     assert_allclose(
                         input_data[column_name],
                         output_data[column_name],
-                        rtol=1,
                         err_msg=f"Column {column_name} not equal with dtype {input_data[column_name].dtype} after converting from {csv_input_file} to {output_format} and back",
                     )
 
@@ -172,7 +171,6 @@ def test_convert_BCART_csv_with_covariance(tmpdir, chunk_size, num_workers, outp
 
     # Since the convert CLI outputs to the current working directory, we need to change to our temp directory
     output_file_stem = f"test_output_{output_format}"
-    # tmpdir = "/Users/wilsonbb/lincc/layup"
     os.chdir(tmpdir)
     temp_out_file = os.path.join(tmpdir, f"{output_file_stem}.csv")
     # Convert our BCART CSV file to a different format CSV file
