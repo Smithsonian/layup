@@ -153,6 +153,7 @@ def main():
 
 def execute(args):
     from layup.orbitfit import orbitfit_cli
+    from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
 
     print("Starting orbitfit...")
 
@@ -191,6 +192,9 @@ def execute(args):
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.c)
+
+    # check if bootstrap files are missing, and download if necessary
+    download_files_if_missing(configs, args)
 
     orbitfit_cli(
         input=args.input,

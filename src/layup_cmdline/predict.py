@@ -2,10 +2,8 @@
 # The `layup predict` subcommand implementation
 #
 import argparse
-import os
 from pathlib import Path
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-from astropy.time import Time
 import astropy.units as u
 from datetime import datetime, timezone
 import logging
@@ -229,8 +227,10 @@ def execute(args):
     import astropy.units as u
     import re
     from layup.predict import predict_cli
+    from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
+    from layup.utilities.layup_configs import LayupConfigs
     import sys
     import pooch
 
@@ -283,6 +283,14 @@ def execute(args):
         sys.exit(f"Unsupported unit, {unit_str}, for timestep: {timestep_str}.")
 
     timestep_day = (value * UNIT_DICT[unit_str]).to(u.day).value  # converting value into day units
+
+    configs = LayupConfigs()
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
+        configs = LayupConfigs(args.c)
+
+    # check if bootstrap files are missing, and download if necessary
+    download_files_if_missing(configs, args)
 
     predict_cli(
         cli_args=args,
