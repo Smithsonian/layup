@@ -80,7 +80,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
 
     # Verify that the number of rows outputted orbit fit is the same as the number of unique provIDs in the input file
     # Note that the input file includes some rows without our provID column, so exclude the nans
-    n_uniq_ids = sum([0 if np.isnan(id) else 1 for id in set(input_data["provID"])])
+    n_uniq_ids = sum([1 if id else 0 for id in set(input_data["provID"])])
     assert_equal(len(output_data), n_uniq_ids)
 
     # Verify the columns in the output data
