@@ -1,7 +1,9 @@
-import numpy as np
 import logging
 import sys
+
+import numpy as np
 import pandas as pd
+
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 # Characters we remove from column names.
@@ -168,7 +170,7 @@ class CSVDataReader(ObjectDataReader):
 
         if self._primary_id_column_name not in column_names:
             error_str = (
-                f"ERROR: {self.filename} header does not have '{self._primary_id_column_name}' column. "
+                f"ERROR: {self.filename} header does not have '{self._primary_id_column_name}' column. Instead it has {column_names}. "
                 "Confirm that you using the correct delimiter."
             )
             logger.error(error_str)

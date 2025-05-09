@@ -239,7 +239,7 @@ def _orbitfit(
                     res.niter,
                     res.method,
                     res.flag,
-                    ("BCART" if success else np.nan),  # The base format returned by the C++ code
+                    ("BCART_EQ" if success else np.nan),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
             ],

@@ -14,8 +14,8 @@ from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.layup_configs import LayupConfigs
 from layup.utilities.orbit_conversion import (
     covariance_cometary_xyz,
+    covariance_eq_to_ecl,
     covariance_keplerian_xyz,
-    parse_covariance_row_to_CART,
     universal_cometary,
     universal_keplerian,
 )
@@ -62,6 +62,7 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance):
     # Required column names for each orbit format
     required_column_names = {
         "BCART": [primary_id_column_name, "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+        "BCART_EQ": [primary_id_column_name, "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
         "BCOM": [
             primary_id_column_name,
             "FORMAT",
@@ -90,7 +91,7 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance):
     }
     # Default column dtypes across all orbit formats. Note that the ordering of the dtypes matches
     # the ordering of the column names in REQUIRED_COLUMN_NAMES.
-    default_column_dtypes = ["<U12", "<U5", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
+    default_column_dtypes = ["<U12", "<U8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
     if has_covariance:
         # Flattened 6x6 covariance matrix
         default_column_dtypes += ["f8"] * 36
@@ -110,7 +111,7 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     data : numpy structured array
         The data to convert.
     convert_to : str
-        The orbital format to convert the data to. Must be one of: "BCART", "BCOM", "BKEP", "CART", "COM", "KEP"
+        The orbital format to convert the data to. Must be one of: "BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"
     cache_dir : str, optional
         The base directory for downloaded files.
     primary_id_column_name : str, optional
@@ -124,8 +125,9 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     if len(data) == 0:
         return data
 
-    if convert_to not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        raise ValueError("Invalid conversion type")
+    expected_formats = ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]
+    if convert_to not in expected_formats:
+        raise ValueError(f"Invalid conversion type {convert_to}. Must be one of: {expected_formats}")
     has_covariance = has_cov_columns(data)
     logger.debug(f"Data has covariance: {has_covariance}")
 
@@ -146,46 +148,57 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # For each row in the data, convert the orbit to the desired format
     results = []
     for d in data:
-        # First we convert our data into barycentric cartesian coordinates,
+        # First we convert our data into equatorial barycentric cartesian coordinates,
         # regardless of the input format. That allows us to simplify the conversion
-        # process below by only having the logic to convert from BCART to the other formats.
+        # process below by only having the logic to convert from BCART_EQ to the other formats.
         sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-        if d["FORMAT"] in ["BCART", "CART"]:
-            # We don't use parse_orbit_row here because we already have the equatorial coordinates
+        if d["FORMAT"] == "BCART_EQ":
+            # We don't use parse_orbit_row here because we already have the BCART_EQ coordinates
             x, y, z, xdot, ydot, zdot = d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"]
-            if d["FORMAT"] == "CART":
-                # Convert to BCART by adding the Sun's position and velocity to the Cartesian coordinates
-                x += sun.x
-                y += sun.y
-                z += sun.z
-                xdot += sun.vx
-                ydot += sun.vy
-                zdot += sun.vz
         else:
             x, y, z, xdot, ydot, zdot = parse_orbit_row(
                 d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total
             )
         # Parse our 6x6 cartesian covariance matrix if it exists regardless of the input format.
-        # Note that this does not differentiate between BCART and CART covariance matrices, and
+        # Note that this does not differentiate between BCART, BCART_EQ, and CART covariance matrices, and
         # we handle whether or not it will be barycentric further below.
         cov = parse_covariance_row_to_CART(d, gm_total, gm_sun) if has_covariance else np.full((6, 6), np.nan)
 
-        # For each possible output format, covert our BCART coordinates to the requested format.
-        if convert_to == "BCART":
+        # For each possible output format, covert our BCART_EQ coordinates to the requested format.
+        if convert_to == "BCART_EQ":
             # Already in equatorial BCART so simply use the parsed coordinates
             row = x, y, z, xdot, ydot, zdot
+        elif convert_to == "BCART":
+            # Convert our covariance matrix from equatorial to ecliptic.
+            cov = covariance_eq_to_ecl(cov)
+
+            # Convert to BCART by converting to ecliptic coordinates
+            equatorial_coords = np.array((x, y, z))
+            equatorial_velocities = np.array((xdot, ydot, zdot))
+
+            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
+            row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+
         elif convert_to == "CART":
-            # Convert to CART by subtracting the Sun's position and velocity from the Barycentric Cartesian coordinates
+            # Convert our covariance matrix from equatorial to ecliptic.
+            cov = covariance_eq_to_ecl(cov)
+
+            # Convert to CART by subtracting the Sun's position and velocity from the Barycentric Cartesian equatorial coordinates
             sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
             equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
             equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
 
-            row = tuple(np.concatenate([equatorial_coords, equatorial_velocities]))
+            # Convert to ecliptic coordinates
+            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
+
+            row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
         elif convert_to == "BCOM":
             if has_covariance:
                 # Our covariance matrix is already in equatorial cartesian so no tranformation
-                # and we can use the BCART coordinates to convert our covariance matrix to the cometary format.
+                # and we can use the BCART_EQ coordinates to convert our covariance matrix to the cometary format.
                 cov = covariance_cometary_xyz(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"], cov)
             # Convert back to ecliptic from parse_orbit_row's equatorial output.
             ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
@@ -293,7 +306,7 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
     data : numpy structured array
         The data to convert.
     convert_to : str
-        The format to convert the data to. Must be one of: "BCART", "BCOM", "BKEP", "CART", "COM", "KEP"
+        The format to convert the data to. Must be one of: "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"
     num_workers : int, optional (default=1)
         The number of workers to use for parallel processing.
     primary_id_column_name : str, optional (default="ObjID")
@@ -323,7 +336,7 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
 def convert_cli(
     input: str,
     output_file_stem: str,
-    convert_to: Literal["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"],
+    convert_to: Literal["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"],
     file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
     num_workers: int = -1,
@@ -341,7 +354,7 @@ def convert_cli(
     output_file_stem : str
         The stem of the output file.
     convert_to : str
-        The format to convert the input file to. Must be one of: "BCART", "BCOM", "BKEP", "CART", "COM", "KEP"
+        The format to convert the input file to. Must be one of: "BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"
     file_format : str, optional (default="csv")
         The format of the output file. Must be one of: "csv", "hdf5"
     chunk_size : int, optional (default=10_000)
@@ -386,7 +399,7 @@ def convert_cli(
     input_format = None
     if "FORMAT" in sample_data.dtype.names:
         input_format = sample_data["FORMAT"][0]
-        if input_format not in ["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        if input_format not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
             logger.error(f"Input file contains invalid 'FORMAT' column: {input_format}")
     else:
         logger.error("Input file does not contain 'FORMAT' column")
