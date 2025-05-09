@@ -61,7 +61,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step):
     )
     input_data = input_csv_reader.read_rows()
 
-    n_uniq_ids = sum([0 if np.isnan(id) else 1 for id in set(input_data["provID"])])
+    n_uniq_ids = sum([1 if id else 0 for id in set(input_data["provID"])])
     number_of_predictions_per = len(np.arange(start, end + time_step, time_step))
 
     # ensure that have a prediction for each object at every time step
