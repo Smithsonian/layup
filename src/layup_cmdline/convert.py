@@ -44,7 +44,7 @@ def main():
         "--conf",
         help="optional configuration file",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
     optional.add_argument(
@@ -146,10 +146,10 @@ def execute(args):
     configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
-        configs = LayupConfigs(args.c)
+        configs = LayupConfigs(args.config)
 
     # check if bootstrap files are missing, and download if necessary
-    download_files_if_missing(configs, args)
+    download_files_if_missing(configs.auxiliary, args)
 
     convert_cli(
         input=args.input,

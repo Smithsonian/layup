@@ -1,3 +1,4 @@
+from argparse import Namespace
 import concurrent.futures
 import os
 import pooch
@@ -33,7 +34,7 @@ def make_retriever(aux_config: AuxiliaryConfigs, directory_path: Optional[str] =
     )
 
 
-def download_files_if_missing(configs, args) -> None:
+def download_files_if_missing(aux_config: AuxiliaryConfigs, args: Namespace) -> None:
     """This function partially encapsulates the functionality of the
     `layup.bootstrap` command line tool. While `layup.bootstrap` allows for forced
     re-downloading of files, this function will only download files that are not
@@ -41,7 +42,7 @@ def download_files_if_missing(configs, args) -> None:
 
     Parameters
     ----------
-    configs : LayupConfigs
+    aux_configs : AuxiliaryConfigs
         Dataclass of configuration file arguments.
         This includes the AuxiliaryConfigs dataclass that contains the
         configuration for the bootstrap files.
@@ -50,10 +51,8 @@ def download_files_if_missing(configs, args) -> None:
         that specifies the directory to store the downloaded files.
     """
 
-    aux_config = configs.auxiliary
-
     # create the Pooch retriever that tracks and retrieves the requested files
-    retriever = make_retriever(aux_config, args.cache)
+    retriever = make_retriever(aux_config, args.ar_data_file_path)
 
     print("Checking cache for existing files.")
     found_all_files = _check_for_existing_files(aux_config, retriever)
