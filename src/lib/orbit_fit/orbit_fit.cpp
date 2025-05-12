@@ -1162,18 +1162,15 @@ namespace orbit_fit
     FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
     {
 
-        size_t end_i = detections_full.size() - 1;
-
-	size_t start_i = 0;
+	size_t start_i = detections_full.size() - 1;
 
 	std::string objID = detections_full[0].objID;
-	printf("run_from_vector %lu %s\n", start_i, objID.c_str());
 
         // First find a triple of detections in the full data set.
-        //std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);
-        std::vector<std::vector<size_t>> idx = IOD_indices_forward(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);	
-        std::vector<std::vector<size_t>> idx_bwd = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, end_i);
-	idx.insert(idx.end(), idx_bwd.begin(), idx_bwd.end());
+        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);
+        //std::vector<std::vector<size_t>> idx = IOD_indices_forward(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);	
+        //std::vector<std::vector<size_t>> idx_bwd = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, end_i);
+	//idx.insert(idx.end(), idx_bwd.begin(), idx_bwd.end());
 	
         int success = 1;
         size_t iters;
@@ -1211,24 +1208,37 @@ namespace orbit_fit
                 continue;
             }
 
-            // Now get a segment of data that spans the triplet and that uses up to
+	    printf("gauss rho: %le\n", res.value()[0].root);
+
+	    // This bit is for testing TNOs.
+	    double inner_root_thresh = 0.1;
+	    double outer_root_thresh = 1000.;	    
+	    if(res.value()[0].root>outer_root_thresh){
+		printf("Too far!\n");
+		continue;
+	    }
+
+	    if(res.value()[0].root<=inner_root_thresh){
+		printf("Too close!\n");
+		continue;
+	    }
+	    
+	    // Now get a segment of data that spans the triplet and that uses up to
             // a certain number of points, if they are available in a time window.
             // This should be a parameter
+            size_t num = 1000;
+
 	    size_t dfs = detections_full.size();
             size_t curr_num = id2 - id1 + 1;
 
 	    std::pair<size_t, size_t> limits;
-	    size_t num;
 
 	    FitResult guess = res.value()[0];
 	    std::optional<FitResult> fit_res;
 
-	    num = 10;		
 	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
             size_t start_index = limits.first;
             size_t end_index = limits.second;
-
-	    printf("limits %lu %lu\n", start_index, end_index);
 
 	    std::vector<Observation> detections = select_detections(detections_full, start_index, end_index);
 	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections);
@@ -1260,8 +1270,6 @@ namespace orbit_fit
 	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
 	    start_index = limits.first;
             end_index = limits.second;
-
-	    printf("limits %lu %lu\n", start_index, end_index);
 
 	    std::vector<Observation> detections3 = select_detections(detections_full, start_index, end_index);
 
