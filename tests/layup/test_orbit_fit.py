@@ -160,7 +160,9 @@ def test_orbitfit_result_parsing():
     """Perform a simple orbit fit and check that we can parse the results back correctly."""
 
     input_data = CSVDataReader(
-        get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"), "csv", primary_id_column_name="provID"
+        get_test_filepath("1_random_mpc_ADES_provIDs_no_sats_micro.csv"),
+        "csv",
+        primary_id_column_name="provID",
     ).read_rows()
 
     fitted_orbits = orbitfit(
