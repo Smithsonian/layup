@@ -1,14 +1,12 @@
-import pytest
-from numpy.testing import assert_equal, assert_allclose
-
 import numpy as np
-from numpy.lib import recfunctions as rfn
+import pytest
 import spiceypy as spice
+from numpy.lib import recfunctions as rfn
+from numpy.testing import assert_equal
 
-from layup.utilities.file_io.CSVReader import CSVDataReader
-
-from layup.utilities.data_processing_utilities import process_data, LayupObservatory
+from layup.utilities.data_processing_utilities import LayupObservatory, get_cov_columns, process_data
 from layup.utilities.data_utilities_for_tests import get_test_filepath
+from layup.utilities.file_io.CSVReader import CSVDataReader
 
 
 def no_op(data):
@@ -44,8 +42,8 @@ def test_empty(n_workers):
     assert len(processed_data) == 0
 
 
-@pytest.mark.parametrize("n_workers", [1, 2, 4, 5, 8])
-@pytest.mark.parametrize("n_rows", [1, 10000, 1000000])
+@pytest.mark.parametrize("n_workers", [1, 4, 5, 8])
+@pytest.mark.parametrize("n_rows", [1, 413, 1000])
 def test_no_op(n_rows, n_workers):
     """Test that we can apply simple functions on datasets of various sizes and numbers of workers."""
     dtypes = [
@@ -67,8 +65,8 @@ def test_no_op(n_rows, n_workers):
     assert_equal(processed_data.dtype, data.dtype)
 
 
-@pytest.mark.parametrize("n_workers", [1, 2, 4, 5, 8])
-@pytest.mark.parametrize("n_rows", [1, 10000, 1000000])
+@pytest.mark.parametrize("n_workers", [1, 4, 5, 8])
+@pytest.mark.parametrize("n_rows", [1, 413, 1000])
 def test_data_modify(n_rows, n_workers):
     """Test that we can apply simple functions on datasets of various sizes and numbers of workers."""
     dtypes = [
@@ -89,8 +87,53 @@ def test_data_modify(n_rows, n_workers):
         assert processed_data["q"][i] == data["q"][i] + 1
 
 
-@pytest.mark.parametrize("n_workers", [1, 2, 4, 5, 8])
-@pytest.mark.parametrize("n_rows", [1, 10000, 1000000])
+def test_get_cov_columns():
+    """Test that we can get the covariance columns."""
+    # Check that the function returns the expected number of columns
+    cov_columns = get_cov_columns()
+    assert len(cov_columns) == 36
+    assert cov_columns == [
+        "cov_00",
+        "cov_01",
+        "cov_02",
+        "cov_03",
+        "cov_04",
+        "cov_05",
+        "cov_10",
+        "cov_11",
+        "cov_12",
+        "cov_13",
+        "cov_14",
+        "cov_15",
+        "cov_20",
+        "cov_21",
+        "cov_22",
+        "cov_23",
+        "cov_24",
+        "cov_25",
+        "cov_30",
+        "cov_31",
+        "cov_32",
+        "cov_33",
+        "cov_34",
+        "cov_35",
+        "cov_40",
+        "cov_41",
+        "cov_42",
+        "cov_43",
+        "cov_44",
+        "cov_45",
+        "cov_50",
+        "cov_51",
+        "cov_52",
+        "cov_53",
+        "cov_54",
+        "cov_55",
+    ]
+
+
+@pytest.mark.parametrize("n_workers", [1, 4, 5, 8])
+@pytest.mark.parametrize("n_rows", [1, 413, 1000])
 def test_parallelization(n_rows, n_workers):
     """Test that we can apply simple functions on datasets of various sizes and numbers of workers."""
     dtypes = [

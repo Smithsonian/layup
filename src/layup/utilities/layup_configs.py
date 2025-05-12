@@ -63,6 +63,14 @@ class AuxiliaryConfigs:
     orientation_constants_url: str = f"{naif_base_url}/pck/pck00010.tpc"
     """url of observatory_constants"""
 
+    debiasing_data: str = "bias.dat"
+    """filename of debiasing data (uncompressed)"""
+
+    debiasing_data_compressed: str = "debias_hires2018.tgz"
+    """filename of compressed debiasing_data"""
+    debiasing_data_compressed_url: str = "ftp://ssd.jpl.nasa.gov/pub/ssd/debias/debias_hires2018.tgz"
+    """url of compressed debiasing_data"""
+
     data_file_list: list[str] = field(default_factory=list)
     """convenience list of all the file names"""
 
@@ -91,6 +99,7 @@ class AuxiliaryConfigs:
             "leap_seconds": self.__class__.leap_seconds_url,
             "observatory_codes_compressed": self.__class__.observatory_codes_compressed_url,
             "orientation_constants": self.__class__.orientation_constants_url,
+            "debiasing_data_compressed": self.__class__.debiasing_data_compressed_url,
         }
 
     @property
@@ -107,6 +116,7 @@ class AuxiliaryConfigs:
             "meta_kernel": self.__class__.meta_kernel,
             "observatory_codes_compressed": self.__class__.observatory_codes_compressed,
             "orientation_constants": self.__class__.orientation_constants,
+            "debiasing_data_compressed": self.__class__.debiasing_data_compressed,
         }
 
     def __post_init__(self):
@@ -151,6 +161,7 @@ class AuxiliaryConfigs:
             self.leap_seconds: self.leap_seconds_url,
             self.observatory_codes_compressed: self.observatory_codes_compressed_url,
             self.orientation_constants: self.orientation_constants_url,
+            self.debiasing_data_compressed: self.debiasing_data_compressed_url,
         }
 
         self.data_file_list = [
@@ -165,6 +176,8 @@ class AuxiliaryConfigs:
             self.observatory_codes_compressed,
             self.observatory_codes,
             self.orientation_constants,
+            self.debiasing_data_compressed,
+            self.debiasing_data,
         ]
 
         self.data_files_to_download = [
@@ -177,6 +190,7 @@ class AuxiliaryConfigs:
             self.leap_seconds,
             self.observatory_codes_compressed,
             self.orientation_constants,
+            self.debiasing_data_compressed,
         ]
 
         self.ordered_kernel_files = [

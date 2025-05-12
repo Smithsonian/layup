@@ -81,7 +81,7 @@ namespace orbit_fit
     // Now, Observation has private constructors and public static factory methods.
     struct Observation
     {
-	std::string objID; 	
+	std::string objID;
         double epoch; // utc jd
         ObservationType observation_type;
         std::array<double, 3> observer_position;
@@ -172,6 +172,8 @@ namespace orbit_fit
             dec_unc = dec_uncy;
         }
 
+        Observation(){}
+
         // Factory method for an Astrometry observation.
         static Observation from_astrometry(double ra, double dec, double epoch_val,
                                            const std::array<double, 3> &obs_position,
@@ -240,6 +242,7 @@ namespace orbit_fit
         py::class_<Observation>(m, "Observation")
             // Constructor for an Astrometry observation.
             // bind the ::from_astrometry factory method
+            .def(py::init<>())
             .def(py::init<double, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>>())
             .def(py::init<double, std::array<double, 3>, std::array<double, 3>, std::array<double, 3>,
                           std::array<double, 3>, std::array<double, 3>, double, double>())
@@ -258,18 +261,18 @@ namespace orbit_fit
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct a Streak observation")
-            .def_readonly("epoch", &Observation::epoch, "Observation epoch (as a double)")
-            .def_readonly("observation_type", &Observation::observation_type, "Variant holding the observation data")
-            .def_readonly("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
-            .def_readonly("observer_velocity", &Observation::observer_velocity, "Observer velocity as a 3D vector")
-            .def_readonly("rho_hat", &Observation::rho_hat, "Unit direction vector")
-            .def_readonly("a_vec", &Observation::a_vec, "Tangent plane vector A")
-            .def_readonly("d_vec", &Observation::d_vec, "Tangent plane vector D")
-            .def_readonly("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")
-            .def_readonly("ra_unc", &Observation::ra_unc, "RA uncertainty")
-            .def_readonly("dec_unc", &Observation::dec_unc, "Dec uncertainty")
-            .def_readonly("mag", &Observation::mag, "Optional magnitude")
-            .def_readonly("mag_err", &Observation::mag_err, "Optional magnitude error");
+            .def_readwrite("epoch", &Observation::epoch, "Observation epoch (as a double)")
+            .def_readwrite("observation_type", &Observation::observation_type, "Variant holding the observation data")
+            .def_readwrite("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
+            .def_readwrite("observer_velocity", &Observation::observer_velocity, "Observer velocity as a 3D vector")
+            .def_readwrite("rho_hat", &Observation::rho_hat, "Unit direction vector")
+            .def_readwrite("a_vec", &Observation::a_vec, "Tangent plane vector A")
+            .def_readwrite("d_vec", &Observation::d_vec, "Tangent plane vector D")
+            .def_readwrite("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")
+            .def_readwrite("ra_unc", &Observation::ra_unc, "RA uncertainty")
+            .def_readwrite("dec_unc", &Observation::dec_unc, "Dec uncertainty")
+            .def_readwrite("mag", &Observation::mag, "Optional magnitude")
+            .def_readwrite("mag_err", &Observation::mag_err, "Optional magnitude error");
     }
 
 } // namespace orbit_fit
