@@ -667,7 +667,7 @@ namespace orbit_fit
                         return res;
 
                     res.push_back({idx_k, idx_j, idx_i});
-                    // printf("%lu %lu %lu %lf %lf %lf\n", idx_k, idx_j, idx_i, t0, t1, t2);
+		    // printf("%lu %lu %lu %lf %lf %lf\n", idx_k, idx_j, idx_i, t0, t1, t2);
                 }
             }
         }
@@ -675,7 +675,7 @@ namespace orbit_fit
         return res;
     }
 
-        // Go through the detections in reverse order, looking for
+    // Go through the detections in forward, looking for
     // a set of three detections such that each adjacent pair is
     // separated by more than interval_min and less than interval_max.
     std::vector<std::vector<size_t>> IOD_indices_forward(std::vector<Observation> &detections,
@@ -764,7 +764,120 @@ namespace orbit_fit
         return ephem;
     }
 
-    FitResult run_from_vector_prev(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
+    std::pair<size_t, size_t> adjust_limits(size_t curr_num, size_t num, size_t dfs, size_t id0, size_t id1, size_t id2){
+	    
+	size_t start_index;
+	size_t end_index;
+	if (curr_num >= num)
+            {
+                // We already have enough data and
+                // don't need to move the limits
+                start_index = id0;
+                end_index = id1;
+            }
+            else if ((dfs - id0) >= num)
+		{
+		    // There are enough points if we include
+		    // only the later points, we only need to
+		    // later limit.
+		    start_index = id0;
+		    end_index = id0 + num;
+		}
+            else if (dfs >= num)
+		{
+		    end_index = dfs;
+		    start_index = dfs - num;
+            }
+            else
+		{
+		    start_index = 0;
+		    end_index = dfs;
+		}
+	return std::make_pair(start_index, end_index);
+    }
+
+    std::vector<Observation> select_detections(std::vector<Observation>& detections_full, size_t start_index, size_t end_index){
+	std::vector<Observation>::const_iterator first_d = detections_full.begin() + start_index;
+	std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
+	std::vector<Observation> selected_detections(first_d, last_d);
+	return selected_detections;
+    }
+    
+    std::optional<FitResult> run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
+    {
+        size_t iters;
+        double chi2_final;
+        size_t dof;
+
+        std::vector<residuals> resid_vec(detections.size());
+        std::vector<partials> partials_vec(detections.size());
+
+	//printf("run_from_vector_with_initial_guess %lu\n", detections.size());	
+
+        // Make these parameters flexible.
+        size_t iter_max = 100;
+        double eps = 1e-12;
+
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
+        int flag;
+
+        reb_particle p1;
+
+        p1.x = initial_guess.state[0];
+        p1.y = initial_guess.state[1];
+        p1.z = initial_guess.state[2];
+        p1.vx = initial_guess.state[3];
+        p1.vy = initial_guess.state[4];
+        p1.vz = initial_guess.state[5];
+        double epoch = initial_guess.epoch;
+
+        flag = orbit_fit(
+            ephem,
+            p1,
+            epoch,
+            detections,
+            resid_vec,
+            partials_vec,
+            iters,
+            chi2_final,
+            cov,
+            eps,
+            iter_max);
+
+        dof = 2 * detections.size() - 6;
+
+        if (flag == 0)
+        {
+
+            FitResult result;
+
+            result.niter = iters;
+            result.csq = chi2_final;
+            result.ndof = dof;
+            result.flag = flag;
+            result.method = "orbit_fit";
+
+            result.epoch = epoch;
+            result.state = {p1.x, p1.y, p1.z, p1.vx, p1.vy, p1.vz};
+
+            for(int i = 0; i < 6; i++)
+            {
+                for(int j = 0; j < 6; j++)
+                {
+                    // flatten the covariance matrix
+                    result.cov[(i * 6) + j] = cov(i,j);
+                }
+            }
+
+            return result;
+        }
+        else
+        {
+            return std::nullopt;
+        }
+    }
+
+    FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
     {
 
         size_t start_i = detections_full.size() - 1;
@@ -779,6 +892,8 @@ namespace orbit_fit
         size_t dof;
         struct reb_particle p1;
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> final_cov;
+
+	size_t dfs = detections_full.size();	
 
         for (size_t i = 0; i < idx.size(); i++)
         {
@@ -828,40 +943,22 @@ namespace orbit_fit
 
             size_t curr_num = id2 - id1 + 1;
 
-            size_t start_index;
-            size_t end_index;
-            if (curr_num >= num)
-            {
-                // We already have enough data and
-                // don't need to move the limits
-                start_index = id0;
-                end_index = id1;
-            }
-            else if ((detections_full.size() - id0) >= num)
-            {
-                // There are enough points if we include
-                // only the later points, we only need to
-                // later limit.
-                start_index = id0;
-                end_index = id0 + num;
-            }
-            else if (detections_full.size() >= num)
-            {
-                end_index = detections_full.size();
-                start_index = detections_full.size() - num;
-            }
-            else
-            {
-                start_index = 0;
-                end_index = detections_full.size();
-            }
+	    std::pair<size_t, size_t> limits;
 
-            std::vector<Observation>::const_iterator first_d = detections_full.begin() + start_index;
-            std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
-            std::vector<Observation> detections(first_d, last_d);
+	    FitResult guess = res.value()[0];
+	    std::optional<FitResult> fit_res;
 
-            std::vector<residuals> resid_vec(detections.size());
-            std::vector<partials> partials_vec(detections.size());
+	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
+            size_t start_index = limits.first;
+            size_t end_index = limits.second;
+
+	    std::vector<Observation> detections = select_detections(detections_full, start_index, end_index);
+	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections);
+            if (!fit_res.has_value()){
+		continue;
+	    }
+
+	    guess = fit_res.value();
 
             // Make these parameters flexible.
             size_t iter_max = 100;
@@ -870,27 +967,17 @@ namespace orbit_fit
             Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
             int flag;
 
-            p1.x = res.value()[0].state[0];
-            p1.y = res.value()[0].state[1];
-            p1.z = res.value()[0].state[2];
-            p1.vx = res.value()[0].state[3];
-            p1.vy = res.value()[0].state[4];
-            p1.vz = res.value()[0].state[5];
+	    //std::cout << guess.state[0] << std::endl;
 
-            flag = orbit_fit(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections,
-                resid_vec,
-                partials_vec,
-                iters,
-                chi2_final,
-                cov,
-                eps,
-                iter_max);
+            p1.x = guess.state[0];
+            p1.y = guess.state[1];
+            p1.z = guess.state[2];
+            p1.vx = guess.state[3];
+            p1.vy = guess.state[4];
+            p1.vz = guess.state[5];
+	    
+	    //std::cout << p1.x << std::endl;
 
-            dof = 2 * detections.size() - 6;
 	    /*
             if (flag == 0)
             {
@@ -904,80 +991,33 @@ namespace orbit_fit
             }
 	    */
 
-            Eigen::MatrixXd obs_cov(6, 6);
-            PredictResult pred_first = predict(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections_full[0],
-                cov,
-                obs_cov);
+            start_index = 0;
+            end_index = dfs;
+	    std::vector<Observation> detections2 = select_detections(detections_full, start_index, end_index);
 
-            size_t last = detections_full.size() - 1;
-            PredictResult pred_last = predict(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections_full[last],
-                cov,
-                obs_cov);
+	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections2);
+            if (!fit_res.has_value()){
+		continue;
+	    }
 
-            num = detections_full.size();
+	    FitResult sfr = fit_res.value();
 
-            first_d = detections_full.begin() + detections_full.size() - num;
-            last_d = detections_full.end();
-            std::vector<Observation> detections2(first_d, last_d);
-
-            std::vector<residuals> resid_vec2(detections2.size());
-            std::vector<partials> partials_vec2(detections2.size());
-
-            dof = 2 * detections2.size() - 6;
-
-            flag = orbit_fit(
-                ephem,
-                p1,
-                res.value()[0].epoch,
-                detections2,
-                resid_vec2,
-                partials_vec2,
-                iters,
-                chi2_final,
-                final_cov,
-                eps,
-                iter_max);
-
-            if (flag == 0)
-            {
-                printf("flag: %d iters: %lu dof: %lu chi2: %lf\n", flag, iters, dof, chi2_final);
-                Eigen::MatrixXd obs_final_cov(6, 6);
-                result_epoch = res.value()[0].epoch;
-                PredictResult pred_first2 = predict(
-                    ephem,
-                    p1,
-                    res.value()[0].epoch,
-                    detections_full[0],
-                    final_cov,
-                    obs_final_cov);
-
-                last = detections_full.size() - 1;
-                PredictResult pred_last2 = predict(
-                    ephem,
-                    p1,
-                    res.value()[0].epoch,
-                    detections_full[last],
-                    final_cov,
-                    obs_final_cov);
-                success = 0;
-                break;
-            }
-            else
+	    flag = sfr.flag;
+	    
+            if (flag != 0)
             {
                 // At this point there is a good gauss solution and a good
                 // short interval solution, but the full data set is still failing.
                 // That probably means that the data set should be gradually enlarged.
-                printf("flag: %d iters: %lu, stage 3 failed.  Try another triplet %lu\n", flag, iters, i);
+                printf("flag: %d iters: %d, stage 3 failed.  Try another triplet %lu\n", flag, sfr.niter, i);
                 continue;
-            }
+            }else{
+                printf("flag: %d iters: %d dof: %d chi2: %lf\n", flag, sfr.niter, sfr.ndof, sfr.csq);
+		//printf("SUCCESS\n\n");
+		success = 0;
+		break;
+	    }	    
+
         }
         if (success != 0)
         {
@@ -1023,322 +1063,6 @@ namespace orbit_fit
         return result;
     }
 
-    std::optional<FitResult> run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
-    {
-        int success = 1;
-        size_t iters;
-        double chi2_final;
-        size_t dof;
-
-        std::vector<residuals> resid_vec(detections.size());
-        std::vector<partials> partials_vec(detections.size());
-
-	printf("run_from_vector_with_initial_guess %lu\n", detections.size());	
-
-        // Make these parameters flexible.
-        size_t iter_max = 100;
-        double eps = 1e-12;
-
-        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
-        int flag;
-
-        reb_particle p1;
-
-        p1.x = initial_guess.state[0];
-        p1.y = initial_guess.state[1];
-        p1.z = initial_guess.state[2];
-        p1.vx = initial_guess.state[3];
-        p1.vy = initial_guess.state[4];
-        p1.vz = initial_guess.state[5];
-        double epoch = initial_guess.epoch;
-
-        flag = orbit_fit(
-            ephem,
-            p1,
-            epoch,
-            detections,
-            resid_vec,
-            partials_vec,
-            iters,
-            chi2_final,
-            cov,
-            eps,
-            iter_max);
-
-        dof = 2 * detections.size() - 6;
-
-        if (flag == 0)
-        {
-
-            Eigen::MatrixXd obs_cov(2, 2);
-            predict(
-                ephem,
-                p1,
-                epoch,
-                detections[0],
-                cov,
-                obs_cov);
-            std::cout << "obs_cov: \n"
-                      << obs_cov << std::endl;
-
-            size_t last = detections.size() - 1;
-            predict(
-                ephem,
-                p1,
-                epoch,
-                detections[last],
-                cov,
-                obs_cov);
-            std::cout << "obs_cov: \n"
-                      << obs_cov << std::endl;
-
-            FitResult result;
-
-            result.niter = iters;
-            result.csq = chi2_final;
-            result.ndof = dof;
-            result.flag = flag;
-            result.method = "orbit_fit";
-
-            result.epoch = epoch;
-            result.state = {p1.x, p1.y, p1.z, p1.vx, p1.vy, p1.vz};
-
-            for(int i = 0; i < 6; i++)
-            {
-                for(int j = 0; j < 6; j++)
-                {
-                    // flatten the covariance matrix
-                    result.cov[(i * 6) + j] = cov(i,j);
-                }
-            }
-
-            return result;
-        }
-        else
-        {
-            return std::nullopt;
-        }
-    }
-
-    std::pair<size_t, size_t> adjust_limits(size_t curr_num, size_t num, size_t dfs, size_t id0, size_t id1, size_t id2){
-	    
-	size_t start_index;
-	size_t end_index;
-	if (curr_num >= num)
-            {
-                // We already have enough data and
-                // don't need to move the limits
-                start_index = id0;
-                end_index = id1;
-            }
-            else if ((dfs - id0) >= num)
-		{
-		    // There are enough points if we include
-		    // only the later points, we only need to
-		    // later limit.
-		    start_index = id0;
-		    end_index = id0 + num;
-		}
-            else if (dfs >= num)
-		{
-		    end_index = dfs;
-		    start_index = dfs - num;
-            }
-            else
-		{
-		    start_index = 0;
-		    end_index = dfs;
-		}
-	return std::make_pair(start_index, end_index);
-    }
-
-    std::vector<Observation> select_detections(std::vector<Observation>& detections_full, size_t start_index, size_t end_index){
-	std::vector<Observation>::const_iterator first_d = detections_full.begin() + start_index;
-	std::vector<Observation>::const_iterator last_d = detections_full.begin() + end_index;
-	std::vector<Observation> selected_detections(first_d, last_d);
-	return selected_detections;
-    }
-    
-    FitResult run_from_vector(struct assist_ephem *ephem, std::vector<Observation> &detections_full)
-    {
-
-	size_t start_i = detections_full.size() - 1;
-
-	std::string objID = detections_full[0].objID;
-
-        // First find a triple of detections in the full data set.
-        std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);
-        //std::vector<std::vector<size_t>> idx = IOD_indices_forward(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);	
-        //std::vector<std::vector<size_t>> idx_bwd = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, end_i);
-	//idx.insert(idx.end(), idx_bwd.begin(), idx_bwd.end());
-	
-        int success = 1;
-        size_t iters;
-        double chi2_final;
-        double result_epoch;
-        size_t dof;
-        struct reb_particle p1;
-        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> final_cov;
-        size_t iter_max = 100;
-        double eps = 1e-12;
-
-        for (size_t i = 0; i < idx.size(); i++)
-        {
-
-            std::vector<size_t> indices = idx[i];
-            size_t id0 = indices[0];
-            size_t id1 = indices[1];
-            size_t id2 = indices[2];
-
-            printf("gauss indices: %lu %lu %lu\n", id0, id1, id2);
-            fflush(stdout);
-
-            Observation d0 = detections_full[id0];
-            Observation d1 = detections_full[id1];
-            Observation d2 = detections_full[id2];
-
-            // Put this in a better place
-            double GMtotal = 0.00029630927487993194;
-
-            std::optional<std::vector<FitResult>> res = gauss(GMtotal, d0, d1, d2, 0.0001, SPEED_OF_LIGHT);
-            if (!res.has_value())
-            {
-                printf("gauss failed.  Try another triplet.\n");
-                fflush(stdout);
-                continue;
-            }
-
-	    printf("gauss rho: %le\n", res.value()[0].root);
-
-	    // This bit is for testing TNOs.
-	    double inner_root_thresh = 0.1;
-	    double outer_root_thresh = 1000.;	    
-	    if(res.value()[0].root>outer_root_thresh){
-		printf("Too far!\n");
-		continue;
-	    }
-
-	    if(res.value()[0].root<=inner_root_thresh){
-		printf("Too close!\n");
-		continue;
-	    }
-	    
-	    // Now get a segment of data that spans the triplet and that uses up to
-            // a certain number of points, if they are available in a time window.
-            // This should be a parameter
-            size_t num = 1000;
-
-	    size_t dfs = detections_full.size();
-            size_t curr_num = id2 - id1 + 1;
-
-	    std::pair<size_t, size_t> limits;
-
-	    FitResult guess = res.value()[0];
-	    std::optional<FitResult> fit_res;
-
-	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
-            size_t start_index = limits.first;
-            size_t end_index = limits.second;
-
-	    std::vector<Observation> detections = select_detections(detections_full, start_index, end_index);
-	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections);
-            if (!fit_res.has_value()){
-		continue;
-	    }
-
-	    guess = fit_res.value();
-
-	    curr_num = num;
-            num = 50;
-	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
-	    start_index = limits.first;
-            end_index = limits.second;
-
-	    printf("limits %lu %lu\n", start_index, end_index);
-
-	    std::vector<Observation> detections2 = select_detections(detections_full, start_index, end_index);
-
-	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections2);
-            if (!fit_res.has_value()){
-		continue;
-	    }
-
-	    guess = fit_res.value();
-
-	    curr_num = num;
-            num = dfs;
-	    limits = adjust_limits(curr_num, num, dfs, id0, id1, id2);
-	    start_index = limits.first;
-            end_index = limits.second;
-
-	    std::vector<Observation> detections3 = select_detections(detections_full, start_index, end_index);
-
-	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections3);
-            if (!fit_res.has_value()){
-		continue;
-	    }
-	    
-	    FitResult sfr = fit_res.value();
-
-	    int flag = sfr.flag;
-	    
-            if (flag != 0)
-            {
-                // At this point there is a good gauss solution and a good
-                // short interval solution, but the full data set is still failing.
-                // That probably means that the data set should be gradually enlarged.
-                printf("flag: %d iters: %lu, stage 3 failed.  Try another triplet %lu\n", flag, sfr.niter, i);
-                continue;
-            }else{
-		printf("SUCCESS\n\n");
-		success = 0;
-		break;
-	    }
-        }
-        if (success != 0)
-        {
-            printf("fully failed\n\n");
-            fflush(stdout);
-        }
-
-        FitResult result;
-
-        result.method = "orbit_fit";
-        result.flag = success;
-
-        result.epoch = result_epoch;
-        result.csq = chi2_final;
-        result.ndof = dof;
-        result.niter = iters;
-        result.state[0] = p1.x;
-        result.state[1] = p1.y;
-        result.state[2] = p1.z;
-        result.state[3] = p1.vx;
-        result.state[4] = p1.vy;
-        result.state[5] = p1.vz;
-
-        if (success == 0) {
-            // Populate our covariance matrix
-            for (int i = 0; i < 6; i++)
-            {
-                for (int j = 0; j < 6; j++)
-                {
-                    // flatten the covariance matrix
-                    result.cov[(i * 6) + j] = final_cov(i, j);
-                }
-            }
-        }
-        // Important issues:
-        // 1. Obtaining reliable initial orbit determination for the nonlinear fits.
-        // 2. Making sure the weight matrix is as good as it can be
-        // 3. Identifying and removing outliers
-
-        // Later issues:
-        // 1. Deflection of light
-
-        return result;
-    }
-    
 
 #ifdef Py_PYTHON_H
     static void orbit_fit_bindings(py::module &m)
