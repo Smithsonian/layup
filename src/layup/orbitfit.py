@@ -81,7 +81,7 @@ def _orbitfit(data, cache_dir: str, sort_array=True):
     # radians.
     observations = [
         Observation.from_astrometry_with_id(
-            d["provID"],
+            str(d["provID"]),
             d["ra"] * np.pi / 180.0,
             d["dec"] * np.pi / 180.0,
             convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB

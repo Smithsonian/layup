@@ -1150,7 +1150,8 @@ namespace orbit_fit
 
 	size_t start_i = 0;
 
-	printf("run_from_vector %lu\n", start_i);
+	std::string objID = detections_full[0].objID;
+	printf("run_from_vector %lu %s\n", start_i, objID.c_str());
 
         // First find a triple of detections in the full data set.
         //std::vector<std::vector<size_t>> idx = IOD_indices(detections_full, 2.0, 10.0, 2.0, 20.0, 10, start_i);

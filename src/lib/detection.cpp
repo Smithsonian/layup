@@ -247,6 +247,11 @@ namespace orbit_fit
                         py::arg("ra"), py::arg("dec"), py::arg("epoch"),
                         py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct an Astrometry observation")
+            .def_static("from_astrometry_with_id", &Observation::from_astrometry_with_id,
+			py::arg("objID"),
+                        py::arg("ra"), py::arg("dec"), py::arg("epoch"),
+                        py::arg("observer_position"), py::arg("observer_velocity"),
+                        "Construct an Astrometry observation")
             // Constructor for a Streak observation.
             // bind the ::from_streak factory method
             .def_static("from_streak", &Observation::from_streak,
