@@ -624,7 +624,7 @@ jac_cometary_xyz = jax.jacobian(universal_cometary, argnums=(1, 2, 3, 4, 5, 6))
 jac_keplerian_xyz = jax.jacobian(universal_keplerian, argnums=(1, 2, 3, 4, 5, 6))
 
 
-@jax.jit
+# @jax.jit
 def covariance_ecl_to_eq_jax(covariance):
     """
     Converts a covariance matrix from ecliptic to equatorial coordinates.
@@ -661,7 +661,7 @@ def covariance_eq_to_ecl(covariance):
     return jj_rotation @ covariance @ jj_rotation.T
 
 
-@jax.jit
+# @jax.jit
 def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = jnp.array([x, y, z])
     r_rot = jnp.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
@@ -676,7 +676,7 @@ def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     return covar
 
 
-@jax.jit
+# @jax.jit
 def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = jnp.array([x, y, z])
     r_rot = jnp.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
@@ -691,7 +691,7 @@ def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     return covar
 
 
-@jax.jit
+# @jax.jit
 def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance):
     x, y, z, vx, vy, vz = universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB)
     jac = jac_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
@@ -702,7 +702,7 @@ def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB,
     return covar
 
 
-@jax.jit
+# @jax.jit
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
     q = a * (1 - e)
     tp = epochMJD_TDB - M * np.sqrt(a**3 / mu)
@@ -751,7 +751,7 @@ def parse_covariance_row_to_CART(row, gm_total, gm_sun):
         # Since this is a translation we do not need to do anything
         # differently for CART vs BCART. We just need to convert
         # the covariance matrix to equatorial coordinates.
-        cov = covariance_ecl_to_eq(cov)
+        cov = covariance_ecl_to_eq_jax(cov)
     elif init_format in ["COM", "BCOM"]:
         # Convert the covariance matrix from COM/BCOM to cartesian
         mu = gm_total if init_format == "BCOM" else gm_sun
