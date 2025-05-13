@@ -396,13 +396,7 @@ def convert_cli(
     sample_data = sample_reader.read_rows(block_start=0, block_size=1)
 
     # Check orbit format in the file
-    input_format = None
-    if "FORMAT" in sample_data.dtype.names:
-        input_format = sample_data["FORMAT"][0]
-        if input_format not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-            logger.error(f"Input file contains invalid 'FORMAT' column: {input_format}")
-    else:
-        logger.error("Input file does not contain 'FORMAT' column")
+    input_format = get_format(sample_data)
 
     # Check that the input format is not already the desired format
     if convert_to == input_format:
@@ -447,3 +441,37 @@ def convert_cli(
             write_csv(converted_data, output_file)
 
     print(f"Data has been written to {output_file}")
+
+
+def get_format(data):
+    """
+    Get the orbit parameter format for this data.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to check.
+
+    Returns
+    -------
+    str
+        The format of the data.
+    """
+
+    if len(data) == 0:
+        logger.error("Data is empty")
+        raise ValueError("Data is empty")
+
+    format = None
+
+    if "FORMAT" in data.dtype.names:
+        # Find first valid format in the data
+        for format in data["FORMAT"]:
+            if format in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+                return format
+        else:
+            logger.error("Data does not contain valid orbit format")
+            raise ValueError("Data does not contain valid orbit format")
+    else:
+        logger.error("Data does not contain 'FORMAT' column")
+        raise ValueError("Data does not contain 'FORMAT' column")

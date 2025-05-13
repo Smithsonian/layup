@@ -3,8 +3,10 @@ import os
 
 import pytest
 from numpy.testing import assert_allclose, assert_equal
+from numpy.lib.recfunctions import drop_fields
 
-from layup.convert import convert, convert_cli
+from layup.convert import convert, convert_cli, get_format
+from layup.utilities.data_processing_utilities import has_cov_columns
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
@@ -315,3 +317,69 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
                 output_data_BCOM[column_name],
                 err_msg=f"Column {column_name} not equal with dtype {input_data_BCOM[column_name].dtype}",
             )
+
+
+def test_get_format():
+    """Test that the get_format function works for a small CSV file."""
+    # Test that the get_format function works for a small CSV file.
+    input_file = get_test_filepath("BCOM.csv")
+    input_csv_reader = CSVDataReader(input_file)
+    input_data = input_csv_reader.read_rows()
+    input_format = input_data[0]["FORMAT"]
+    assert get_format(input_data) == input_format
+
+
+def test_get_format_without_first_row():
+    """Test that the get_format function works for a small CSV file that doesn't
+    have a valid FORMAT in the first row."""
+
+    input_file = get_test_filepath("BCOM.csv")
+    input_csv_reader = CSVDataReader(input_file)
+    input_data = input_csv_reader.read_rows()
+
+    input_data["FORMAT"][0] = None
+
+    input_format = input_data[1]["FORMAT"]
+    assert get_format(input_data) == input_format
+
+
+def test_get_format_raises_with_no_data():
+    """Test that the get_format function raises error when data is empty."""
+
+    input_file = get_test_filepath("BCOM.csv")
+    input_csv_reader = CSVDataReader(input_file)
+    input_data = input_csv_reader.read_rows(block_size=0)
+
+    with pytest.raises(ValueError) as e:
+        _ = get_format(input_data)
+    assert "Data is empty" in str(e.value)
+
+
+def test_get_format_raises_with_unknown_format_values():
+    """Test that the get_format function raises error when FORMAT column is all
+    None."""
+
+    input_file = get_test_filepath("BCOM.csv")
+    input_csv_reader = CSVDataReader(input_file)
+    input_data = input_csv_reader.read_rows(block_size=3)
+    input_data["FORMAT"][0] = "Poop"
+    input_data["FORMAT"][1] = "Slap"
+    input_data["FORMAT"][2] = "Fish"
+
+    with pytest.raises(ValueError) as e:
+        _ = get_format(input_data)
+    assert "Data does not contain valid orbit format" in str(e.value)
+
+
+def test_get_format_raises_with_no_format_column():
+    """Test that the get_format function raises error when FORMAT column is not
+    present."""
+
+    input_file = get_test_filepath("BCOM.csv")
+    input_csv_reader = CSVDataReader(input_file)
+    input_data = input_csv_reader.read_rows(block_size=3)
+    input_data = drop_fields(input_data, "FORMAT")
+
+    with pytest.raises(ValueError) as e:
+        _ = get_format(input_data)
+    assert "Data does not contain 'FORMAT' column" in str(e.value)
