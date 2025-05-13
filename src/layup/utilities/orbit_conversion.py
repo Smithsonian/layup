@@ -624,8 +624,8 @@ jac_cometary_xyz = jax.jacobian(universal_cometary, argnums=(1, 2, 3, 4, 5, 6))
 jac_keplerian_xyz = jax.jacobian(universal_keplerian, argnums=(1, 2, 3, 4, 5, 6))
 
 
-@jax.jit
-def covariance_ecl_to_eq_jax(covariance):
+# @jax.jit
+def covariance_ecl_to_eq(covariance):
     """
     Converts a covariance matrix from ecliptic to equatorial coordinates.
 
@@ -691,7 +691,7 @@ def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     return covar
 
 
-@jax.jit
+# Note that this function is not jax compatible since it uses universal_cartesian
 def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance):
     x, y, z, vx, vy, vz = universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB)
     jac = jac_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
@@ -702,7 +702,7 @@ def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB,
     return covar
 
 
-@jax.jit
+# Note that this function is not jax compatible since it uses universal_cartesian
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
     q = a * (1 - e)
     tp = epochMJD_TDB - M * np.sqrt(a**3 / mu)

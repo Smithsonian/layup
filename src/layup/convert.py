@@ -16,6 +16,7 @@ from layup.utilities.orbit_conversion import (
     covariance_cometary_xyz,
     covariance_eq_to_ecl,
     covariance_keplerian_xyz,
+    parse_covariance_row_to_CART,
     universal_cometary,
     universal_keplerian,
 )
