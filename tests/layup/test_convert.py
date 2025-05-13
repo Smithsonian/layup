@@ -5,6 +5,7 @@ import pytest
 from numpy.testing import assert_allclose, assert_equal
 
 from layup.convert import convert, convert_cli
+from layup.utilities.data_processing_utilities import has_cov_columns
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader

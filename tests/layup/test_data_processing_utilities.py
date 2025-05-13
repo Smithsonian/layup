@@ -215,7 +215,6 @@ def test_layup_observatory_obscodes_to_barycentric():
 
 def test_get_format():
     """Test that the get_format function works for a small CSV file."""
-    # Test that the get_format function works for a small CSV file.
     input_file = get_test_filepath("BCOM.csv")
     input_csv_reader = CSVDataReader(input_file)
     input_data = input_csv_reader.read_rows()
