@@ -17,11 +17,11 @@ from layup.utilities.file_io.CSVReader import CSVDataReader
     [
         (100_000, 1, "BCART_EQ"),
         (100_000, 1, "BCART"),
-        # (100_000, 1, "CART"),
-        # (100_000, 1, "COM"),
-        # (100_000, 1, "BCOM"),
-        # (100_000, 2, "KEP"),
-        # (20_000, 2, "BKEP"),
+        (100_000, 1, "CART"),
+        (100_000, 1, "COM"),
+        (100_000, 1, "BCOM"),
+        (100_000, 2, "KEP"),
+        (20_000, 2, "BKEP"),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
@@ -102,23 +102,17 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
         "provID",
         "csq",
         "ndof",
-        "x",
-        "y",
-        "z",
-        "xdot",
-        "ydot",
-        "zdot",
         "epochMJD_TDB",
         "niter",
         "method",
         "flag",
         "FORMAT",
     ] + get_cov_columns()
-    assert set(output_data.dtype.names) == set(expected_cols)
+    assert_equal(0, len(set(expected_cols) - set(output_data.dtype.names)))
 
     # Verify that all of the output data is in the requested output format for flag == 0 and is nan for flag !=0
     assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == output_orbit_format)
-    # TODO wbeebe add this back in
+    # TODO wbeebe add this back in after appropriate type conversion
     # for i in np.arange(len(output_data["FORMAT"][output_data["flag"] != 0])):
     #    assert math.isnan(output_data["FORMAT"][output_data["flag"] != 0][i])
 
@@ -140,6 +134,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
             # Check that the covariance matrix is non-zero
             assert np.count_nonzero(cov_matrix) > 0
             assert_equal(row["FORMAT"], output_orbit_format)
+            # Check that the expected orbit format elements are populated
+            # TODO
 
 
 def test_orbit_fit_mixed_inputs():
