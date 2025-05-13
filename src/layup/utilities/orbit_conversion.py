@@ -625,7 +625,7 @@ jac_keplerian_xyz = jax.jacobian(universal_keplerian, argnums=(1, 2, 3, 4, 5, 6)
 
 
 # @jax.jit
-def covariance_ecl_to_eq_jax(covariance):
+def covariance_ecl_to_eq(covariance):
     """
     Converts a covariance matrix from ecliptic to equatorial coordinates.
 
@@ -751,7 +751,7 @@ def parse_covariance_row_to_CART(row, gm_total, gm_sun):
         # Since this is a translation we do not need to do anything
         # differently for CART vs BCART. We just need to convert
         # the covariance matrix to equatorial coordinates.
-        cov = covariance_ecl_to_eq_jax(cov)
+        cov = covariance_ecl_to_eq(cov)
     elif init_format in ["COM", "BCOM"]:
         # Convert the covariance matrix from COM/BCOM to cartesian
         mu = gm_total if init_format == "BCOM" else gm_sun
