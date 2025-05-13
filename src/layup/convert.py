@@ -16,6 +16,7 @@ from layup.utilities.orbit_conversion import (
     covariance_cometary_xyz,
     covariance_eq_to_ecl,
     covariance_keplerian_xyz,
+    parse_covariance_row_to_CART,
     universal_cometary,
     universal_keplerian,
 )
@@ -40,7 +41,7 @@ INPUT_READERS = {
 }
 
 
-def get_output_column_names_and_types(primary_id_column_name, has_covariance):
+def get_output_column_names_and_types(primary_id_column_name, has_covariance, cols_to_keep):
     """
     Get the output column names and types for the converted data.
 
@@ -50,6 +51,8 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance):
         The name of the column in the data that contains the primary ID of the object.
     has_covariance : bool
         Whether the data has covariance information.
+    cols_to_keep : list
+        List of tuples containing the column names and dtypes to keep in the output data.
 
     Returns
     -------
@@ -92,17 +95,21 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance):
     # Default column dtypes across all orbit formats. Note that the ordering of the dtypes matches
     # the ordering of the column names in REQUIRED_COLUMN_NAMES.
     default_column_dtypes = ["<U12", "<U8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
+    default_column_dtypes.extend([dtype for _, dtype in cols_to_keep])
     if has_covariance:
         # Flattened 6x6 covariance matrix
         default_column_dtypes += ["f8"] * 36
-        for format in required_column_names:
+    for format in required_column_names:
+        for col_name, _ in cols_to_keep:
+            # Add the column name and dtype to the default column dtypes
+            required_column_names[format].append(col_name)
+        if has_covariance:
             # Add the covariance columns to the required column names
             required_column_names[format] += get_cov_columns()
-
     return required_column_names, default_column_dtypes
 
 
-def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None):
+def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None, cols_to_keep=[]):
     """
     Apply the appropriate conversion function to the data
 
@@ -132,7 +139,7 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     logger.debug(f"Data has covariance: {has_covariance}")
 
     required_colum_names, default_column_dtypes = get_output_column_names_and_types(
-        primary_id_column_name, has_covariance
+        primary_id_column_name, has_covariance, cols_to_keep
     )
 
     # Fetch layup configs to get the necessary auxiliary data
@@ -142,7 +149,9 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # Construct the output dtype for the converted data
     output_dtype = [
         (col, dtype)
-        for col, dtype in zip(required_colum_names[convert_to], default_column_dtypes, strict=False)
+        for col, dtype in zip(
+            required_colum_names[convert_to], default_column_dtypes, cols_to_keep, strict=False
+        )
     ]
 
     # For each row in the data, convert the orbit to the desired format
@@ -152,20 +161,38 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         # regardless of the input format. That allows us to simplify the conversion
         # process below by only having the logic to convert from BCART_EQ to the other formats.
         sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-        if d["FORMAT"] == "BCART_EQ":
-            # We don't use parse_orbit_row here because we already have the BCART_EQ coordinates
-            x, y, z, xdot, ydot, zdot = d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"]
-        else:
-            x, y, z, xdot, ydot, zdot = parse_orbit_row(
-                d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total
+        # try:
+        # if d["FORMAT"].lower() == "nan" != "BCART_EQ":
+        #    raise ValueError(f"FORMAT column is not BCART_EQ: {d['FORMAT']}")
+        # np.isnan(d["FORMAT"])
+        # except Exception as e:
+        #    raise ValueError(
+        #        f"Error checking for NaN in FORMAT column. {d['FORMAT']} Ensure that the FORMAT column is present in the data. Error: {e}"
+        #    )
+        # Check if the FORMAT column is a string
+        if isinstance(d["FORMAT"], str):
+            if d["FORMAT"] == "BCART_EQ":
+                # We don't use parse_orbit_row here because we already have the BCART_EQ coordinates
+                x, y, z, xdot, ydot, zdot = d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"]
+            else:
+                x, y, z, xdot, ydot, zdot = parse_orbit_row(
+                    d, d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION, ephem, {}, gm_sun, gm_total
+                )
+            # Parse our 6x6 cartesian covariance matrix if it exists regardless of the input format.
+            # Note that this does not differentiate between BCART, BCART_EQ, and CART covariance matrices, and
+            # we handle whether or not it will be barycentric further below.
+            cov = (
+                parse_covariance_row_to_CART(d, gm_total, gm_sun)
+                if has_covariance
+                else np.full((6, 6), np.nan)
             )
-        # Parse our 6x6 cartesian covariance matrix if it exists regardless of the input format.
-        # Note that this does not differentiate between BCART, BCART_EQ, and CART covariance matrices, and
-        # we handle whether or not it will be barycentric further below.
-        cov = parse_covariance_row_to_CART(d, gm_total, gm_sun) if has_covariance else np.full((6, 6), np.nan)
+        else:
+            cov = np.full((6, 6), np.nan)
 
         # For each possible output format, covert our BCART_EQ coordinates to the requested format.
-        if convert_to == "BCART_EQ":
+        if not isinstance(d["FORMAT"], str):  # np.isnan(d["FORMAT"]):
+            row = (np.nan,) * 6
+        elif convert_to == "BCART_EQ":
             # Already in equatorial BCART so simply use the parsed coordinates
             row = x, y, z, xdot, ydot, zdot
         elif convert_to == "BCART":
@@ -276,12 +303,15 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
             row = universal_keplerian(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
 
+        row += (d["epochMJD_TDB"],)
+        row += tuple(d[col] for col, _ in cols_to_keep)
+
         # If the covariance matrix is present, convert it to a flattened tuple for output.
         cov_res = tuple(val for val in cov.flatten()) if has_covariance else tuple()
 
         # Turn our converted row into a structured array
         result_struct_array = np.array(
-            [(d[primary_id_column_name], convert_to) + row + (d["epochMJD_TDB"],) + cov_res],
+            [(d[primary_id_column_name], convert_to) + row + cov_res],
             dtype=output_dtype,
         )
         results.append(result_struct_array)
@@ -297,7 +327,7 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     return output
 
 
-def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_name="ObjID"):
+def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", cols_to_keep=[]):
     """
     Convert a structured numpy array to a different orbital format with support for parallel processing
 
@@ -320,8 +350,16 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
 
     if num_workers == 1:
         return _apply_convert(
-            data, convert_to, cache_dir=cache_dir, primary_id_column_name=primary_id_column_name
+            data,
+            convert_to,
+            cache_dir=cache_dir,
+            primary_id_column_name=primary_id_column_name,
+            cols_to_keep=cols_to_keep,
         )
+    raise ValueError(f"Convert cols_to_keep {cols_to_keep}")
+    for col_name, _ in cols_to_keep:
+        if col_name not in data.dtype.names:
+            raise ValueError(f"Requested column to keep {col_name} not found in data")
     # Parallelize the conversion of the data across the requested number of workers
     return process_data(
         data,
@@ -330,6 +368,7 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
         convert_to=convert_to,
         cache_dir=cache_dir,
         primary_id_column_name=primary_id_column_name,
+        cols_to_keep=cols_to_keep,
     )
 
 
@@ -411,7 +450,8 @@ def convert_cli(
     # Reopen the file now that we know the input format and can validate the column names
     required_columns_names, _ = get_output_column_names_and_types(
         primary_id_column_name,
-        has_covariance=False,  # Change for function
+        False,  # Change for function
+        [],  # No additional columns to keep
     )
     required_columns = required_columns_names[input_format]
     full_reader = reader_class(

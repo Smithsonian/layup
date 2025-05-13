@@ -98,6 +98,14 @@ def main():
         default="csv",
         required=False,
     )
+    optional.add_argument(
+        "--output_orbit",
+        help="the orbit format for the output file. [KEP, CART, COM, BKEP, BCART, BCART_EQ, BCOM]",
+        dest="ouptu_orbit",
+        type=str,
+        default="COM",
+        required=False,
+    )
 
     optional.add_argument(
         "-n",

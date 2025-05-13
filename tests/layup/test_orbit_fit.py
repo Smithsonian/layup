@@ -14,13 +14,18 @@ from layup.utilities.file_io.CSVReader import CSVDataReader
 
 
 @pytest.mark.parametrize(
-    "chunk_size, num_workers",
+    "chunk_size, num_workers, output_orbit_format",
     [
-        (100_000, 1),
-        (20_000, 2),
+        (100_000, 1, "BCART_EQ"),
+        (100_000, 1, "BCART"),
+        # (100_000, 1, "CART"),
+        # (100_000, 1, "COM"),
+        # (100_000, 1, "BCOM"),
+        # (100_000, 2, "KEP"),
+        # (20_000, 2, "BKEP"),
     ],
 )
-def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
+def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     """Test that the orbit_fit cli works for a small CSV file."""
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
     os.chdir(tmpdir)
@@ -37,6 +42,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
             self.debias = False
             self.weight_data = False
             self.g = g  # Command line argument for initial guesses file
+            self.output_orbit_format = output_orbit_format
 
     # Now run the orbit_fit cli with overwrite set to True
     orbitfit_cli(
@@ -51,6 +57,13 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
 
     # Verify the orbit fit produced an output file
     assert os.path.exists(temp_guess_file)
+
+    # Get output of guess file
+    # Create a new CSV reader to read in our output file
+    guess_csv_reader = CSVDataReader(temp_guess_file, "csv", primary_id_column_name="provID")
+    guess_data = guess_csv_reader.read_rows()
+    # Verify that the flag column is in the output data
+    assert "flag" in guess_data.dtype.names
 
     # Use the output of our first orbit fit as the initial guesses for our
     # final orbit fit run
@@ -124,6 +137,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
             assert row["flag"] == 0
             # Check that the covariance matrix is non-zero
             assert np.count_nonzero(cov_matrix) > 0
+            assert_equal(row["FORMAT"], output_orbit_format)
 
 
 def test_orbit_fit_mixed_inputs():

@@ -9,6 +9,7 @@ import pooch
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
+from layup.convert import convert
 from layup.routines import Observation, get_ephem, run_from_vector, run_from_vector_with_initial_guess
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
@@ -356,16 +357,16 @@ def orbitfit_cli(
 
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
-        overwrite = cli_args.force
         debias = cli_args.debias
         guess_file = Path(cli_args.g) if cli_args.g is not None else None
         weight_data = cli_args.weight_data
+        output_orbit_format = cli_args.output_orbit_format
     else:
         cache_dir = None
-        overwrite = False
         debias = False
         guess_file = None
         weight_data = False
+        output_orbit_format = "COM"  # Default output orbit format.
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -457,6 +458,25 @@ def orbitfit_cli(
             debias=debias,
             weight_data=weight_data,
         )
+
+        # Convert the fit_orbits to the preferred output format
+        if output_orbit_format != "BCART_EQ":
+            fit_orbits = convert(
+                fit_orbits,
+                convert_to=output_orbit_format,
+                num_workers=num_workers,
+                cache_dir=cache_dir,
+                primary_id_column_name=_primary_id_column_name,
+                cols_to_keep=[
+                    ("niter", "i4"),  # Number of iterations
+                    ("method", "O"),  # Method used for orbit fitting
+                    ("flag", "i4"),  # Single-character flag indicating success of the fit
+                ],
+            )
+            if "flag" not in fit_orbits.dtype.names:
+                raise ValueError(
+                    f"Columns from convert: {fit_orbits.dtype.names} do not match expected columns"
+                )
 
         if cli_args.separate_flagged:
             # Split the results into two files: one for successful fits and one for failed fits
