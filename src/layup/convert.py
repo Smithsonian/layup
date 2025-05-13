@@ -8,7 +8,12 @@ from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.simulation_setup import _create_assist_ephemeris
 
-from layup.utilities.data_processing_utilities import get_cov_columns, has_cov_columns, process_data
+from layup.utilities.data_processing_utilities import (
+    get_cov_columns,
+    get_format,
+    has_cov_columns,
+    process_data,
+)
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.layup_configs import LayupConfigs
@@ -442,37 +447,3 @@ def convert_cli(
             write_csv(converted_data, output_file)
 
     print(f"Data has been written to {output_file}")
-
-
-def get_format(data):
-    """
-    Get the orbit parameter format for this data.
-
-    Parameters
-    ----------
-    data : numpy structured array
-        The data to check.
-
-    Returns
-    -------
-    str
-        The format of the data.
-    """
-
-    if len(data) == 0:
-        logger.error("Data is empty")
-        raise ValueError("Data is empty")
-
-    format = None
-
-    if "FORMAT" in data.dtype.names:
-        # Find first valid format in the data
-        for format in data["FORMAT"]:
-            if format in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-                return format
-        else:
-            logger.error("Data does not contain valid orbit format")
-            raise ValueError("Data does not contain valid orbit format")
-    else:
-        logger.error("Data does not contain 'FORMAT' column")
-        raise ValueError("Data does not contain 'FORMAT' column")
