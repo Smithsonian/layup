@@ -16,6 +16,7 @@ from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,
     get_cov_columns,
+    get_format,
     parse_fit_result,
     process_data_by_id,
 )
@@ -454,7 +455,7 @@ def orbitfit_cli(
         if guess_file is not None:
             # Get the guesses for all the objects in the current chunk.
             initial_guess = guess_reader.read_objects(chunk)
-            if len(initial_guess) != 0 and initial_guess["FORMAT"][0] != "BCART_EQ":
+            if len(initial_guess) != 0 and get_format(initial_guess) != "BCART_EQ":
                 # If the initial guess is not in the BCART_EQ format, convert it to BCART_EQ
                 new_initial_guess = convert(
                     initial_guess,
