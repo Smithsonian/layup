@@ -508,7 +508,7 @@ def _is_valid_data(data):
     """
     valid_conditions = [
         len(data) >= 3,
-        np.all(data["et"] >= 0),
+        np.all(data["et"] >= 6279962400.00),  # The number of seconds between 1801 and 2000 is 6279962400.00
         np.all(is_numeric(data["ra"])),
         np.all(is_numeric(data["dec"])),
         np.all(is_numeric(data["x"])),
