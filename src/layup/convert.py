@@ -8,7 +8,12 @@ from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.simulation_setup import _create_assist_ephemeris
 
-from layup.utilities.data_processing_utilities import get_cov_columns, has_cov_columns, process_data
+from layup.utilities.data_processing_utilities import (
+    get_cov_columns,
+    get_format,
+    has_cov_columns,
+    process_data,
+)
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.layup_configs import LayupConfigs
@@ -438,13 +443,7 @@ def convert_cli(
     sample_data = sample_reader.read_rows(block_start=0, block_size=1)
 
     # Check orbit format in the file
-    input_format = None
-    if "FORMAT" in sample_data.dtype.names:
-        input_format = sample_data["FORMAT"][0]
-        if input_format not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-            logger.error(f"Input file contains invalid 'FORMAT' column: {input_format}")
-    else:
-        logger.error("Input file does not contain 'FORMAT' column")
+    input_format = get_format(sample_data)
 
     # Check that the input format is not already the desired format
     if convert_to == input_format:
