@@ -259,19 +259,30 @@ class LayupObservatory(SorchaObservatory):
     A wrapper around Sorcha's Observatory class to provide additional functionality for Layup.
     """
 
-    def __init__(self):
+    def __init__(self, cache_dir=None):
+        """Create an instance of the LayupObservatory class.
+
+        Parameters
+        ----------
+        cache_dir : str, optional
+            The location of the cache directory containing the bootstrapped files.
+            If the files or cache is not present, the files will be downloaded, by default None
+        """
+
         # Get Layup configs
         config = LayupConfigs()
+        self.cache_dir = cache_dir
 
         # A simple class to mimic the arguments processed by Sorcha's observatory class
         class FakeSorchaArgs:
-            def __init__(self):
+            def __init__(self, cache_dir=None):
                 # Sorcha allows this argument to be None, so simply use that here
-                self.ar_data_file_path = None
+                self.ar_data_file_path = cache_dir
 
         # Furnish spiceypy kernels used for calculating barycentric positions
-        furnish_spiceypy(FakeSorchaArgs(), config.auxiliary)
-        super().__init__(FakeSorchaArgs(), config.auxiliary)
+        fake_args = FakeSorchaArgs(self.cache_dir)
+        furnish_spiceypy(fake_args, config.auxiliary)
+        super().__init__(fake_args, config.auxiliary)
 
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}

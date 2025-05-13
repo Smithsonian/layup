@@ -33,7 +33,7 @@ def main():
         "--conf",
         help="optional configuration file",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
     optional.add_argument(
@@ -76,6 +76,18 @@ def main():
 
 
 def execute(args):
+    from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
+    from layup.utilities.file_access_utils import find_file_or_exit
+    from layup.utilities.layup_configs import LayupConfigs
+
+    configs = LayupConfigs()
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
+        configs = LayupConfigs(args.config)
+
+    # check if bootstrap files are missing, and download if necessary
+    download_files_if_missing(configs.auxiliary, args)
+
     print("Hello world this would start comet")
 
 

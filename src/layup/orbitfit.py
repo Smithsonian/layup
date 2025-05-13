@@ -300,7 +300,7 @@ def orbitfit(
         and program. Default is False.
     """
 
-    layup_observatory = LayupObservatory()
+    layup_observatory = LayupObservatory(cache_dir=cache_dir)
 
     # The units of et are seconds (from J2000). This new column is used by
     # data_processing_utilities.obscodes_to_barycentric.

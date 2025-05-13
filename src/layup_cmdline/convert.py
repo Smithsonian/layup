@@ -44,7 +44,7 @@ def main():
         "--conf",
         help="optional configuration file",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
     optional.add_argument(
@@ -108,8 +108,10 @@ def main():
 
 def execute(args):
     from layup.convert import convert_cli
+    from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
+    from layup.utilities.layup_configs import LayupConfigs
 
     # check ar directory exists if specified
     if args.ar_data_file_path:
@@ -140,6 +142,15 @@ def execute(args):
     # Check that chunk size is a positive integer
     if not isinstance(args.chunk, int) or args.chunk <= 0:
         logger.error("ERROR: Chunk size must be a positive integer")
+
+    configs = LayupConfigs()
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
+        configs = LayupConfigs(args.config)
+
+    # check if bootstrap files are missing, and download if necessary
+    download_files_if_missing(configs.auxiliary, args)
+
     convert_cli(
         input=args.input,
         output_file_stem=args.o,

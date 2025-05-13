@@ -117,7 +117,7 @@ def predict(data, obscode, times, primary_id_column_name="provID", num_workers=-
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    Layup_observatory = LayupObservatory()
+    Layup_observatory = LayupObservatory(cache_dir=cache_dir)
 
     times_et = np.array([spice.str2et(f"jd {t} tdb") for t in times], dtype="<f8")
 

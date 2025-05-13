@@ -3,7 +3,7 @@
 #
 import argparse
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import astropy.units as u
@@ -64,7 +64,7 @@ def main():
         "--conf",
         help="Optional configuration file",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
 
@@ -232,8 +232,10 @@ def execute(args):
     import pooch
 
     from layup.predict import predict_cli
+    from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
+    from layup.utilities.layup_configs import LayupConfigs
 
     # check input exists
     find_file_or_exit(args.input, "input")
@@ -284,6 +286,14 @@ def execute(args):
         sys.exit(f"Unsupported unit, {unit_str}, for timestep: {timestep_str}.")
 
     timestep_day = (value * UNIT_DICT[unit_str]).to(u.day).value  # converting value into day units
+
+    configs = LayupConfigs()
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
+        configs = LayupConfigs(args.config)
+
+    # check if bootstrap files are missing, and download if necessary
+    download_files_if_missing(configs.auxiliary, args)
 
     predict_cli(
         cli_args=args,
