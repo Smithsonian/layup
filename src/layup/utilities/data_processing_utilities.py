@@ -116,7 +116,7 @@ def get_cov_columns():
         The covariance columns in the data.
     """
     # Get the covariance columns from the data
-    return [f"cov_{i}{j}" for i in range(6) for j in range(6)]
+    return [f"cov_{i}_{j}" for i in range(6) for j in range(6)]
 
 
 def has_cov_columns(data):
