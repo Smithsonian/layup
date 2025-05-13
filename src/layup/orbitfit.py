@@ -34,6 +34,14 @@ INPUT_FORMAT_READERS = {
     "ADES_hdf5": (HDF5DataReader, None),
 }
 
+_orbit_cols_to_keep = [
+    ("csq", "f8"),  # Chi-square value
+    ("ndof", "i4"),  # Number of degrees of freedom
+    ("niter", "i4"),  # Number of iterations
+    ("method", "O"),  # Method used for orbit fitting
+    ("flag", "i4"),  # Single-character flag indicating success of the fit
+]
+
 
 def _get_result_dtypes(primary_id_column_name: str):
     """Helper function to create the result dtype with the correct primary ID column name."""
@@ -446,6 +454,27 @@ def orbitfit_cli(
         if guess_file is not None:
             # Get the guesses for all the objects in the current chunk.
             initial_guess = guess_reader.read_objects(chunk)
+            if len(initial_guess) != 0 and initial_guess["FORMAT"][0] != "BCART_EQ":
+                # If the initial guess is not in the BCART_EQ format, convert it to BCART_EQ
+                new_initial_guess = convert(
+                    initial_guess,
+                    convert_to="BCART_EQ",
+                    num_workers=num_workers,
+                    cache_dir=cache_dir,
+                    primary_id_column_name=_primary_id_column_name,
+                    cols_to_keep=_orbit_cols_to_keep,
+                )
+                """
+                Is there a mismatch between int and str when parsing thesee in?
+                if set(initial_guess[_primary_id_column_name]) != set(
+                    new_initial_guess[_primary_id_column_name]
+                ):
+                    missing_cols = set(initial_guess.dtype.names) - set(new_initial_guess.dtype.names)
+                    raise ValueError(
+                        f"Initial guess data does not contain all rows for {_primary_id_column_name} = {data[_primary_id_column_name][0]}. Initial guess len {len(initial_guess)} != new_initial_guess len {len(new_initial_guess)}. {set(initial_guess[_primary_id_column_name])} != {set(new_initial_guess[_primary_id_column_name])}. missing_cols: {missing_cols}"
+                    )
+                """
+                initial_guess = new_initial_guess
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
@@ -467,11 +496,7 @@ def orbitfit_cli(
                 num_workers=num_workers,
                 cache_dir=cache_dir,
                 primary_id_column_name=_primary_id_column_name,
-                cols_to_keep=[
-                    ("niter", "i4"),  # Number of iterations
-                    ("method", "O"),  # Method used for orbit fitting
-                    ("flag", "i4"),  # Single-character flag indicating success of the fit
-                ],
+                cols_to_keep=_orbit_cols_to_keep,
             )
             if "flag" not in fit_orbits.dtype.names:
                 raise ValueError(

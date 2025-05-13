@@ -94,7 +94,7 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance, co
     }
     # Default column dtypes across all orbit formats. Note that the ordering of the dtypes matches
     # the ordering of the column names in REQUIRED_COLUMN_NAMES.
-    default_column_dtypes = ["<U12", "<U8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
+    default_column_dtypes = ["O", "<U8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
     default_column_dtypes.extend([dtype for _, dtype in cols_to_keep])
     if has_covariance:
         # Flattened 6x6 covariance matrix
@@ -149,9 +149,7 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # Construct the output dtype for the converted data
     output_dtype = [
         (col, dtype)
-        for col, dtype in zip(
-            required_colum_names[convert_to], default_column_dtypes, cols_to_keep, strict=False
-        )
+        for col, dtype in zip(required_colum_names[convert_to], default_column_dtypes, strict=False)
     ]
 
     # For each row in the data, convert the orbit to the desired format
@@ -302,6 +300,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             # Use universal_keplerian to convert to KEP with mu = gm_sun
             x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
             row = universal_keplerian(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+        else:
+            raise ValueError(f"Invalid conversion type {convert_to}. Must be one of: {expected_formats}")
 
         row += (d["epochMJD_TDB"],)
         row += tuple(d[col] for col, _ in cols_to_keep)
@@ -347,7 +347,14 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
     data : numpy structured array
         The converted data
     """
-
+    try:
+        for col_name, _ in cols_to_keep:
+            if col_name not in data.dtype.names:
+                raise ValueError(f"Requested column from {cols_to_keep} to keep {col_name} not found in data")
+    except Exception as e:
+        raise ValueError(
+            f"Error checking for requested columns to keep {cols_to_keep}. Ensure that the columns are present in the data. Error: {e}"
+        )
     if num_workers == 1:
         return _apply_convert(
             data,
@@ -356,10 +363,6 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
             primary_id_column_name=primary_id_column_name,
             cols_to_keep=cols_to_keep,
         )
-    raise ValueError(f"Convert cols_to_keep {cols_to_keep}")
-    for col_name, _ in cols_to_keep:
-        if col_name not in data.dtype.names:
-            raise ValueError(f"Requested column to keep {col_name} not found in data")
     # Parallelize the conversion of the data across the requested number of workers
     return process_data(
         data,
