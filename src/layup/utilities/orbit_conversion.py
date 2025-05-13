@@ -661,7 +661,7 @@ def covariance_eq_to_ecl(covariance):
     return jj_rotation @ covariance @ jj_rotation.T
 
 
-# @jax.jit
+@jax.jit
 def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = jnp.array([x, y, z])
     r_rot = jnp.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
@@ -676,7 +676,7 @@ def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     return covar
 
 
-# @jax.jit
+@jax.jit
 def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = jnp.array([x, y, z])
     r_rot = jnp.dot(r, EQ_TO_ECL_ROTATION_MATRIX)
