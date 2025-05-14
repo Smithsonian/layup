@@ -102,6 +102,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     ] + get_cov_columns()
     assert set(output_data.dtype.names) == set(expected_cols)
 
+    # 222222 only has one data point and 333333 has a datapoint before 1801, both should output flag = -1
+    assert all(np.isin(output_data["provID"][output_data["flag"] == -1], ["222222", "333333"]))
     # Verify that all of the output data is in the default BCART_EQ format for flag == 0 and is nan for flag !=0
     assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == "BCART_EQ")
     for i in np.arange(len(output_data["FORMAT"][output_data["flag"] != 0])):
