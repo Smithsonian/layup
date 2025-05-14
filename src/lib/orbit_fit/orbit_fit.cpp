@@ -1013,6 +1013,9 @@ namespace orbit_fit
                 continue;
             }else{
                 printf("flag: %d iters: %d dof: %d chi2: %lf\n", flag, sfr.niter, sfr.ndof, sfr.csq);
+                dof = sfr.ndof;
+                chi2_final = sfr.csq;
+                result_epoch = sfr.epoch;
 		//printf("SUCCESS\n\n");
 		success = 0;
 		break;
