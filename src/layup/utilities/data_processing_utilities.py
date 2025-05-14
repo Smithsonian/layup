@@ -1,3 +1,4 @@
+import logging
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
@@ -12,6 +13,8 @@ from layup.utilities.layup_configs import LayupConfigs
 
 AU_M = 149597870700
 AU_KM = AU_M / 1000.0
+
+logger = logging.getLogger(__name__)
 
 
 def process_data(data, n_workers, func, **kwargs):
@@ -116,7 +119,7 @@ def get_cov_columns():
         The covariance columns in the data.
     """
     # Get the covariance columns from the data
-    return [f"cov_{i}{j}" for i in range(6) for j in range(6)]
+    return [f"cov_{i}_{j}" for i in range(6) for j in range(6)]
 
 
 def has_cov_columns(data):
@@ -357,3 +360,37 @@ class LayupObservatory(SorchaObservatory):
 
         # Combine all of our results into a single structured array
         return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
+
+
+def get_format(data):
+    """
+    Get the orbit parameter format for this data.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to check.
+
+    Returns
+    -------
+    str
+        The format of the data.
+    """
+
+    if len(data) == 0:
+        logger.error("Data is empty")
+        raise ValueError("Data is empty")
+
+    format = None
+
+    if "FORMAT" in data.dtype.names:
+        # Find first valid format in the data
+        for format in data["FORMAT"]:
+            if format in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+                return format
+        else:
+            logger.error("Data does not contain valid orbit format")
+            raise ValueError("Data does not contain valid orbit format")
+    else:
+        logger.error("Data does not contain 'FORMAT' column")
+        raise ValueError("Data does not contain 'FORMAT' column")

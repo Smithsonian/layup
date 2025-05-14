@@ -102,6 +102,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
     ] + get_cov_columns()
     assert set(output_data.dtype.names) == set(expected_cols)
 
+    # 222222 only has one data point and 333333 has a datapoint before 1801, both should output flag = -1
+    assert all(np.isin(output_data["provID"][output_data["flag"] == -1], ["222222", "333333"]))
     # Verify that all of the output data is in the default BCART_EQ format for flag == 0 and is nan for flag !=0
     assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == "BCART_EQ")
     for i in np.arange(len(output_data["FORMAT"][output_data["flag"] != 0])):
@@ -160,7 +162,9 @@ def test_orbitfit_result_parsing():
     """Perform a simple orbit fit and check that we can parse the results back correctly."""
 
     input_data = CSVDataReader(
-        get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"), "csv", primary_id_column_name="provID"
+        get_test_filepath("1_random_mpc_ADES_provIDs_no_sats_micro.csv"),
+        "csv",
+        primary_id_column_name="provID",
     ).read_rows()
 
     fitted_orbits = orbitfit(
