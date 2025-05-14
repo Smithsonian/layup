@@ -6,27 +6,26 @@ import pooch
 import pytest
 from numpy.testing import assert_equal
 
-from layup.unpack import unpack, unpack_cli
-from layup.utilities.data_processing_utilities import get_cov_columns, parse_cov, parse_fit_result
+from layup.unpack import unpack_cli
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
 
-def test_orbit_fit_cli(tmpdir):
-    """Test that the orbit_fit cli works for a small CSV file."""
-    # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
+def test_unpack_cli(tmpdir):
+    """Test that the unpack cli works for a small CSV file."""
+    # Since the unpack CLI outputs to the current working directory, we need to change to our temp directory
     os.chdir(tmpdir)
 
     temp_out_file = "test_output"
 
-    # Now run the orbit_fit cli with overwrite set to True
+    # Now run the unpack cli with overwrite set to True
     unpack_cli(
         input=get_test_filepath("unpack_test_orbitfit_output.csv"),
         file_format="csv",
         output_file_stem=temp_out_file,
     )
 
-    # Verify the orbit fit produced an output file
+    # Verify the unpack produced an output file
     assert os.path.exists(temp_out_file + ".csv")
 
     # Create a new CSV reader to read in our output file
