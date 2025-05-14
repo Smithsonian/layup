@@ -28,6 +28,13 @@ from layup.utilities.orbit_conversion import (
 
 logger = logging.getLogger(__name__)
 
+ORBIT_COLS_TO_KEEP = [
+    ("csq", "f8"),  # Chi-square value
+    ("ndof", "i4"),  # Number of degrees of freedom
+    ("niter", "i4"),  # Number of iterations
+    ("method", "O"),  # Method used for orbit fitting
+    ("flag", "i4"),  # Single-character flag indicating success of the fit
+]
 
 # Columns which use degrees as units in each orbit format
 degree_columns = {
@@ -128,6 +135,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         The base directory for downloaded files.
     primary_id_column_name : str, optional
         The name of the column in the data that contains the primary ID of the object.
+    cols_to_keep : list, optional
+        List of tuples containing the column names and dtypes to keep in the output data.
 
     Returns
     -------
@@ -142,6 +151,10 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         raise ValueError(f"Invalid conversion type {convert_to}. Must be one of: {expected_formats}")
     has_covariance = has_cov_columns(data)
     logger.debug(f"Data has covariance: {has_covariance}")
+
+    # Remove columns not in data from cols_to_keep
+    cols_to_keep = [(col, dtype) for col, dtype in cols_to_keep if col in data.dtype.names]
+    logger.debug(f"Columns to keep: {cols_to_keep}")
 
     required_colum_names, default_column_dtypes = get_output_column_names_and_types(
         primary_id_column_name, has_covariance, cols_to_keep
@@ -323,9 +336,16 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     return output
 
 
-def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", cols_to_keep=[]):
+def convert(
+    data,
+    convert_to,
+    num_workers=1,
+    cache_dir=None,
+    primary_id_column_name="ObjID",
+    cols_to_keep=ORBIT_COLS_TO_KEEP,
+):
     """
-    Convert a structured numpy array to a different orbital format with support for parallel processing
+    Convert a structured numpy array to a different orbital format with support for parallel processing.
 
     Parameters
     ----------
@@ -335,8 +355,12 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
         The format to convert the data to. Must be one of: "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"
     num_workers : int, optional (default=1)
         The number of workers to use for parallel processing.
+    cache_dir : str, optional
+        The base directory for downloaded files.
     primary_id_column_name : str, optional (default="ObjID")
         The name of the column in the data that contains the primary ID of the object.
+    cols_to_keep : list, optional
+        List of tuples containing additional column names and dtypes to keep in the output data.
 
     Returns
     -------

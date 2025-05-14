@@ -183,12 +183,11 @@ def predict_cli(
         data = reader.read_objects(chunk)
 
         if get_format(data) != "BCART_EQ":
-            convert(
+            data = convert(
                 data,
                 "BCART_EQ",
                 cache_dir=cache_dir,
-                primaty_id_column_name=cli_args.primary_id_column_name,
-                cols_to_keep=[],
+                primary_id_column_name=cli_args.primary_id_column_name,
             )
 
         predictions = predict(

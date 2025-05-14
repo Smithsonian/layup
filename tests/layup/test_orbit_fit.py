@@ -32,6 +32,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     temp_guess_file = os.path.join(tmpdir, f"{guess_file_stem}.csv")
     temp_out_file = "test_output"
 
+    test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
+
     class FakeCliArgs:
         def __init__(self, g=None):
             self.ar_data_file_path = None
@@ -45,7 +47,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
 
     # Now run the orbit_fit cli with overwrite set to True
     orbitfit_cli(
-        input=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
+        input=test_input_filepath,
         input_file_format="ADES_csv",
         output_file_stem=guess_file_stem,  # Our first run will create our initial guess file
         output_file_format="csv",
@@ -69,7 +71,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     # Use the output of our first orbit fit as the initial guesses for our
     # final orbit fit run
     orbitfit_cli(
-        input=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
+        input=test_input_filepath,
         input_file_format="ADES_csv",
         output_file_stem=temp_out_file,
         output_file_format="csv",
@@ -88,7 +90,9 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
 
     # Read the input data and get the provID column
     input_csv_reader = CSVDataReader(
-        get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"), "csv", primary_id_column_name="provID"
+        test_input_filepath,
+        "csv",
+        primary_id_column_name="provID",
     )
     input_data = input_csv_reader.read_rows()
 
