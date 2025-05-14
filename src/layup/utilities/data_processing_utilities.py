@@ -330,7 +330,6 @@ class LayupObservatory(SorchaObservatory):
                 try:
                     # Calculate the barycentric position and velocity of the observatory or fetch
                     # it from the cache if it has already been calculated
-                    print( barycentricObservatoryRates(et, obscode, self))
                     bary_obs_pos, bary_obs_vel = self.cached_obs[obscode].setdefault(
                         et, barycentricObservatoryRates(et, obscode, self)
                     )
