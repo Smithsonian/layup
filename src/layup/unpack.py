@@ -129,7 +129,7 @@ def unpack_cli(
 
     format = input_format
 
-    if format in ["CART", "BCART"]:
+    if format in ["CART", "BCART_EQ"]:
         orbit_para = ["x", "y", "z", "xdot", "ydot", "zdot"]
         orbit_para_sigma = ["sigma_x", "sigma_y", "sigma_z", "sigma_xdot", "sigma_ydot", "sigma_zdot"]
     elif format in ["KEP", "BKEP"]:
