@@ -63,3 +63,6 @@ def test_predict_cli(tmpdir, chunk_size, time_step):
 
         # ensure that have a prediction for each object at every time step
         assert_equal(len(output_data), n_uniq_ids * number_of_predictions_per)
+
+        assert np.all(output_data["ra_deg"] <= 360.0) and np.all(output_data["ra_deg"] >= 0.0)
+        assert np.all(output_data["dec_deg"] <= 90.0) and np.all(output_data["dec_deg"] >= -90.0)

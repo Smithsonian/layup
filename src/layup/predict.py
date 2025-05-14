@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pooch
 import spiceypy as spice
+from sorcha.ephemeris.simulation_geometry import vec2ra_dec
 
 from layup.convert import convert
 from layup.routines import Observation, get_ephem, numpy_to_eigen, predict_sequence
@@ -25,6 +26,8 @@ def _get_result_dtypes(primary_id_column_name: str):
     return np.dtype(
         [
             (primary_id_column_name, "O"),  # Object ID
+            ("ra_deg", "f8"),
+            ("dec_deg", "f8"),
             ("rho_x", "f8"),  # The first of the 3 rho unit vector
             ("rho_y", "f8"),
             ("rho_z", "f8"),
@@ -79,6 +82,8 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
             predict_results.append(
                 (
                     row[primary_id_column_name],
+                    pred.rho[0],  # place holder
+                    pred.rho[0],  # place holder
                     pred.rho[0],
                     pred.rho[1],
                     pred.rho[2],
@@ -90,7 +95,10 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
                 )
             )
 
-    return np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
+    results = np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
+    results["ra_deg"], results["dec_deg"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
+
+    return results
 
 
 def predict(data, obscode, times, primary_id_column_name="provID", num_workers=-1, cache_dir=None):
