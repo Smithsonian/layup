@@ -42,7 +42,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     temp_guess_file = os.path.join(tmpdir, f"{guess_file_stem}.csv")
     temp_out_file = "test_output"
 
-    test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
+    test_input_filepath = get_test_filepath("1_random_mpc_ADES_provIDs_no_sats_micro.csv")
 
     class FakeCliArgs:
         def __init__(self, g=None):
