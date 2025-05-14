@@ -179,15 +179,18 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # For each row in the data, convert the orbit to the desired format
     results = []
     for d in data:
-        # Note that the format value is usually a string but may be a NaN in which case
-        # we will have the converted orbits be NaNs as well.
+        # Note that the format value may be "NONE" for rows which were from layup orbit fit failures
+        # For these we simply output NaNs rather than try to convert.
         row = (np.nan,) * 6
         cov = np.full((6, 6), np.nan)
-        if isinstance(d["FORMAT"], str):
+        if d["FORMAT"] != "NONE":
             # First we convert our data into equatorial barycentric cartesian coordinates,
             # regardless of the input format. That allows us to simplify the conversion
             # process below by only having the logic to convert from BCART_EQ to the other formats.
             sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
+
+            if not isinstance(d["FORMAT"], str):
+                raise ValueError(f"FORMAT column must be a string {d['FORMAT']}.")
 
             if d["FORMAT"] == "BCART_EQ":
                 # We don't use parse_orbit_row here because we already have the BCART_EQ coordinates
@@ -325,8 +328,9 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         cov_res = tuple(val for val in cov.flatten()) if has_covariance else tuple()
 
         # Turn our converted row into a structured array
+        output_format = convert_to if d["FORMAT"] != "NONE" else "NONE"
         result_struct_array = np.array(
-            [(d[primary_id_column_name], convert_to) + row + cov_res],
+            [(d[primary_id_column_name], output_format) + row + cov_res],
             dtype=output_dtype,
         )
         results.append(result_struct_array)

@@ -11,6 +11,16 @@ from layup.utilities.data_processing_utilities import get_cov_columns, parse_cov
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
+OUTPUT_COL_PER_ORBIT_TYPE = {
+    "BCART_EQ": ["x", "y", "z", "xdot", "ydot", "zdot"],
+    "BCART": ["x", "y", "z", "xdot", "ydot", "zdot"],
+    "CART": ["x", "y", "z", "xdot", "ydot", "zdot"],
+    "COM": ["q", "inc", "node", "argPeri", "t_p_MJD_TDB"],
+    "BCOM": ["q", "inc", "node", "argPeri", "t_p_MJD_TDB"],
+    "KEP": ["a", "e", "inc", "node", "argPeri", "ma"],
+    "BKEP": ["a", "e", "inc", "node", "argPeri", "ma"],
+}
+
 
 @pytest.mark.parametrize(
     "chunk_size, num_workers, output_orbit_format",
@@ -117,12 +127,10 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     assert all(np.isin(output_data["provID"][output_data["flag"] == -1], ["222222", "333333"]))
     # Verify that all of the output data is in the requested output format for flag == 0 and is nan for flag !=0
     assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == output_orbit_format)
-    # TODO wbeebe add this back in after appropriate type conversion
-    # for i in np.arange(len(output_data["FORMAT"][output_data["flag"] != 0])):
-    #    assert math.isnan(output_data["FORMAT"][output_data["flag"] != 0][i])
+    assert np.all(output_data["FORMAT"][output_data["flag"] != 0] == "NONE")
 
-    # For each row in the output data, check that there is a non-zero covariance matrix
-    # if there was a successful fit
+    # For each row in the output data, check that there is a non-NaN covariance matrix
+    # and orbital parameters if there was a successful fit
     for row in output_data:
         # Check that the covariance matrix has populated values.
         cov_matrix = parse_cov(row)
@@ -133,14 +141,19 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
             assert np.all(nan_mask)
             # Since the fit failed, check that the flag is set to 1 or -1
             assert row["flag"] == 1 or row["flag"] == -1
+            for col in OUTPUT_COL_PER_ORBIT_TYPE[output_orbit_format]:
+                # Check that the expected orbit format elements are not populated
+                assert np.isnan(row[col])
+            assert np.isnan(row["epochMJD_TDB"])
         else:
             # Since no values are NaN, check that the flag is set to 0
             assert row["flag"] == 0
             # Check that the covariance matrix is non-zero
             assert np.count_nonzero(cov_matrix) > 0
-            assert_equal(row["FORMAT"], output_orbit_format)
             # Check that the expected orbit format elements are populated
-            # TODO
+            for col in OUTPUT_COL_PER_ORBIT_TYPE[output_orbit_format]:
+                assert not np.isnan(row[col])
+            assert not np.isnan(row["epochMJD_TDB"])
 
 
 def test_orbit_fit_mixed_inputs():
