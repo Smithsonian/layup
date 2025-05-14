@@ -11,6 +11,7 @@ from layup.routines import Observation, get_ephem, numpy_to_eigen, predict_seque
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,
+    get_format,
     parse_fit_result,
     process_data,
 )
@@ -181,33 +182,24 @@ def predict_cli(
         # Read the objects from the file
         data = reader.read_objects(chunk)
 
-        input_formats = np.unique(data["FORMAT"])
-        # Drop the NaN format if present and then only keep the first format
-        input_formats = input_formats[~np.isnan(input_formats)]
-        if len(input_formats) > 1:
-            raise ValueError(
-                f"Input file contains multiple formats: {input_formats}. Please use a single format."
-            )
-        if len(input_formats) == 1:
-            input_format = input_formats[0]
-            if input_format != "BCART_EQ":
-                convert(
-                    data,
-                    "BCART_EQ",
-                    cache_dir=cache_dir,
-                    primaty_id_column_name=cli_args.primary_id_column_name,
-                    cols_to_keep=[],
-                )
-
-            predictions = predict(
+        if get_format(data) != "BCART_EQ":
+            convert(
                 data,
-                obscode=cli_args.station,
-                times=times,
-                num_workers=cli_args.n,
+                "BCART_EQ",
                 cache_dir=cache_dir,
-                primary_id_column_name=cli_args.primary_id_column_name,
+                primaty_id_column_name=cli_args.primary_id_column_name,
+                cols_to_keep=[],
             )
 
-            if len(predictions) > 0:
-                write_csv(predictions, output_file)
+        predictions = predict(
+            data,
+            obscode=cli_args.station,
+            times=times,
+            num_workers=cli_args.n,
+            cache_dir=cache_dir,
+            primary_id_column_name=cli_args.primary_id_column_name,
+        )
+
+        if len(predictions) > 0:
+            write_csv(predictions, output_file)
     pass
