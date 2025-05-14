@@ -160,20 +160,16 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # For each row in the data, convert the orbit to the desired format
     results = []
     for d in data:
-        # First we convert our data into equatorial barycentric cartesian coordinates,
-        # regardless of the input format. That allows us to simplify the conversion
-        # process below by only having the logic to convert from BCART_EQ to the other formats.
-        sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-        # try:
-        # if d["FORMAT"].lower() == "nan" != "BCART_EQ":
-        #    raise ValueError(f"FORMAT column is not BCART_EQ: {d['FORMAT']}")
-        # np.isnan(d["FORMAT"])
-        # except Exception as e:
-        #    raise ValueError(
-        #        f"Error checking for NaN in FORMAT column. {d['FORMAT']} Ensure that the FORMAT column is present in the data. Error: {e}"
-        #    )
-        # Check if the FORMAT column is a string
+        # Note that the format value is usually a string but may be a NaN in which case
+        # we will have the converted orbits be NaNs as well.
+        row = (np.nan,) * 6
+        cov = np.full((6, 6), np.nan)
         if isinstance(d["FORMAT"], str):
+            # First we convert our data into equatorial barycentric cartesian coordinates,
+            # regardless of the input format. That allows us to simplify the conversion
+            # process below by only having the logic to convert from BCART_EQ to the other formats.
+            sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
+
             if d["FORMAT"] == "BCART_EQ":
                 # We don't use parse_orbit_row here because we already have the BCART_EQ coordinates
                 x, y, z, xdot, ydot, zdot = d["x"], d["y"], d["z"], d["xdot"], d["ydot"], d["zdot"]
@@ -184,129 +180,124 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             # Parse our 6x6 cartesian covariance matrix if it exists regardless of the input format.
             # Note that this does not differentiate between BCART, BCART_EQ, and CART covariance matrices, and
             # we handle whether or not it will be barycentric further below.
-            cov = (
-                parse_covariance_row_to_CART(d, gm_total, gm_sun)
-                if has_covariance
-                else np.full((6, 6), np.nan)
-            )
-        else:
-            cov = np.full((6, 6), np.nan)
-
-        # For each possible output format, covert our BCART_EQ coordinates to the requested format.
-        if not isinstance(d["FORMAT"], str):  # np.isnan(d["FORMAT"]):
-            row = (np.nan,) * 6
-        elif convert_to == "BCART_EQ":
-            # Already in equatorial BCART so simply use the parsed coordinates
-            row = x, y, z, xdot, ydot, zdot
-        elif convert_to == "BCART":
-            # Convert our covariance matrix from equatorial to ecliptic.
-            cov = covariance_eq_to_ecl(cov)
-
-            # Convert to BCART by converting to ecliptic coordinates
-            equatorial_coords = np.array((x, y, z))
-            equatorial_velocities = np.array((xdot, ydot, zdot))
-
-            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
-            row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
-
-        elif convert_to == "CART":
-            # Convert our covariance matrix from equatorial to ecliptic.
-            cov = covariance_eq_to_ecl(cov)
-
-            # Convert to CART by subtracting the Sun's position and velocity from the Barycentric Cartesian equatorial coordinates
-            sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-            equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
-            equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
-
-            # Convert to ecliptic coordinates
-            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
-
-            row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
-
-        elif convert_to == "BCOM":
             if has_covariance:
-                # Our covariance matrix is already in equatorial cartesian so no tranformation
-                # and we can use the BCART_EQ coordinates to convert our covariance matrix to the cometary format.
-                cov = covariance_cometary_xyz(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"], cov)
-            # Convert back to ecliptic from parse_orbit_row's equatorial output.
-            ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
-            x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+                cov = parse_covariance_row_to_CART(d, gm_total, gm_sun)
 
-            # Use universal_cometary to convert to BCOM with mu = gm_total (used for barycentric)
-            row = universal_cometary(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
-        elif convert_to == "COM":
-            # Convert out of barycentric by subtracting the Sun's position and velocity from the BCART coordinates
-            equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
-            equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
-            if has_covariance:
-                # We now use our cartesian equatorial coordinates, which have been adjusted to
-                # no longer be barycentric, to convert our covariance matrix to the cometary format.
-                cov = covariance_cometary_xyz(
-                    gm_sun,
-                    equatorial_coords[0],
-                    equatorial_coords[1],
-                    equatorial_coords[2],
-                    equatorial_velocities[0],
-                    equatorial_velocities[1],
-                    equatorial_velocities[2],
-                    d["epochMJD_TDB"],
-                    cov,
-                )
+            # For each possible output format, covert our BCART_EQ coordinates to the requested format.
+            if convert_to == "BCART_EQ":
+                # Already in equatorial BCART so simply use the parsed coordinates
+                row = x, y, z, xdot, ydot, zdot
+            elif convert_to == "BCART":
+                # Convert our covariance matrix from equatorial to ecliptic.
+                cov = covariance_eq_to_ecl(cov)
 
-            # Convert back to ecliptic from parse_orbit_row's equatorial output.
-            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
-            x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+                # Convert to BCART by converting to ecliptic coordinates
+                equatorial_coords = np.array((x, y, z))
+                equatorial_velocities = np.array((xdot, ydot, zdot))
 
-            # Use universal_cometary to convert to COM with mu = gm_sun
-            row = universal_cometary(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+                ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+                ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
+                row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
-        elif convert_to == "BKEP":
-            if has_covariance:
-                # Our covariance matrix is already in equatorial cartesian so using the BCART coordinates
-                # we can convert our covariance matrix to barycentric keplerian.
-                cov = covariance_keplerian_xyz(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"], cov)
+            elif convert_to == "CART":
+                # Convert our covariance matrix from equatorial to ecliptic.
+                cov = covariance_eq_to_ecl(cov)
 
-            # Convert back to ecliptic from parse_orbit_row's equatorial output.
-            ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
-            x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+                # Convert to CART by subtracting the Sun's position and velocity from the Barycentric Cartesian equatorial coordinates
+                sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
+                equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
+                equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
 
-            # Use universal_keplerian to convert to BKEP with mu = gm_total
-            row = universal_keplerian(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
-        elif convert_to == "KEP":
-            # Convert out of barycentric by subtracting the Sun's position and velocity from the Barycentric Cartesian coordinates
-            sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
-            equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
-            equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
+                # Convert to ecliptic coordinates
+                ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+                ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
 
-            if has_covariance:
-                # We now use our cartesian equatorial coordinates, which have been adjusted to
-                # no longer be barycentric, to convert our covariance matrix to the keplerian format.
-                cov = covariance_keplerian_xyz(
-                    gm_sun,
-                    equatorial_coords[0],
-                    equatorial_coords[1],
-                    equatorial_coords[2],
-                    equatorial_velocities[0],
-                    equatorial_velocities[1],
-                    equatorial_velocities[2],
-                    d["epochMJD_TDB"],
-                    cov,
-                )
+                row = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
-            # Convert back to ecliptic from parse_orbit_row's equatorial output.
-            ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
-            ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
+            elif convert_to == "BCOM":
+                if has_covariance:
+                    # Our covariance matrix is already in equatorial cartesian so no tranformation
+                    # and we can use the BCART_EQ coordinates to convert our covariance matrix to the cometary format.
+                    cov = covariance_cometary_xyz(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"], cov)
+                # Convert back to ecliptic from parse_orbit_row's equatorial output.
+                ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
+                ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
+                x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
 
-            # Use universal_keplerian to convert to KEP with mu = gm_sun
-            x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
-            row = universal_keplerian(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
-        else:
-            raise ValueError(f"Invalid conversion type {convert_to}. Must be one of: {expected_formats}")
+                # Use universal_cometary to convert to BCOM with mu = gm_total (used for barycentric)
+                row = universal_cometary(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+            elif convert_to == "COM":
+                # Convert out of barycentric by subtracting the Sun's position and velocity from the BCART coordinates
+                equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
+                equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
+                if has_covariance:
+                    # We now use our cartesian equatorial coordinates, which have been adjusted to
+                    # no longer be barycentric, to convert our covariance matrix to the cometary format.
+                    cov = covariance_cometary_xyz(
+                        gm_sun,
+                        equatorial_coords[0],
+                        equatorial_coords[1],
+                        equatorial_coords[2],
+                        equatorial_velocities[0],
+                        equatorial_velocities[1],
+                        equatorial_velocities[2],
+                        d["epochMJD_TDB"],
+                        cov,
+                    )
+
+                # Convert back to ecliptic from parse_orbit_row's equatorial output.
+                ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+                ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
+                x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+
+                # Use universal_cometary to convert to COM with mu = gm_sun
+                row = universal_cometary(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+
+            elif convert_to == "BKEP":
+                if has_covariance:
+                    # Our covariance matrix is already in equatorial cartesian so using the BCART coordinates
+                    # we can convert our covariance matrix to barycentric keplerian.
+                    cov = covariance_keplerian_xyz(
+                        gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"], cov
+                    )
+
+                # Convert back to ecliptic from parse_orbit_row's equatorial output.
+                ecliptic_coords = np.array(equatorial_to_ecliptic([x, y, z]))
+                ecliptic_velocities = np.array(equatorial_to_ecliptic([xdot, ydot, zdot]))
+                x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+
+                # Use universal_keplerian to convert to BKEP with mu = gm_total
+                row = universal_keplerian(gm_total, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+            elif convert_to == "KEP":
+                # Convert out of barycentric by subtracting the Sun's position and velocity from the Barycentric Cartesian coordinates
+                sun = ephem.get_particle("Sun", d["epochMJD_TDB"] + MJD_TO_JD_CONVERSTION - ephem.jd_ref)
+                equatorial_coords = np.array((x, y, z)) - np.array((sun.x, sun.y, sun.z))
+                equatorial_velocities = np.array((xdot, ydot, zdot)) - np.array((sun.vx, sun.vy, sun.vz))
+
+                if has_covariance:
+                    # We now use our cartesian equatorial coordinates, which have been adjusted to
+                    # no longer be barycentric, to convert our covariance matrix to the keplerian format.
+                    cov = covariance_keplerian_xyz(
+                        gm_sun,
+                        equatorial_coords[0],
+                        equatorial_coords[1],
+                        equatorial_coords[2],
+                        equatorial_velocities[0],
+                        equatorial_velocities[1],
+                        equatorial_velocities[2],
+                        d["epochMJD_TDB"],
+                        cov,
+                    )
+
+                # Convert back to ecliptic from parse_orbit_row's equatorial output.
+                ecliptic_coords = np.array(equatorial_to_ecliptic(equatorial_coords))
+                ecliptic_velocities = np.array(equatorial_to_ecliptic(equatorial_velocities))
+
+                # Use universal_keplerian to convert to KEP with mu = gm_sun
+                x, y, z, xdot, ydot, zdot = tuple(np.concatenate([ecliptic_coords, ecliptic_velocities]))
+                row = universal_keplerian(gm_sun, x, y, z, xdot, ydot, zdot, d["epochMJD_TDB"])
+            else:
+                raise ValueError(f"Invalid conversion type {convert_to}. Must be one of: {expected_formats}")
 
         row += (d["epochMJD_TDB"],)
         row += tuple(d[col] for col, _ in cols_to_keep)
@@ -352,14 +343,6 @@ def convert(data, convert_to, num_workers=1, cache_dir=None, primary_id_column_n
     data : numpy structured array
         The converted data
     """
-    try:
-        for col_name, _ in cols_to_keep:
-            if col_name not in data.dtype.names:
-                raise ValueError(f"Requested column from {cols_to_keep} to keep {col_name} not found in data")
-    except Exception as e:
-        raise ValueError(
-            f"Error checking for requested columns to keep {cols_to_keep}. Ensure that the columns are present in the data. Error: {e}"
-        )
     if num_workers == 1:
         return _apply_convert(
             data,
@@ -452,7 +435,7 @@ def convert_cli(
     # Reopen the file now that we know the input format and can validate the column names
     required_columns_names, _ = get_output_column_names_and_types(
         primary_id_column_name,
-        False,  # Change for function
+        False,  # We don't need to know if the input data has covariance columns for basic validation.
         [],  # No additional columns to keep
     )
     required_columns = required_columns_names[input_format]
