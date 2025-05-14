@@ -457,7 +457,7 @@ def orbitfit_cli(
             initial_guess = guess_reader.read_objects(chunk)
             if len(initial_guess) != 0 and get_format(initial_guess) != "BCART_EQ":
                 # If the initial guess is not in the BCART_EQ format, convert it to BCART_EQ
-                new_initial_guess = convert(
+                initial_guess = convert(
                     initial_guess,
                     convert_to="BCART_EQ",
                     num_workers=num_workers,
@@ -465,17 +465,6 @@ def orbitfit_cli(
                     primary_id_column_name=_primary_id_column_name,
                     cols_to_keep=_orbit_cols_to_keep,
                 )
-                """
-                Is there a mismatch between int and str when parsing thesee in?
-                if set(initial_guess[_primary_id_column_name]) != set(
-                    new_initial_guess[_primary_id_column_name]
-                ):
-                    missing_cols = set(initial_guess.dtype.names) - set(new_initial_guess.dtype.names)
-                    raise ValueError(
-                        f"Initial guess data does not contain all rows for {_primary_id_column_name} = {data[_primary_id_column_name][0]}. Initial guess len {len(initial_guess)} != new_initial_guess len {len(new_initial_guess)}. {set(initial_guess[_primary_id_column_name])} != {set(new_initial_guess[_primary_id_column_name])}. missing_cols: {missing_cols}"
-                    )
-                """
-                initial_guess = new_initial_guess
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
