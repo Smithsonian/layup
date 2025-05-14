@@ -25,8 +25,8 @@ def _get_result_dtypes(primary_id_column_name: str):
     return np.dtype(
         [
             (primary_id_column_name, "O"),  # Object ID
-            ("ra", "f8"),
-            ("dec", "f8"),
+            ("ra_deg", "f8"),
+            ("dec_deg", "f8"),
             ("rho_x", "f8"),  # The first of the 3 rho unit vector
             ("rho_y", "f8"),
             ("rho_z", "f8"),
@@ -95,7 +95,7 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
             )
 
     results = np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
-    results["ra"], results["dec"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
+    results["ra_deg"], results["dec_deg"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
 
     return results
 
