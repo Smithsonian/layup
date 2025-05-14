@@ -12,8 +12,8 @@ extern "C"
 
 #include "predict_result.cpp"
 
+using std::cout;
 using namespace Eigen;
-
 
 double AU_M = 149597870700;
 double SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M;
@@ -36,11 +36,12 @@ namespace orbit_fit
             double dy = r->particles[np].y - r_obs.y;
             double dz = r->particles[np].z - r_obs.z;
             double rho_mag = sqrt(dx * dx + dy * dy + dz * dz);
-            if(r->status == REB_STATUS_GENERIC_ERROR){
-		printf("barf %lf %le %lf\n", t, lt, rho_mag);
+            if (r->status == REB_STATUS_GENERIC_ERROR)
+            {
+                printf("barf %lf %le %lf\n", t, lt, rho_mag);
                 return 1;
             }
-	    
+
             lt = rho_mag / speed_of_light;
         }
 
@@ -72,10 +73,10 @@ namespace orbit_fit
     }
 
     PredictResult predict(struct assist_ephem *ephem,
-                         struct reb_particle p0, double epoch,
-                         Observation this_det,
-                         Eigen::MatrixXd &cov,
-                         Eigen::MatrixXd &obs_cov)
+                          struct reb_particle p0, double epoch,
+                          Observation this_det,
+                          Eigen::MatrixXd &cov,
+                          Eigen::MatrixXd &obs_cov)
     {
 
         // Takes an ephemeris object, a simulation,
@@ -105,21 +106,6 @@ namespace orbit_fit
         double ye = this_det.observer_position[1];
         double ze = this_det.observer_position[2];
 
-        Eigen::Vector3d Av = this_det.a_vec;
-        Eigen::Vector3d Dv = this_det.d_vec;
-
-        double Ax = Av.x();
-        double Ay = Av.y();
-        double Az = Av.z();
-
-        double Dx = Dv.x();
-        double Dy = Dv.y();
-        double Dz = Dv.z();
-
-        // 5. compare the model result to the observation.
-        //   This means dotting the model unit vector with the
-        //   A and D vectors of the observation
-
         reb_vec3d r_obs = {xe, ye, ze};
         double t_obs = jd_tdb - ephem->jd_ref;
 
@@ -139,6 +125,22 @@ namespace orbit_fit
         rho_x /= rho;
         rho_y /= rho;
         rho_z /= rho;
+
+        Eigen::Vector3d rho_matrix;
+        rho_matrix.x() = rho_x;
+        rho_matrix.y() = rho_y;
+        rho_matrix.z() = rho_z;
+
+        Eigen::Vector3d Av = a_vec_from_rho_hat(rho_matrix);
+        Eigen::Vector3d Dv = d_vec_from_rho_hat(rho_matrix);
+
+        double Ax = Av.x();
+        double Ay = Av.y();
+        double Az = Av.z();
+
+        double Dx = Dv.x();
+        double Dy = Dv.y();
+        double Dz = Dv.z();
 
         // Calculate the partial deriviatives of the model
         // observations with respect to the initial conditions
@@ -170,7 +172,7 @@ namespace orbit_fit
 
             dx_resid[i] = -(drho_x[i] * Ax + drho_y[i] * Ay + drho_z[i] * Az);
             dy_resid[i] = -(drho_x[i] * Dx + drho_y[i] * Dy + drho_z[i] * Dz);
-            }
+        }
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> B;
         B.resize(2, 6);
@@ -200,21 +202,37 @@ namespace orbit_fit
         return result;
     }
 
+    PredictResult predict_from_fit_result(struct assist_ephem *ephem,
+                                          FitResult fit,
+                                          Observation obs_position,
+                                          Eigen::MatrixXd &cov,
+                                          Eigen::MatrixXd &obs_cov)
+    {
+        struct reb_particle particle;
+        particle.x = fit.state[0];
+        particle.y = fit.state[1];
+        particle.z = fit.state[2];
+        particle.vx = fit.state[3];
+        particle.vy = fit.state[4];
+        particle.vz = fit.state[5];
+
+        PredictResult res = predict(
+            ephem,
+            particle,
+            fit.epoch,
+            obs_position,
+            cov,
+            obs_cov);
+
+        return res;
+    }
+
     std::vector<PredictResult> predict_sequence(struct assist_ephem *ephem,
-                                        std::array<double, 6> object_state,
-                                        std::vector<Observation> &detections,
-                                        Eigen::MatrixXd &cov)
+                                                FitResult fit,
+                                                std::vector<Observation> &detections,
+                                                Eigen::MatrixXd &cov)
     {
         std::vector<PredictResult> results;
-
-        // Set up the initial conditions for the particle
-        struct reb_particle particle;
-        particle.x = object_state[0];
-        particle.y = object_state[1];
-        particle.z = object_state[2];
-        particle.vx = object_state[3];
-        particle.vy = object_state[4];
-        particle.vz = object_state[5];
 
         Eigen::MatrixXd obs_cov(6, 6);
 
@@ -222,7 +240,7 @@ namespace orbit_fit
         {
             double this_epoch = detections[i].epoch;
             Observation this_det = detections[i];
-            PredictResult this_result = predict(ephem, particle, this_epoch, this_det, cov, obs_cov);
+            PredictResult this_result = predict_from_fit_result(ephem, fit, this_det, cov, obs_cov);
             results.push_back(this_result);
         }
 

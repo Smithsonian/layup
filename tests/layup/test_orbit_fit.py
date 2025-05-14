@@ -8,7 +8,7 @@ from numpy.testing import assert_equal
 
 from layup.orbitfit import orbitfit, orbitfit_cli
 from layup.routines import Observation, get_ephem, run_from_vector
-from layup.utilities.data_processing_utilities import parse_fit_result
+from layup.utilities.data_processing_utilities import get_cov_columns, parse_cov, parse_fit_result
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -33,6 +33,9 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
             self.ar_data_file_path = None
             self.primary_id_column_name = "provID"
             self.separate_flagged = False
+            self.force = False
+            self.debias = False
+            self.weight_data = False
             self.g = g  # Command line argument for initial guesses file
 
     # Now run the orbit_fit cli with overwrite set to True
@@ -77,7 +80,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
 
     # Verify that the number of rows outputted orbit fit is the same as the number of unique provIDs in the input file
     # Note that the input file includes some rows without our provID column, so exclude the nans
-    n_uniq_ids = sum([0 if np.isnan(id) else 1 for id in set(input_data["provID"])])
+    n_uniq_ids = sum([1 if id else 0 for id in set(input_data["provID"])])
     assert_equal(len(output_data), n_uniq_ids)
 
     # Verify the columns in the output data
@@ -96,57 +99,21 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         "method",
         "flag",
         "FORMAT",
-        "cov_00",
-        "cov_01",
-        "cov_02",
-        "cov_03",
-        "cov_04",
-        "cov_05",
-        "cov_06",
-        "cov_07",
-        "cov_08",
-        "cov_09",
-        "cov_10",
-        "cov_11",
-        "cov_12",
-        "cov_13",
-        "cov_14",
-        "cov_15",
-        "cov_16",
-        "cov_17",
-        "cov_18",
-        "cov_19",
-        "cov_20",
-        "cov_21",
-        "cov_22",
-        "cov_23",
-        "cov_24",
-        "cov_25",
-        "cov_26",
-        "cov_27",
-        "cov_28",
-        "cov_29",
-        "cov_30",
-        "cov_31",
-        "cov_32",
-        "cov_33",
-        "cov_34",
-        "cov_35",
-    ]
+    ] + get_cov_columns()
     assert set(output_data.dtype.names) == set(expected_cols)
 
-    # Verify that all of the output data is in the default BCART format for flag == 0 and is nan for flag !=0
-    assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == "BCART")
+    # 222222 only has one data point and 333333 has a datapoint before 1801, both should output flag = -1
+    assert all(np.isin(output_data["provID"][output_data["flag"] == -1], ["222222", "333333"]))
+    # Verify that all of the output data is in the default BCART_EQ format for flag == 0 and is nan for flag !=0
+    assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == "BCART_EQ")
     for i in np.arange(len(output_data["FORMAT"][output_data["flag"] != 0])):
         assert math.isnan(output_data["FORMAT"][output_data["flag"] != 0][i])
 
     # For each row in the output data, check that there is a non-zero covariance matrix
     # if there was a successful fit
     for row in output_data:
-        # Check that the covariance matrix is non-zero
-        cov_matrix = np.array(
-            [row[f"cov_0{i}"] for i in range(10)] + [row[f"cov_{i}"] for i in range(10, 36)]
-        )
+        # Check that the covariance matrix has populated values.
+        cov_matrix = parse_cov(row)
         # Check if the cov_matrix has any NaN values indicating a failed fit
         nan_mask = np.isnan(cov_matrix)
         if nan_mask.any():
@@ -195,7 +162,9 @@ def test_orbitfit_result_parsing():
     """Perform a simple orbit fit and check that we can parse the results back correctly."""
 
     input_data = CSVDataReader(
-        get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"), "csv", primary_id_column_name="provID"
+        get_test_filepath("1_random_mpc_ADES_provIDs_no_sats_micro.csv"),
+        "csv",
+        primary_id_column_name="provID",
     ).read_rows()
 
     fitted_orbits = orbitfit(
@@ -222,6 +191,5 @@ def test_orbitfit_result_parsing():
             assert fit_res.niter == row["niter"]
 
             # Check our flattened covariance matrix against each covariance matrix column in the results.
-            for i in range(36):
-                cov_col_name = f"cov_0{i}" if i < 10 else f"cov_{i}"
-                assert fit_res.cov[i] == row[cov_col_name]
+            for i, col in enumerate(get_cov_columns()):
+                assert fit_res.cov[i] == row[col]

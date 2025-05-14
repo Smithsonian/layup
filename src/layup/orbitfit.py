@@ -10,8 +10,16 @@ import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
 from layup.routines import Observation, get_ephem, run_from_vector, run_from_vector_with_initial_guess
-from layup.utilities.data_processing_utilities import LayupObservatory, parse_fit_result, process_data_by_id
+from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
+from layup.utilities.data_processing_utilities import (
+    LayupObservatory,
+    create_chunks,
+    get_cov_columns,
+    parse_fit_result,
+    process_data_by_id,
+)
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
+from layup.utilities.debiasing import debias, generate_bias_dict
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
@@ -46,12 +54,62 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("flag", "i4"),  # Single-character flag indicating success of the fit
             ("FORMAT", "O"),  # Orbit format
         ]
-        + [(f"cov_0{i}", "f8") for i in range(10)]  # Flat covariance matrix (first 10 elements)
-        + [(f"cov_{i}", "f8") for i in range(10, 36)]  # Flat covariance matrix (remaining 26 elements)
+        + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
     )
 
 
-def _orbitfit(data, cache_dir: str, primary_id_column_name: str, initial_guess=None, sort_array: bool = True):
+def _is_occultation(data):
+    """Check if a given data point is an occultation measurement.
+    An occultation measurement is indicated by the lack of ra and dec values.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The object data to check for occultation measurements.
+
+    Returns
+    -------
+    bool
+        True if the data point is an occultation measurement, False otherwise."""
+    return data["ra"] is None or data["dec"] is None
+
+
+def _use_star_astrometry(data):
+    """Use occulting star's astrometry to replace the ra and dec values.
+
+    Notes
+    -----
+    The units are a bit odd here. starra and stardec are in degrees. However, deltara
+    and deltadec are in arcseconds. Thus will either convert to degrees or radians
+    depending on the context.
+
+    For more details see the ADES description here:
+    https://github.com/IAU-ADES/ADES-Master/blob/master/ADES_Description.pdf
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The object data to replace the ra and dec values.
+
+    Returns
+    -------
+    data : numpy structured array
+        The object data with the ra and dec values replaced by the star's astrometry.
+    """
+    data["ra"] = data["starra"] + (data["deltra"] / 3600) / np.cos(data["stardec"] * np.pi / 180.0)
+    data["dec"] = data["stardec"] + (data["deltadec"] / 3600)
+    return data
+
+
+def _orbitfit(
+    data,
+    cache_dir: str,
+    primary_id_column_name: str,
+    initial_guess=None,
+    bias_dict: dict = None,
+    sort_array: bool = True,
+    weight_data: bool = False,
+):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
     should correspond to the same object.
@@ -68,8 +126,13 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, initial_guess=N
         The name of the primary identifier column for the objects.
     initial_guess : numpy structured array
         Optional guess data to use for the orbit fit. Default is None.
+    bias_dict : dict
+        A dictionary containing bias corrections for different catalogs.
     sort_array : bool
         Whether to sort the observations by obstime before processing. Default is True.
+    weight_data : bool
+        Whether to apply data weighting based on the observation code, date, catalog
+        and program. Default is False.
     """
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
     if len(data) == 0:
@@ -96,20 +159,57 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, initial_guess=N
         # sort the observations by the obstime if specified by the user
         if sort_array:
             data = np.sort(data, order="obstime", kind="mergesort")
+
+        # Check if certain columns are present in the data
+        column_names = data.dtype.names
+        astcat_column_present = "astcat" in column_names
+        program_column_present = "program" in column_names
+
+        # Accommodate occultation measurements. These measurements are implied when
+        # the "ra" and "dec" columns are None. In this case, we will use the "starra"
+        # and "stardec" columns.
+        for d in data:
+            if _is_occultation(d):
+                d = _use_star_astrometry(d)
+
+        # bias_dict will be a dictionary when the debias flag is set to True.
+        if bias_dict is not None:
+            for d in data:
+                d["ra"], d["dec"] = debias(
+                    ra=d["ra"],
+                    dec=d["dec"],
+                    epoch_jd_tdb=convert_tdb_date_to_julian_date(d["obstime"], cache_dir),
+                    catalog=d["astcat"] if astcat_column_present else None,
+                    bias_dict=bias_dict,
+                )
+
         # Convert the astrometry data to a list of Observations
         # Reminder to label the units.  Within an Observation struct,
         # and internal to the C++ code in general, we are using
         # radians.
-        observations = [
-            Observation.from_astrometry(
+        observations = []
+        for d in data:
+            o = Observation.from_astrometry_with_id(
+                str(d[primary_id_column_name]),
                 d["ra"] * np.pi / 180.0,
                 d["dec"] * np.pi / 180.0,
                 convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
                 [d["x"], d["y"], d["z"]],  # Barycentric position
                 [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
             )
-            for d in data
-        ]
+
+            if weight_data:
+                data_weight = data_weight_Veres2017(
+                    obsCode=d["stn"],
+                    jd_tdb=convert_tdb_date_to_julian_date(d["obstime"], cache_dir),
+                    catalog=d["astcat"] if astcat_column_present else None,
+                    program=d["program"] if program_column_present else None,
+                )
+
+                o.ra_unc = data_weight
+                o.dec_unc = data_weight
+
+            observations.append(o)
 
         # if cache_dir is not provided, use the default os_cache
         if cache_dir is None:
@@ -139,7 +239,7 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, initial_guess=N
                     res.niter,
                     res.method,
                     res.flag,
-                    ("BCART" if success else np.nan),  # The base format returned by the C++ code
+                    ("BCART_EQ" if success else np.nan),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
             ],
@@ -169,7 +269,15 @@ def _orbitfit(data, cache_dir: str, primary_id_column_name: str, initial_guess=N
     return output
 
 
-def orbitfit(data, cache_dir: str, initial_guess=None, num_workers=1, primary_id_column_name="provID"):
+def orbitfit(
+    data,
+    cache_dir: str,
+    initial_guess=None,
+    num_workers=1,
+    primary_id_column_name="provID",
+    debias=False,
+    weight_data=False,
+):
     """This is the function that you would call interactively. i.e. from a notebook
 
     Parameters
@@ -184,9 +292,14 @@ def orbitfit(data, cache_dir: str, initial_guess=None, num_workers=1, primary_id
         The number of workers to use for parallel processing. Default is 1
     primary_id_column_name : str
         The name of the primary identifier column for the objects. Default is "provID".
+    debias : bool
+        Whether to apply debiasing corrections to the observations. Default is False.
+    weight_data : bool
+        Whether to apply data weighting based on the observation code, date, catalog
+        and program. Default is False.
     """
 
-    layup_observatory = LayupObservatory()
+    layup_observatory = LayupObservatory(cache_dir=cache_dir)
 
     # The units of et are seconds (from J2000). This new column is used by
     # data_processing_utilities.obscodes_to_barycentric.
@@ -196,13 +309,19 @@ def orbitfit(data, cache_dir: str, initial_guess=None, num_workers=1, primary_id
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
+    bias_dict = None
+    if debias:
+        bias_dict = generate_bias_dict(cache_dir)
+
     return process_data_by_id(
         data,
         num_workers,
         _orbitfit,
-        cache_dir=cache_dir,
         primary_id_column_name=primary_id_column_name,
+        cache_dir=cache_dir,
         initial_guess=initial_guess,
+        bias_dict=bias_dict,
+        weight_data=weight_data,
     )
 
 
@@ -237,10 +356,16 @@ def orbitfit_cli(
 
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
+        overwrite = cli_args.force
+        debias = cli_args.debias
         guess_file = Path(cli_args.g) if cli_args.g is not None else None
+        weight_data = cli_args.weight_data
     else:
         cache_dir = None
+        overwrite = False
+        debias = False
         guess_file = None
+        weight_data = False
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -312,7 +437,7 @@ def orbitfit_cli(
         # as the input file.
         guess_reader = reader_class(guess_file, primary_id_column_name=_primary_id_column_name, sep=separator)
 
-    chunks = _create_chunks(reader, chunk_size)
+    chunks = create_chunks(reader, chunk_size)
 
     for chunk in chunks:
         data = reader.read_objects(chunk)
@@ -329,6 +454,8 @@ def orbitfit_cli(
             initial_guess=initial_guess,
             num_workers=num_workers,
             primary_id_column_name=_primary_id_column_name,
+            debias=debias,
+            weight_data=weight_data,
         )
 
         if cli_args.separate_flagged:
@@ -365,63 +492,6 @@ def orbitfit_cli(
     print(f"Data has been written to {output_file}")
 
 
-def _create_chunks(reader, chunk_size):
-    """For a given reader create a list of lists of object ids such that the total
-    number of entries in the file for all object ids in a given list, will be
-    less than the chunk size.
-
-    Parameters
-    ----------
-    reader : ObjectDataReader
-        The file reader object for the input file
-    chunk_size : int
-        The maximum number of rows to be included in a single list of ids
-
-    Returns
-    -------
-    chunks : list[list[object ids]]
-        A list of lists of object ids that can be passed to the reader's read_objects
-        method.
-    """
-    # Force the reader to build the id table and id count dictionary
-    reader._build_id_map()
-
-    # Find all object ids with more rows than the max allowed number of rows.
-    exceeds_id_list = []
-    for k, v in reader.obj_id_counts.items():
-        if v > chunk_size:
-            exceeds_id_list.append(k)
-
-    # Log an error if the any of the objects have more rows than the chunk size
-    if exceeds_id_list:
-        logger.error("The following objects have more rows than the max allowed number of rows.")
-        for k in exceeds_id_list:
-            logger.error(f"Object id {k} has {reader.obj_id_counts[k]} rows")
-        raise ValueError("At least one object has more rows than the max allowed number of rows.")
-
-    chunks = []
-    obj_ids_in_chunk = []
-    accumulator = 0
-
-    # Loop over the object id counts dictionary
-    for k, v in reader.obj_id_counts.items():
-        # Check if the chunk size is exceeded, if so, save the current chunk and start a new chunk
-        if accumulator + v > chunk_size:
-            chunks.append(obj_ids_in_chunk)
-            obj_ids_in_chunk = []
-            accumulator = 0
-
-        # Increase the accumulator and add the object id to the current chunk
-        accumulator += v
-        obj_ids_in_chunk.append(k)
-
-    # Add the last chunk if it is not empty
-    if obj_ids_in_chunk:
-        chunks.append(obj_ids_in_chunk)
-
-    return chunks
-
-
 def _is_valid_data(data):
     """
     Check if the input data contains all valid values.
@@ -438,7 +508,9 @@ def _is_valid_data(data):
     """
     valid_conditions = [
         len(data) >= 3,
-        np.all(data["et"] >= 0),
+        np.all(
+            data["et"] >= -6279962400.00
+        ),  # excludes all datasets before 1801, data["et"] = 0 is j2000, 6279962400.00 is seconds between 1801 and j2000
         np.all(is_numeric(data["ra"])),
         np.all(is_numeric(data["dec"])),
         np.all(is_numeric(data["x"])),

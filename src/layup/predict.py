@@ -1,44 +1,194 @@
 import os
 from argparse import Namespace
 from pathlib import Path
-from layup.utilities.data_processing_utilities import process_data
+
+import numpy as np
+import pooch
+import spiceypy as spice
+
+from layup.routines import Observation, get_ephem, numpy_to_eigen, predict_sequence
+from layup.utilities.data_processing_utilities import (
+    LayupObservatory,
+    create_chunks,
+    parse_fit_result,
+    process_data,
+)
+from layup.utilities.file_io import CSVDataReader
+from layup.utilities.file_io.file_output import write_csv
 
 
-def _predict(data, other_arg_1=None):
-    """This function is called by the parallelization function to call the C++ code."""
+def _get_result_dtypes(primary_id_column_name: str):
+    """Helper function to create the result dtype with the correct primary ID column name."""
+    # Define a structured dtype to match the OrbfitResult fields
+    return np.dtype(
+        [
+            (primary_id_column_name, "O"),  # Object ID
+            ("rho_x", "f8"),  # The first of the 3 rho unit vector
+            ("rho_y", "f8"),
+            ("rho_z", "f8"),
+            ("obs_cov0", "f8"),  # The first of 4 of the observer covariance
+            ("obs_cov1", "f8"),
+            ("obs_cov2", "f8"),
+            ("obs_cov3", "f8"),
+            ("epoch", "f8"),  # Time for prediction
+        ]
+    )
+
+
+def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
+    """This function is called by the parallelization function to call the C++ code.
+
+    Parameters
+    ----------
+    data : nump structured array
+        The data to be processed.
+    obs_pos_vel : numpy structured array
+        The observer position and velocity.
+    times : list
+        The times for the predictions, in jd_tdb.
+    cache_dir : str
+        The directory to the cached kernels.
+    primary_id_column_name : str
+        The name of the primary ID column.
+
+    Returns
+    -------
+    numpy structured array with the flattened results
+    """
+    if cache_dir is None:
+        kernels_loc = str(pooch.os_cache("layup"))
+    else:
+        kernels_loc = str(cache_dir)
+
+    observations = []
+    for i, pos in enumerate(obs_pos_vel):
+        obs = Observation()
+        obs.observer_position = [pos["x"], pos["y"], pos["z"]]
+        obs.observer_velocity = [pos["vx"], pos["vy"], pos["vz"]]
+        obs.epoch = times[i]
+        observations.append(obs)
+
+    predict_results = []
     for row in data:
-        # Here you would call the C++ prediction code with the row data.
-        # cpp_predict_function(row, other_arg_1)
-        pass
-    pass
+        fit = parse_fit_result(row)
+        pred_res = predict_sequence(get_ephem(kernels_loc), fit, observations, numpy_to_eigen(fit.cov, 6, 6))
+
+        for pred in pred_res:
+            predict_results.append(
+                (
+                    row[primary_id_column_name],
+                    pred.rho[0],
+                    pred.rho[1],
+                    pred.rho[2],
+                    pred.obs_cov[0],
+                    pred.obs_cov[1],
+                    pred.obs_cov[2],
+                    pred.obs_cov[3],
+                    pred.epoch,
+                )
+            )
+
+    return np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
 
 
-def predict(data, num_workers=-1):
-    """This is the stub that will be used when calling predict from a notebook"""
+def predict(data, obscode, times, primary_id_column_name="provID", num_workers=-1, cache_dir=None):
+    """The function to all that predict functionality interactively, i.e from a notebook or a script.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to be processed.
+    obscode : str
+        The observer code.
+    times : list
+        The times for the predictions, in jd_tdb.
+    primary_id_column_name : str
+        The name of the primary ID column.
+    num_workers : int
+        The number of workers to use for parallelization. If -1, use all available cores.
+    cache_dir : str or None
+        The directory to the cached kernels. If None, use the default cache directory.
+
+    Returns
+    -------
+    numpy structured array with the flattened results
+    """
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    return process_data(data, n_workers=num_workers, func=_predict, other_arg_1=None)
+    Layup_observatory = LayupObservatory(cache_dir=cache_dir)
+
+    times_et = np.array([spice.str2et(f"jd {t} tdb") for t in times], dtype="<f8")
+
+    obs_data = np.array([(obscode, t) for t in times_et], dtype=[("stn", "<U10"), ("et", "<f8")])
+
+    obs_pos_vel = Layup_observatory.obscodes_to_barycentric(obs_data)
+
+    return process_data(
+        data,
+        n_workers=num_workers,
+        func=_predict,
+        obs_pos_vel=obs_pos_vel,
+        times=times,
+        cache_dir=cache_dir,
+        primary_id_column_name=primary_id_column_name,
+    )
 
 
 def predict_cli(
     cli_args: Namespace,
+    input_file: str,
     start_date: float,
     end_date: float,
     timestep_day: float,
     output_file: str,
     cache_dir: Path,
 ):
-    """This is the stub that will used when calling predict from the command line"""
+    """The function for calling predict through the command line interface.
+
+    Parameters
+    ----------
+    cli_args : Namespace
+        The command line arguments.
+    input_file : str
+        The input file to read the data from.
+    start_date : float
+        The start date for the predictions, in jd_tdb.
+    end_date : float
+        The end date for the predictions, in jd_tdb.
+    timestep_day : float
+        The time step for the predictions, in days.
+    output_file : str
+        The output file to write the predictions to.
+    cache_dir : Path
+        The directory to the cached kernels.
+    """
 
     num_workers = cli_args.n
+    _primary_id_column_name = "provID"
 
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    data = None
+    times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
 
-    results = predict(data, num_workers=num_workers)
+    reader = CSVDataReader(input_file, primary_id_column_name=_primary_id_column_name, sep="csv")
 
-    # Write the results to the output file
+    chunks = create_chunks(reader, chunk_size=cli_args.chunk)
+
+    for chunk in chunks:
+        # Read the objects from the file
+        data = reader.read_objects(chunk)
+
+        predictions = predict(
+            data,
+            obscode=cli_args.station,
+            times=times,
+            num_workers=cli_args.n,
+            cache_dir=cache_dir,
+            primary_id_column_name=cli_args.primary_id_column_name,
+        )
+
+        if len(predictions) > 0:
+            write_csv(predictions, output_file)
     pass

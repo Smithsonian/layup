@@ -447,3 +447,20 @@ def test_CSVReader_psv_read_rows_for_object():
     data = reader.read_objects(one_row["provID"])
     assert len(data) == 27
     assert one_row.dtype.names == data.dtype.names
+
+
+def test_CSVDataReader_primary_col_is_string():
+    """Test that primary id columns that are numeric are read in as strings."""
+    csv_reader = CSVDataReader(get_test_filepath("CART_with_numeric_objid.csv"), "csv")
+
+    expected_objids = [
+        "12345",
+        "00015",
+        "00021",
+        "00024",
+        "00044",
+    ]
+
+    all_data = csv_reader.read_rows()
+    assert all(isinstance(i, str) for i in all_data["ObjID"])
+    assert all(all_data["ObjID"] == expected_objids)
