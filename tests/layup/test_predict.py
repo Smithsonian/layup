@@ -52,7 +52,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step):
         output_csv_reader = CSVDataReader(temp_out_file, "csv", primary_id_column_name="provID")
         output_data = output_csv_reader.read_rows()
 
-        # # Read the input data and get the provID column
+        # Read the input data and get the provID column
         input_csv_reader = CSVDataReader(
             get_test_filepath(test_file_name), "csv", primary_id_column_name="provID"
         )

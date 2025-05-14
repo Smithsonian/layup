@@ -28,7 +28,8 @@ from layup.utilities.orbit_conversion import (
 
 logger = logging.getLogger(__name__)
 
-ORBIT_COLS_TO_KEEP = [
+# Columns which may be added to the output data by the orbit fitting process
+ORBIT_FIT_COLS = [
     ("csq", "f8"),  # Chi-square value
     ("ndof", "i4"),  # Number of degrees of freedom
     ("niter", "i4"),  # Number of iterations
@@ -53,7 +54,7 @@ INPUT_READERS = {
 }
 
 
-def get_output_column_names_and_types(primary_id_column_name, has_covariance, cols_to_keep):
+def get_output_column_names_and_types(primary_id_column_name, has_covariance, extra_cols_to_keep):
     """
     Get the output column names and types for the converted data.
 
@@ -63,8 +64,8 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance, co
         The name of the column in the data that contains the primary ID of the object.
     has_covariance : bool
         Whether the data has covariance information.
-    cols_to_keep : list
-        List of tuples containing the column names and dtypes to keep in the output data.
+    extra_cols_to_keep : list
+        List of tuples containing extra column names and dtypes to keep in the output data.
 
     Returns
     -------
@@ -107,12 +108,12 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance, co
     # Default column dtypes across all orbit formats. Note that the ordering of the dtypes matches
     # the ordering of the column names in REQUIRED_COLUMN_NAMES.
     default_column_dtypes = ["O", "<U8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8", "<f8"]
-    default_column_dtypes.extend([dtype for _, dtype in cols_to_keep])
+    default_column_dtypes.extend([dtype for _, dtype in extra_cols_to_keep])
     if has_covariance:
         # Flattened 6x6 covariance matrix
         default_column_dtypes += ["f8"] * 36
     for format in required_column_names:
-        for col_name, _ in cols_to_keep:
+        for col_name, _ in extra_cols_to_keep:
             # Add the column name and dtype to the default column dtypes
             required_column_names[format].append(col_name)
         if has_covariance:
@@ -121,7 +122,7 @@ def get_output_column_names_and_types(primary_id_column_name, has_covariance, co
     return required_column_names, default_column_dtypes
 
 
-def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None, cols_to_keep=[]):
+def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None, extra_cols_to_keep=[]):
     """
     Apply the appropriate conversion function to the data
 
@@ -135,8 +136,8 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         The base directory for downloaded files.
     primary_id_column_name : str, optional
         The name of the column in the data that contains the primary ID of the object.
-    cols_to_keep : list, optional
-        List of tuples containing the column names and dtypes to keep in the output data.
+    extra_cols_to_keep : list, optional
+        List of tuples containing extra column names and dtypes to keep in the output data.
 
     Returns
     -------
@@ -152,10 +153,15 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     has_covariance = has_cov_columns(data)
     logger.debug(f"Data has covariance: {has_covariance}")
 
-    # Remove columns not in data from cols_to_keep
+    # In addition to columns requested by the user, to be kept in the output, add in extra columns
+    # that may have been added by the orbit fitting process.
+    cols_to_keep = extra_cols_to_keep + ORBIT_FIT_COLS
+
+    # Filter the extra columns to keep to only those that are present in the data
     cols_to_keep = [(col, dtype) for col, dtype in cols_to_keep if col in data.dtype.names]
     logger.debug(f"Columns to keep: {cols_to_keep}")
 
+    # Now generate the required and columns names and dtypes for the output data
     required_colum_names, default_column_dtypes = get_output_column_names_and_types(
         primary_id_column_name, has_covariance, cols_to_keep
     )
@@ -342,7 +348,7 @@ def convert(
     num_workers=1,
     cache_dir=None,
     primary_id_column_name="ObjID",
-    cols_to_keep=ORBIT_COLS_TO_KEEP,
+    extra_cols_to_keep=[],
 ):
     """
     Convert a structured numpy array to a different orbital format with support for parallel processing.
@@ -359,7 +365,7 @@ def convert(
         The base directory for downloaded files.
     primary_id_column_name : str, optional (default="ObjID")
         The name of the column in the data that contains the primary ID of the object.
-    cols_to_keep : list, optional
+    extra_cols_to_keep : list, optional
         List of tuples containing additional column names and dtypes to keep in the output data.
 
     Returns
@@ -373,7 +379,7 @@ def convert(
             convert_to,
             cache_dir=cache_dir,
             primary_id_column_name=primary_id_column_name,
-            cols_to_keep=cols_to_keep,
+            extra_cols_to_keep=extra_cols_to_keep,
         )
     # Parallelize the conversion of the data across the requested number of workers
     return process_data(
@@ -383,7 +389,7 @@ def convert(
         convert_to=convert_to,
         cache_dir=cache_dir,
         primary_id_column_name=primary_id_column_name,
-        cols_to_keep=cols_to_keep,
+        extra_cols_to_keep=extra_cols_to_keep,
     )
 
 

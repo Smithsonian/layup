@@ -63,9 +63,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     # Create a new CSV reader to read in our output file
     guess_csv_reader = CSVDataReader(temp_guess_file, "csv", primary_id_column_name="provID")
     guess_data = guess_csv_reader.read_rows()
-    # Verify that the flag column is in the output data
-    cols_to_keep = ["flag", "csq", "ndof", "niter", "method"]
-    for col in cols_to_keep:
+    # Verify that the the appropriate orbit fit columns are in the output data
+    for col in ["flag", "csq", "ndof", "niter", "method"]:
         assert col in guess_data.dtype.names
 
     # Use the output of our first orbit fit as the initial guesses for our

@@ -35,14 +35,6 @@ INPUT_FORMAT_READERS = {
     "ADES_hdf5": (HDF5DataReader, None),
 }
 
-_orbit_cols_to_keep = [
-    ("csq", "f8"),  # Chi-square value
-    ("ndof", "i4"),  # Number of degrees of freedom
-    ("niter", "i4"),  # Number of iterations
-    ("method", "O"),  # Method used for orbit fitting
-    ("flag", "i4"),  # Single-character flag indicating success of the fit
-]
-
 
 def _get_result_dtypes(primary_id_column_name: str):
     """Helper function to create the result dtype with the correct primary ID column name."""
@@ -463,7 +455,6 @@ def orbitfit_cli(
                     num_workers=num_workers,
                     cache_dir=cache_dir,
                     primary_id_column_name=_primary_id_column_name,
-                    cols_to_keep=_orbit_cols_to_keep,
                 )
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
@@ -486,7 +477,6 @@ def orbitfit_cli(
                 num_workers=num_workers,
                 cache_dir=cache_dir,
                 primary_id_column_name=_primary_id_column_name,
-                cols_to_keep=_orbit_cols_to_keep,
             )
             if "flag" not in fit_orbits.dtype.names:
                 raise ValueError(
