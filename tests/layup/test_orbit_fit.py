@@ -110,6 +110,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     ] + get_cov_columns()
     assert_equal(0, len(set(expected_cols) - set(output_data.dtype.names)))
 
+    # 222222 only has one data point and 333333 has a datapoint before 1801, both should output flag = -1
+    assert all(np.isin(output_data["provID"][output_data["flag"] == -1], ["222222", "333333"]))
     # Verify that all of the output data is in the requested output format for flag == 0 and is nan for flag !=0
     assert np.all(output_data["FORMAT"][output_data["flag"] == 0] == output_orbit_format)
     # TODO wbeebe add this back in after appropriate type conversion
