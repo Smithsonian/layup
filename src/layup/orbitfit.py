@@ -478,10 +478,6 @@ def orbitfit_cli(
                 cache_dir=cache_dir,
                 primary_id_column_name=_primary_id_column_name,
             )
-            if "flag" not in fit_orbits.dtype.names:
-                raise ValueError(
-                    f"Columns from convert: {fit_orbits.dtype.names} do not match expected columns"
-                )
 
         if cli_args.separate_flagged:
             # Split the results into two files: one for successful fits and one for failed fits
