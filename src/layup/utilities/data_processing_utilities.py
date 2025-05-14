@@ -330,6 +330,7 @@ class LayupObservatory(SorchaObservatory):
                 try:
                     # Calculate the barycentric position and velocity of the observatory or fetch
                     # it from the cache if it has already been calculated
+                    print( barycentricObservatoryRates(et, obscode, self))
                     bary_obs_pos, bary_obs_vel = self.cached_obs[obscode].setdefault(
                         et, barycentricObservatoryRates(et, obscode, self)
                     )
@@ -341,10 +342,12 @@ class LayupObservatory(SorchaObservatory):
                     bary_obs_pos, bary_obs_vel = np.array([np.nan] * 3), np.array([np.nan] * 3)
             # Create a structured array for our barycentric coordinates with appropriate dtypes.
             # Needed to adjust the units here.
-            bary_obs_pos /= AU_KM
-            bary_obs_vel *= (24 * 60 * 60) / AU_KM
-            x, y, z = bary_obs_pos[0], bary_obs_pos[1], bary_obs_pos[2]
-            vx, vy, vz = bary_obs_vel[0], bary_obs_vel[1], bary_obs_vel[2]
+
+            #bary_obs_pos /= AU_KM
+            #bary_obs_vel *= (24 * 60 * 60) / AU_KM            
+            x, y, z = bary_obs_pos / AU_KM 
+            vx, vy, vz = bary_obs_vel * (24 * 60 * 60) / AU_KM 
+            
             output_dtype = [
                 ("x", "<f8"),
                 ("y", "<f8"),
