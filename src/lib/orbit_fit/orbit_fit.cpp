@@ -922,17 +922,20 @@ namespace orbit_fit
             }
 
 	    printf("gauss rho: %le\n", res.value()[0].root);
+        fflush(stdout);
 
 	    // This bit is for testing TNOs.
 	    double inner_root_thresh = 0.1;
 	    double outer_root_thresh = 1000.;	    
 	    if(res.value()[0].root>outer_root_thresh){
 		printf("Too far!\n");
+        fflush(stdout);
 		continue;
 	    }
 
 	    if(res.value()[0].root<=inner_root_thresh){
 		printf("Too close!\n");
+        fflush(stdout);
 		continue;
 	    }
 	    
@@ -953,9 +956,13 @@ namespace orbit_fit
             size_t end_index = limits.second;
 
 	    std::vector<Observation> detections = select_detections(detections_full, start_index, end_index);
+        printf("orbit fitting, start_index: %lu end_index: %lu\n", start_index, end_index);
+        fflush(stdout);
 	    fit_res = run_from_vector_with_initial_guess(ephem, guess, detections);
-            if (!fit_res.has_value()){
-		continue;
+        if (!fit_res.has_value()){
+            printf("orbit fit failed.  Try another triplet.\n");
+            fflush(stdout);
+            continue;
 	    }
 
 	    guess = fit_res.value();
