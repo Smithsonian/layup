@@ -161,7 +161,7 @@ def iterate_sequence(sequence, other_chunks, jds):
     return seq
 
 
-def build_sequence(jds, sep_dt=60.0):
+def build_sequence(jds, sep_dt=90.0):
     intervals = jds[1:] - jds[:-1]
     intervals = np.insert(intervals, 0, 0.0, axis=0)
     index_chunks = split_by_index(jds, np.argwhere(intervals > sep_dt))
@@ -228,30 +228,38 @@ def do_fit(observations, seq, cache_dir):
     x = solns[0]
     obs = [observations[i] for i in seq[0]]
     x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    print('here x:', x.flag)
 
-    if not x and len(solns) > 1:
+    if (x.flag != 0) and len(solns) > 1:
         x = solns[1]
         obs = [observations[i] for i in seq[0]]
         x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    elif not x and len(solns) > 2:
+    elif (x.flag != 0) and len(solns) > 2:
         x = solns[2]
         obs = [observations[i] for i in seq[0]]
         x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    if not x:
+    if (x.flag != 0):
         logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
-        return
+        x.flag = 3 # caution
+        print('primary:', x.flag)        
+        return x
 
     # Attempt to fit all the data, given the fit of the primary interval
     obs = observations
     x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
 
     # If that failed, build up the solution slowly
-    if not x:
+    if x.flag != 0:
         obs = []
         x = solns[0]
-        for sq in seq:
+        for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
+            print(i, "of", len(seq), obs[0], sq)
             x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+            print('flag:', x.flag)
+            if x.flag != 0:
+                x.flag = 4
+                break
             logger.debug(f"Result `state`: {x.state}")
             logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
     else:
