@@ -36,6 +36,7 @@ layup-init = "layup_cmdline.init:main"
 layup-convert = "layup_cmdline.convert:main"
 layup-comet = "layup_cmdline.comet:main"
 layup-demo = "layup_cmdline.demo:main"
+layup-unpack = "layup_cmdline.unpack:main"
 
 [project.urls]
 "Source Code" = "https://github.com/Smithsonian/layup"
