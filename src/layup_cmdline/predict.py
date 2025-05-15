@@ -2,12 +2,13 @@
 # The `layup predict` subcommand implementation
 #
 import argparse
-from pathlib import Path
-from layup_cmdline.layupargumentparser import LayupArgumentParser
-import astropy.units as u
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 
+import astropy.units as u
+
+from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,7 @@ def main():
         help="Start date as JD_TDB float or date string YYYY-mm-ddTDB that will be converted to JD_TDB. Defaults to current UTC date.",
         dest="s",
         type=str,
-        default=str(datetime.now(timezone.utc).date()),  # current UTC date as YYYY-mm-dd
+        default=str(datetime.now(timezone.UTC).date()),  # current UTC date as YYYY-mm-dd
         required=False,
     )
 
@@ -224,15 +225,17 @@ def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
 
 
 def execute(args):
-    import astropy.units as u
     import re
+    import sys
+
+    import astropy.units as u
+    import pooch
+
     from layup.predict import predict_cli
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
     from layup.utilities.cli_utilities import warn_or_remove_file
-    from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
+    from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
     from layup.utilities.layup_configs import LayupConfigs
-    import sys
-    import pooch
 
     # check input exists
     find_file_or_exit(args.input, "input")

@@ -9,12 +9,14 @@ import pooch
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
 
+from layup.convert import convert
 from layup.routines import Observation, get_ephem, run_from_vector, run_from_vector_with_initial_guess
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,
     get_cov_columns,
+    get_format,
     parse_fit_result,
     process_data_by_id,
 )
@@ -239,7 +241,7 @@ def _orbitfit(
                     res.niter,
                     res.method,
                     res.flag,
-                    ("BCART_EQ" if success else np.nan),  # The base format returned by the C++ code
+                    ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
             ],
@@ -259,7 +261,7 @@ def _orbitfit(
                     0,  # niter
                     np.nan,  # method
                     -1,  # flag
-                    np.nan,  # format
+                    "NONE",  # format
                 )
                 + (np.nan,) * 36  # Flat covariance matrix
             ],
@@ -356,16 +358,16 @@ def orbitfit_cli(
 
     if cli_args is not None:
         cache_dir = cli_args.ar_data_file_path
-        overwrite = cli_args.force
         debias = cli_args.debias
         guess_file = Path(cli_args.g) if cli_args.g is not None else None
         weight_data = cli_args.weight_data
+        output_orbit_format = cli_args.output_orbit_format
     else:
         cache_dir = None
-        overwrite = False
         debias = False
         guess_file = None
         weight_data = False
+        output_orbit_format = "COM"  # Default output orbit format.
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -445,6 +447,15 @@ def orbitfit_cli(
         if guess_file is not None:
             # Get the guesses for all the objects in the current chunk.
             initial_guess = guess_reader.read_objects(chunk)
+            if len(initial_guess) != 0 and get_format(initial_guess) != "BCART_EQ":
+                # If the initial guess is not in the BCART_EQ format, convert it to BCART_EQ
+                initial_guess = convert(
+                    initial_guess,
+                    convert_to="BCART_EQ",
+                    num_workers=num_workers,
+                    cache_dir=cache_dir,
+                    primary_id_column_name=_primary_id_column_name,
+                )
 
         logger.info(f"Processing {len(data)} rows for {chunk}")
 
@@ -457,6 +468,16 @@ def orbitfit_cli(
             debias=debias,
             weight_data=weight_data,
         )
+
+        # Convert the fit_orbits to the preferred output format
+        if output_orbit_format != "BCART_EQ":
+            fit_orbits = convert(
+                fit_orbits,
+                convert_to=output_orbit_format,
+                num_workers=num_workers,
+                cache_dir=cache_dir,
+                primary_id_column_name=_primary_id_column_name,
+            )
 
         if cli_args.separate_flagged:
             # Split the results into two files: one for successful fits and one for failed fits
