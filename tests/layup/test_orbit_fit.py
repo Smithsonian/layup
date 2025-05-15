@@ -26,7 +26,7 @@ OUTPUT_COL_PER_ORBIT_TYPE = {
     "chunk_size, num_workers, output_orbit_format",
     [
         (100_000, 1, "BCART_EQ"),
-        # (100_000, 1, "COM"),
+        (100_000, 1, "COM"),
         # (100_000, 2, "KEP"),
     ],
 )
