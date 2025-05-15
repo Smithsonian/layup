@@ -116,6 +116,18 @@ def _use_star_astrometry(data):
 
 
 def _split_by_index(input_list, indices):
+    """Split an input list into a list of sublists, with break
+    points at the provided indices.
+
+    Parameters
+    ----------
+    input_list : a list of, in this case, integers.
+    indices : a list of indices at which to split the input list.
+
+    Returns
+    -------
+    list of lists."""
+    
     result = []
     sublist = []
     for i, _ in enumerate(input_list):
@@ -129,6 +141,19 @@ def _split_by_index(input_list, indices):
 
 
 def _time_distance(ic0, ic1, jds):
+    """Find the separation in time between two set of indices
+    (index chunks), given the corresponding set of julian dates.  
+
+    Parameters
+    ----------
+    ic0 : a list of indices (index chunk 0)
+    ic1 : a list of indices (index chunk 1)    
+    jds : a collection of julian dates.
+
+    Returns
+    -------
+    float : the size of the time gap separating the two chunks.
+    """
     if ic0 == ic1:
         return 0.0
     jds0 = jds[ic0]
@@ -139,6 +164,23 @@ def _time_distance(ic0, ic1, jds):
 
 
 def _nearest_chunk(target, index_chunks, jds, self_match=False):
+    """Given an index chunk (target) and the set of all the index
+    chunks, find the index chunk that is nearest in time, that has
+    the smallest separation in time.
+
+    Parameters
+    ----------
+    target : a list of indices (index chunk)
+    index_chunks : a list of lists of indices
+    jds : a collection of julian dates.
+    self_match : allow the target to match to itself
+
+    Returns
+    -------
+    list : the nearest index chunk.
+    float : the separation in time between the target and the nearest chunk.
+    
+    """
     min_dist = np.inf
     nc = None
     for i, ic in enumerate(index_chunks):
@@ -156,11 +198,39 @@ def _nearest_chunk(target, index_chunks, jds, self_match=False):
 
 
 def _next_nearest(chunk_sequence, index_chunks, jds):
+    """Given a sequence of index chunks and a collection of other index
+    chunks, find the index chunk that is nearest in time to the sequence.
+    This will be the next one to include in the fit.
+
+    Parameters
+    ----------
+    chunk_sequence : a list of lists of indices
+    index_chunks : a list of lists of indices
+    jds : a collection of julian dates.
+    self_match : allow the target to match to itself
+
+    Returns
+    -------
+    list : the nearest index chunk.
+    """
     nc = min([_nearest_chunk(target, index_chunks, jds) for target in chunk_sequence], key=lambda x: x[1])
     return nc[0]
 
 
 def _iterate_sequence(sequence, other_chunks, jds):
+    """Given a sequence of index chunks and a collection of other index
+    chunks, iteratively build the sequence.
+
+    Parameters
+    ----------
+    sequence : a list of lists of indices (the start of the sequence)
+    other_chunks : a list of lists of indices
+    jds : a collection of julian dates.
+
+    Returns
+    -------
+    list of lists : the resulting list of lists of indices
+    """
     seq = sequence.copy()
     ocs = other_chunks.copy()
     while ocs != []:
@@ -171,6 +241,25 @@ def _iterate_sequence(sequence, other_chunks, jds):
 
 
 def _build_sequence(jds, sep_dt=90.0):
+    """Given a set of julian dates, in the order of the observations,
+    split the observations into sets of indices that have gaps of at
+    least sep_dt (days) between them.  These are index chunks.  Then
+    develop a sequence of the index chunks that will be fit in order.
+    The first chunk will have the longest time span.  The next will
+    be the closest in time to the first.  The next will be the closest
+    in time to the first two, etc.
+
+    Parameters
+    ----------
+    jds : a collection of julian dates in order of the observations (sorted).
+    sep_dt: float the mininum separation between chunks
+
+
+    Returns
+    -------
+    list of lists : the resulting sequence of lists of indices that
+    will be fit.
+    """
     intervals = jds[1:] - jds[:-1]
     intervals = np.insert(intervals, 0, 0.0, axis=0)
     index_chunks = _split_by_index(jds, np.argwhere(intervals > sep_dt))
