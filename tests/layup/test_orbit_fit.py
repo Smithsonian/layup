@@ -16,17 +16,17 @@ OUTPUT_COL_PER_ORBIT_TYPE = {
     "BKEP": ["a", "e", "inc", "node", "argPeri", "ma"],
 }
 
-"""
+
 @pytest.mark.parametrize(
     "chunk_size, num_workers, output_orbit_format",
     [
         (100_000, 1, "BCART_EQ"),
-        (100_000, 1, "COM"),
-        (100_000, 2, "KEP"),
+        # (100_000, 1, "COM"),
+        # (100_000, 2, "KEP"),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
-    #Test that the orbit_fit cli works for a small CSV file.
+    # Test that the orbit_fit cli works for a small CSV file.
     print(
         f"test orbit_fit_cli: chunk_size={chunk_size}, num_workers={num_workers}, output_orbit_format={output_orbit_format}"
     )
@@ -148,7 +148,6 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
             for col in OUTPUT_COL_PER_ORBIT_TYPE[output_orbit_format]:
                 assert not np.isnan(row[col])
             assert not np.isnan(row["epochMJD_TDB"])
-"""
 
 
 def test_orbit_fit_mixed_inputs():
