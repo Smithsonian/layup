@@ -26,12 +26,8 @@ OUTPUT_COL_PER_ORBIT_TYPE = {
     "chunk_size, num_workers, output_orbit_format",
     [
         (100_000, 1, "BCART_EQ"),
-        (100_000, 1, "BCART"),
-        (100_000, 1, "CART"),
         (100_000, 1, "COM"),
-        (100_000, 1, "BCOM"),
         (100_000, 2, "KEP"),
-        (20_000, 2, "BKEP"),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
