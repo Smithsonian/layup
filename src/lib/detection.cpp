@@ -222,6 +222,17 @@ namespace orbit_fit
             return obs;
         }
 
+        static Observation from_streak_with_id(std::string objID,
+            double ra, double dec, double ra_rate, double dec_rate,
+            double epoch_val,
+            const std::array<double, 3> &obs_position,
+            const std::array<double, 3> &obs_velocity)
+        {
+            Observation obs = from_streak(ra, dec, ra_rate, dec_rate, epoch_val, obs_position, obs_velocity);
+            obs.objID = objID;
+            return obs;
+        }
+
         // Factory method for a Radar observation.
         // not implemented yet
     };
@@ -258,6 +269,11 @@ namespace orbit_fit
             // Constructor for a Streak observation.
             // bind the ::from_streak factory method
             .def_static("from_streak", &Observation::from_streak,
+                        py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
+                        py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+                        "Construct a Streak observation")
+            .def_static("from_streak_with_id", &Observation::from_streak_with_id,
+                        py::arg("objID"),
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct a Streak observation")

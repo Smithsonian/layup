@@ -217,3 +217,43 @@ def test_orbitfit_result_parsing():
             # Check our flattened covariance matrix against each covariance matrix column in the results.
             for i, col in enumerate(get_cov_columns()):
                 assert fit_res.cov[i] == row[col]
+
+def test_orbitfit_with_streak_observations():
+    """Test that the orbit_fit works with streak observations."""
+    pid = "orbitID"
+
+    # Test with a csv file where all observations have
+    # valide streak data
+    complete_input_data = CSVDataReader(
+        get_test_filepath("streak_observations_complete.csv"),
+        "csv",
+        primary_id_column_name=pid,
+    ).read_rows()
+
+    fitted_orbits_complete = orbitfit(
+        complete_input_data,
+        cache_dir=None,
+        primary_id_column_name=pid,
+    )
+
+    assert fitted_orbits_complete is not None
+    n_uniq_ids = sum([1 if id else 0 for id in set(complete_input_data["orbitID"])])
+    assert_equal(len(fitted_orbits_complete), n_uniq_ids)
+
+    # Test with a csv file where some observations have
+    # valid streak data and some have astrometry data
+    incomplete_input_data = CSVDataReader(
+        get_test_filepath("streak_observations_incomplete.csv"),
+        "csv",
+        primary_id_column_name=pid,
+    ).read_rows()
+
+    fitted_orbits_incomplete = orbitfit(
+        incomplete_input_data,
+        cache_dir=None,
+        primary_id_column_name=pid
+    )
+
+    assert fitted_orbits_incomplete is not None
+    n_uniq_ids = sum([1 if id else 0 for id in set(incomplete_input_data["orbitID"])])
+    assert_equal(len(fitted_orbits_incomplete), n_uniq_ids)
