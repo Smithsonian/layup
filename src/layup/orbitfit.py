@@ -166,6 +166,7 @@ def _orbitfit(
         column_names = data.dtype.names
         astcat_column_present = "astcat" in column_names
         program_column_present = "program" in column_names
+        position_rates_columns_present = all(col in column_names for col in ["rarate", "decrate"])
 
         # Accommodate occultation measurements. These measurements are implied when
         # the "ra" and "dec" columns are None. In this case, we will use the "starra"
@@ -191,14 +192,26 @@ def _orbitfit(
         # radians.
         observations = []
         for d in data:
-            o = Observation.from_astrometry_with_id(
-                str(d[primary_id_column_name]),
-                d["ra"] * np.pi / 180.0,
-                d["dec"] * np.pi / 180.0,
-                convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
-                [d["x"], d["y"], d["z"]],  # Barycentric position
-                [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
-            )
+            if position_rates_columns_present and (not np.isnan(d["rarate"]) and not np.isnan(d["decrate"])):
+                o = Observation.from_streak_with_id(
+                    str(d[primary_id_column_name]),
+                    d["ra"] * np.pi / 180.0,
+                    d["dec"] * np.pi / 180.0,
+                    d["rarate"],
+                    d["decrate"],
+                    convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
+                    [d["x"], d["y"], d["z"]],  # Barycentric position
+                    [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
+                )
+            else:
+                o = Observation.from_astrometry_with_id(
+                    str(d[primary_id_column_name]),
+                    d["ra"] * np.pi / 180.0,
+                    d["dec"] * np.pi / 180.0,
+                    convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
+                    [d["x"], d["y"], d["z"]],  # Barycentric position
+                    [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
+                )
 
             if weight_data:
                 data_weight = data_weight_Veres2017(

@@ -10,7 +10,6 @@ namespace py = pybind11;
 // --- Observation Variant Types ---
 // Each variant computes a unit direction vector (rho_hat) from the provided ra and dec.
 
-
 /*
     // This is the old code for the tangent plane vectors.
     // It is not used in the new code, but is kept here for reference.
@@ -58,7 +57,7 @@ namespace orbit_fit
         d_vec.y() = rho_hat.x() * rho_hat.x() + rho_hat.z() * rho_hat.z();
         d_vec.z() = -rho_hat.z() * rho_hat.y();
         return d_vec;
-    }  
+    }
     struct AstrometryObservation
     {
         AstrometryObservation() = default;
@@ -72,7 +71,7 @@ namespace orbit_fit
 
         StreakObservation() = default;
         // Constructor: takes ra, dec and the corresponding rates, and computes rho_hat.
-        StreakObservation(double ra_rate, double dec_rate) : ra_rate(ra_rate), dec_rate(dec_rate){}
+        StreakObservation(double ra_rate, double dec_rate) : ra_rate(ra_rate), dec_rate(dec_rate) {}
     };
 
     using ObservationType = std::variant<AstrometryObservation, StreakObservation>;
@@ -81,7 +80,7 @@ namespace orbit_fit
     // Now, Observation has private constructors and public static factory methods.
     struct Observation
     {
-	std::string objID; 
+        std::string objID;
         double epoch; // utc jd
         ObservationType observation_type;
         std::array<double, 3> observer_position;
@@ -172,7 +171,7 @@ namespace orbit_fit
             dec_unc = dec_uncy;
         }
 
-        Observation(){}
+        Observation() {}
 
         // Factory method for an Astrometry observation.
         static Observation from_astrometry(double ra, double dec, double epoch_val,
@@ -181,8 +180,8 @@ namespace orbit_fit
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
             obs.observation_type = AstrometryObservation();
-            obs.ra_unc = 1.0/206265;
-            obs.dec_unc = 1.0/206265;
+            obs.ra_unc = 1.0 / 206265;
+            obs.dec_unc = 1.0 / 206265;
             obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
             obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
             obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
@@ -191,21 +190,21 @@ namespace orbit_fit
 
         // Factory method for an Astrometry observation.
         static Observation from_astrometry_with_id(std::string objID,
-						   double ra, double dec, double epoch_val,
-						   const std::array<double, 3> &obs_position,
-						   const std::array<double, 3> &obs_velocity)
+                                                   double ra, double dec, double epoch_val,
+                                                   const std::array<double, 3> &obs_position,
+                                                   const std::array<double, 3> &obs_velocity)
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
             obs.observation_type = AstrometryObservation();
-            obs.ra_unc = 1.0/206265;
-            obs.dec_unc = 1.0/206265;
+            obs.ra_unc = 1.0 / 206265;
+            obs.dec_unc = 1.0 / 206265;
             obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
             obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
             obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
             obs.objID = objID;
             return obs;
         }
-	
+
         // Factory method for a Streak observation.
         static Observation from_streak(double ra, double dec, double ra_rate, double dec_rate,
                                        double epoch_val,
@@ -217,8 +216,19 @@ namespace orbit_fit
             obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
             obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
             obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
-            obs.ra_unc = 1.0/206265;
-            obs.dec_unc = 1.0/206265;
+            obs.ra_unc = 1.0 / 206265;
+            obs.dec_unc = 1.0 / 206265;
+            return obs;
+        }
+
+        static Observation from_streak_with_id(std::string objID,
+                                               double ra, double dec, double ra_rate, double dec_rate,
+                                               double epoch_val,
+                                               const std::array<double, 3> &obs_position,
+                                               const std::array<double, 3> &obs_velocity)
+        {
+            Observation obs = from_streak(ra, dec, ra_rate, dec_rate, epoch_val, obs_position, obs_velocity);
+            obs.objID = objID;
             return obs;
         }
 
@@ -251,13 +261,18 @@ namespace orbit_fit
                         py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct an Astrometry observation")
             .def_static("from_astrometry_with_id", &Observation::from_astrometry_with_id,
-			py::arg("objID"),
+                        py::arg("objID"),
                         py::arg("ra"), py::arg("dec"), py::arg("epoch"),
                         py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct an Astrometry observation")
             // Constructor for a Streak observation.
             // bind the ::from_streak factory method
             .def_static("from_streak", &Observation::from_streak,
+                        py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
+                        py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+                        "Construct a Streak observation")
+            .def_static("from_streak_with_id", &Observation::from_streak_with_id,
+                        py::arg("objID"),
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct a Streak observation")
