@@ -32,6 +32,9 @@ OUTPUT_COL_PER_ORBIT_TYPE = {
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     """Test that the orbit_fit cli works for a small CSV file."""
+    print(
+        f"test orbit_fit_cli: chunk_size={chunk_size}, num_workers={num_workers}, output_orbit_format={output_orbit_format}"
+    )
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
     os.chdir(tmpdir)
     guess_file_stem = "test_guess"
@@ -154,6 +157,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
 
 def test_orbit_fit_mixed_inputs():
     """Test that the orbit_fit cli works for a mixed input file."""
+    print("test orbit_fit_mixed_inputs")
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
     observations = []
     for i in range(20):
