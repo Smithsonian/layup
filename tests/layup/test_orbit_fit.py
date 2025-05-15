@@ -1,8 +1,13 @@
-import pooch
+import os
 
-from layup.orbitfit import orbitfit
+import numpy as np
+import pooch
+import pytest
+from numpy.testing import assert_equal
+
+from layup.orbitfit import orbitfit, orbitfit_cli
 from layup.routines import Observation, get_ephem, run_from_vector
-from layup.utilities.data_processing_utilities import get_cov_columns, parse_fit_result
+from layup.utilities.data_processing_utilities import get_cov_columns, parse_cov, parse_fit_result
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
