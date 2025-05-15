@@ -3,10 +3,11 @@ import os
 from pathlib import Path
 from typing import Literal
 
-
+from layup.convert import get_output_column_names_and_types, convert
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.data_processing_utilities import (
+    get_format,
     process_data,
 )
 
@@ -116,15 +117,38 @@ def comet_cli(
     if num_workers < 0:
         num_workers = os.cpu_count()
 
+
     # Open the input file and read the first line
     reader_class = INPUT_READERS.get(file_format)
     if reader_class is None:
         logger.error(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
         raise ValueError(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
 
+
+    sample_reader = reader_class(
+        input_file,
+        format_column_name="FORMAT",
+        primary_id_column_name=primary_id_column_name,
+    )
+
+    sample_data = sample_reader.read_rows(block_start=0, block_size=1)
+
+    # Check orbit format in the file
+    input_format = get_format(sample_data)
+
+    # Reopen the file now that we know the input format and can validate the column names
+    required_columns_names, _ = get_output_column_names_and_types(
+        primary_id_column_name,
+        has_covariance=False,  # Change for function
+        extra_cols_to_keep= [],
+    )
+
+    required_columns = required_columns_names[input_format]
     full_reader = reader_class(
         input_file,
+        format_column_name="FORMAT",
         primary_id_column_name=primary_id_column_name,
+        required_column_names=required_columns,
     )
 
     # Calculate the start and end indices for each chunk, as a list of tuples
@@ -138,6 +162,14 @@ def comet_cli(
     for chunk_start, chunk_end in chunks:
         # Read the chunk of data
         chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
+        if get_format(chunk_data) != "COM":
+            chunk_data = convert(
+                    chunk_data,
+                    convert_to="COM",
+                    num_workers=num_workers,
+                    cache_dir=cache_dir,
+                    primary_id_column_name=primary_id_column_name,
+            )
         # Parallelize conversion of this chunk of data.
         comet_data = comet(
             chunk_data,
