@@ -218,6 +218,7 @@ def test_orbitfit_result_parsing():
             for i, col in enumerate(get_cov_columns()):
                 assert fit_res.cov[i] == row[col]
 
+
 def test_orbitfit_with_streak_observations():
     """Test that the orbit_fit works with streak observations."""
     pid = "orbitID"
@@ -248,11 +249,7 @@ def test_orbitfit_with_streak_observations():
         primary_id_column_name=pid,
     ).read_rows()
 
-    fitted_orbits_incomplete = orbitfit(
-        incomplete_input_data,
-        cache_dir=None,
-        primary_id_column_name=pid
-    )
+    fitted_orbits_incomplete = orbitfit(incomplete_input_data, cache_dir=None, primary_id_column_name=pid)
 
     assert fitted_orbits_incomplete is not None
     n_uniq_ids = sum([1 if id else 0 for id in set(incomplete_input_data["orbitID"])])
