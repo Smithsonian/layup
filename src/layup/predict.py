@@ -26,6 +26,7 @@ def _get_result_dtypes(primary_id_column_name: str):
     return np.dtype(
         [
             (primary_id_column_name, "O"),  # Object ID
+            ("epochJD_TDB", "f8"),  # Time for prediction
             ("ra_deg", "f8"),
             ("dec_deg", "f8"),
             ("rho_x", "f8"),  # The first of the 3 rho unit vector
@@ -35,7 +36,6 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("obs_cov1", "f8"),
             ("obs_cov2", "f8"),
             ("obs_cov3", "f8"),
-            ("epochJD_TDB", "f8"),  # Time for prediction
         ]
     )
 
@@ -82,6 +82,7 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
             predict_results.append(
                 (
                     row[primary_id_column_name],
+                    pred.epoch,
                     pred.rho[0],  # place holder
                     pred.rho[0],  # place holder
                     pred.rho[0],
@@ -91,7 +92,6 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
                     pred.obs_cov[1],
                     pred.obs_cov[2],
                     pred.obs_cov[3],
-                    pred.epoch,
                 )
             )
 
