@@ -117,13 +117,11 @@ def comet_cli(
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-
     # Open the input file and read the first line
     reader_class = INPUT_READERS.get(file_format)
     if reader_class is None:
         logger.error(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
         raise ValueError(f"Invalid file format: {file_format}. Must be one of: 'csv', 'hdf5'.")
-
 
     sample_reader = reader_class(
         input_file,
@@ -140,7 +138,7 @@ def comet_cli(
     required_columns_names, _ = get_output_column_names_and_types(
         primary_id_column_name,
         has_covariance=False,  # Change for function
-        extra_cols_to_keep= [],
+        extra_cols_to_keep=[],
     )
 
     required_columns = required_columns_names[input_format]
@@ -164,11 +162,11 @@ def comet_cli(
         chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
         if get_format(chunk_data) != "COM":
             chunk_data = convert(
-                    chunk_data,
-                    convert_to="COM",
-                    num_workers=num_workers,
-                    cache_dir=cache_dir,
-                    primary_id_column_name=primary_id_column_name,
+                chunk_data,
+                convert_to="COM",
+                num_workers=num_workers,
+                cache_dir=cache_dir,
+                primary_id_column_name=primary_id_column_name,
             )
         # Parallelize conversion of this chunk of data.
         comet_data = comet(
