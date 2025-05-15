@@ -197,7 +197,7 @@ namespace orbit_fit
         result.obs_cov[1] = obs_cov(0, 1);
         result.obs_cov[2] = obs_cov(1, 0);
         result.obs_cov[3] = obs_cov(1, 1);
-        result.epoch = epoch;
+        result.epoch = jd_tdb;
 
         return result;
     }
