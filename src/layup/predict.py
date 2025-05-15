@@ -175,14 +175,13 @@ def predict_cli(
     """
 
     num_workers = cli_args.n
-    _primary_id_column_name = "provID"
 
     if num_workers < 0:
         num_workers = os.cpu_count()
 
     times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
 
-    reader = CSVDataReader(input_file, primary_id_column_name=_primary_id_column_name, sep="csv")
+    reader = CSVDataReader(input_file, primary_id_column_name=cli_args.primary_id_column_name, sep="csv")
 
     chunks = create_chunks(reader, chunk_size=cli_args.chunk)
 
