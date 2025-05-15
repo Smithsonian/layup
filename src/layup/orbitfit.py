@@ -115,10 +115,10 @@ def _use_star_astrometry(data):
     return data
 
 
-def split_by_index(my_list, indices):
+def _split_by_index(input_list, indices):
     result = []
     sublist = []
-    for i, item in enumerate(my_list):
+    for i, _ in enumerate(input_list):
         if i in indices:
             result.append(sublist)
             sublist = [i]
@@ -128,7 +128,7 @@ def split_by_index(my_list, indices):
     return result
 
 
-def time_distance(ic0, ic1, jds):
+def _time_distance(ic0, ic1, jds):
     if ic0 == ic1:
         return 0.0
     jds0 = jds[ic0]
@@ -138,7 +138,7 @@ def time_distance(ic0, ic1, jds):
     return min(td0, td1)
 
 
-def nearest_chunk(target, index_chunks, jds, self_match=False):
+def _nearest_chunk(target, index_chunks, jds, self_match=False):
     min_dist = np.inf
     nc = None
     for i, ic in enumerate(index_chunks):
@@ -148,37 +148,37 @@ def nearest_chunk(target, index_chunks, jds, self_match=False):
         elif ic == target:
             continue
         else:
-            td = time_distance(target, ic, jds)
+            td = _time_distance(target, ic, jds)
             if td < min_dist:
                 min_dist = td
                 nc = ic
     return nc, min_dist
 
 
-def next_nearest(chunk_sequence, index_chunks, jds):
-    nc = min([nearest_chunk(target, index_chunks, jds) for target in chunk_sequence], key=lambda x: x[1])
+def _next_nearest(chunk_sequence, index_chunks, jds):
+    nc = min([_nearest_chunk(target, index_chunks, jds) for target in chunk_sequence], key=lambda x: x[1])
     return nc[0]
 
 
-def iterate_sequence(sequence, other_chunks, jds):
+def _iterate_sequence(sequence, other_chunks, jds):
     seq = sequence.copy()
     ocs = other_chunks.copy()
     while ocs != []:
-        nc = next_nearest(seq, ocs, jds)
+        nc = _next_nearest(seq, ocs, jds)
         seq.append(nc)
         ocs.remove(nc)
     return seq
 
 
-def build_sequence(jds, sep_dt=90.0):
+def _build_sequence(jds, sep_dt=90.0):
     intervals = jds[1:] - jds[:-1]
     intervals = np.insert(intervals, 0, 0.0, axis=0)
-    index_chunks = split_by_index(jds, np.argwhere(intervals > sep_dt))
+    index_chunks = _split_by_index(jds, np.argwhere(intervals > sep_dt))
     start_index = np.argmax([jds[ic].max() - jds[ic].min() for ic in index_chunks])
     start_chunk = index_chunks[start_index]
     remainder = index_chunks.copy()
     remainder.remove(start_chunk)
-    seq = iterate_sequence([start_chunk], remainder, jds)
+    seq = _iterate_sequence([start_chunk], remainder, jds)
     return seq
 
 
@@ -239,7 +239,6 @@ def do_fit(observations, seq, cache_dir):
     x = solns[0]
     obs = [observations[i] for i in seq[0]]
     x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    print("here x:", x.flag)
 
     if (x.flag != 0) and len(solns) > 1:
         x = solns[1]
@@ -252,7 +251,6 @@ def do_fit(observations, seq, cache_dir):
     if x.flag != 0:
         logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
         x.flag = 3  # caution
-        print("primary:", x.flag)
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
@@ -399,7 +397,7 @@ def _orbitfit(
             kernels_loc = str(cache_dir)
 
         jds = convert_tdb_date_to_julian_date(data["obstime"])
-        sequence = build_sequence(jds, sep_dt=90.0)
+        sequence = _build_sequence(jds, sep_dt=90.0)
 
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
