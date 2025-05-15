@@ -34,7 +34,7 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("obs_cov1", "f8"),
             ("obs_cov2", "f8"),
             ("obs_cov3", "f8"),
-            ("epoch", "f8"),  # Time for prediction
+            ("epochJD_TDB", "f8"),  # Time for prediction
         ]
     )
 
