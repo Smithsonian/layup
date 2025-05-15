@@ -141,7 +141,7 @@ def main():
         help="Start date as JD_TDB float or date string YYYY-mm-ddTDB that will be converted to JD_TDB. Defaults to current UTC date.",
         dest="s",
         type=str,
-        default=str(datetime.now(timezone.UTC).date()),  # current UTC date as YYYY-mm-dd
+        default=str(datetime.now(timezone.utc).date()),  # current UTC date as YYYY-mm-dd
         required=False,
     )
 
