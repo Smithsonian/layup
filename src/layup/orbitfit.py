@@ -210,7 +210,7 @@ def create_empty_result(id, dtypes):
                 0,  # niter
                 np.nan,  # method
                 -1,  # flag
-                np.nan,  # format
+                "NONE",  # format
             )
             + (np.nan,) * 36  # Flat covariance matrix
         ],
