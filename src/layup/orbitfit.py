@@ -10,7 +10,13 @@ import spiceypy as spice
 
 from numpy.lib import recfunctions as rfn
 
-from layup.routines import Observation, gauss, get_ephem, run_from_vector, run_from_vector_with_initial_guess
+from layup.routines import (
+    FitResult,
+    Observation,
+    gauss,
+    get_ephem,
+    run_from_vector_with_initial_guess,
+)
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
@@ -219,7 +225,9 @@ def do_fit(observations, seq, cache_dir):
     # If gauss fails, try something else.
     if not solns:
         logger.debug("gauss failed")
-        return
+        x = FitResult()
+        x.flag = 5
+        return x
 
     assist_ephem = get_ephem(cache_dir)
 
@@ -228,7 +236,7 @@ def do_fit(observations, seq, cache_dir):
     x = solns[0]
     obs = [observations[i] for i in seq[0]]
     x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    print('here x:', x.flag)
+    print("here x:", x.flag)
 
     if (x.flag != 0) and len(solns) > 1:
         x = solns[1]
@@ -238,10 +246,10 @@ def do_fit(observations, seq, cache_dir):
         x = solns[2]
         obs = [observations[i] for i in seq[0]]
         x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    if (x.flag != 0):
+    if x.flag != 0:
         logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
-        x.flag = 3 # caution
-        print('primary:', x.flag)        
+        x.flag = 3  # caution
+        print("primary:", x.flag)
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
@@ -256,7 +264,7 @@ def do_fit(observations, seq, cache_dir):
             obs += [observations[i] for i in sq]
             print(i, "of", len(seq), obs[0], sq)
             x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-            print('flag:', x.flag)
+            print("flag:", x.flag)
             if x.flag != 0:
                 x.flag = 4
                 break

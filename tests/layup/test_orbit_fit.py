@@ -119,8 +119,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers):
         if nan_mask.any():
             # If any values are NaN, all should be NaN
             assert np.all(nan_mask)
-            # Since the fit failed, check that the flag is set to 1 or -1
-            assert row["flag"] == 1 or row["flag"] == -1
+            # Since the fit failed, check that the flag is set to a non-zero value
+            assert row["flag"] != 0
         else:
             # Since no values are NaN, check that the flag is set to 0
             assert row["flag"] == 0
