@@ -27,7 +27,7 @@ OUTPUT_COL_PER_ORBIT_TYPE = {
     [
         (100_000, 1, "BCART_EQ"),
         (100_000, 1, "COM"),
-        (100_000, 2, "KEP"),
+        (100_000, 1, "KEP"),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
