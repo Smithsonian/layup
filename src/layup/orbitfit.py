@@ -10,6 +10,8 @@ import spiceypy as spice
 
 from numpy.lib import recfunctions as rfn
 
+import random
+
 from layup.routines import (
     FitResult,
     Observation,
@@ -261,14 +263,15 @@ def _build_sequence(jds, sep_dt=90.0):
     """
     intervals = jds[1:] - jds[:-1]
     intervals = np.insert(intervals, 0, 0.0, axis=0)
+    
     index_chunks = _split_by_index(jds, np.argwhere(intervals > sep_dt))
+    
     start_index = np.argmax([jds[ic].max() - jds[ic].min() for ic in index_chunks])
     start_chunk = index_chunks[start_index]
     remainder = index_chunks.copy()
     remainder.remove(start_chunk)
     seq = _iterate_sequence([start_chunk], remainder, jds)
     return seq
-
 
 def create_empty_result(id, dtypes):
     """Create an empty return object
