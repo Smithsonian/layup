@@ -305,7 +305,7 @@ class LayupObservatory(SorchaObservatory):
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
 
-    def obscodes_to_barycentric(self, data, fail_on_missing=True):
+    def obscodes_to_barycentric(self, data, fail_on_missing=False):
         """
         Takes a structured array of observations and returns the barycentric positions and velocites
         of the observatories.

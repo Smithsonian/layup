@@ -13,6 +13,7 @@ from layup.utilities.data_processing_utilities import (
 )
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
+from layup.utilities.file_io.Obs80Reader import Obs80DataReader
 
 
 def no_op(data):
