@@ -39,7 +39,7 @@ def main():
         "   predict        predict on-sky positions\n"
         "   visualize      visualize orbits\n"
         "   demo           gives demos of the other verbs\n"
-        "   unpack         unpacks covarience matrix into uncertainties"
+        "   unpack         unpacks covarience matrix into uncertainties\n"
         "   comet          determines original orbit for comets\n"
         "\n"
         "To get more information, run the verb with --help. For example:\n\n"
