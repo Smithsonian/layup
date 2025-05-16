@@ -1,7 +1,11 @@
+from typing import Union, Iterable
+
 SEC_PER_DAY = 24 * 60 * 60
 
 
-def convert_tdb_date_to_julian_date(input_tdb_date: str, spice_kernel_dir: str = "") -> float:
+def convert_tdb_date_to_julian_date(
+    input_tdb_date: Union[str, Iterable[str]], spice_kernel_dir: str = ""
+) -> float:
     """
     Convert a TDB date string to Julian Date.
 
