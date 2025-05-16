@@ -307,6 +307,29 @@ def create_empty_result(id, dtypes):
 
 
 def do_fit(observations, seq, cache_dir):
+    """Carry out an orbit fit to the observations in a
+    series of steps.  A list of lists of observation indices
+    specifies the order in which the fit proceeds.
+
+    A Gauss preliminary order is fit for the 0-th segment,
+    using the first, middle, and last observations in that
+    segement.
+
+    Then an orbit fit is done on the 0-th segment, using the
+    initial orbit from Gauss.
+
+    Parameters
+    ----------
+    observations : list
+        A time-ordered list of observations
+    seq : list of lists
+        A list of lists of observation indices.
+
+    Returns
+    -------
+    FitResult
+        The result of the orbit fit.a
+    """
     # Get gauss solution, using the first, middle, and last observation
     # of the primary sequence
     idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
