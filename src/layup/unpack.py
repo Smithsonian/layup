@@ -45,7 +45,6 @@ def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list, or
         A structured numpy dtype defining the format of the output array.
     """
 
-
     if orbit_col_flag == True:
         return np.dtype(
             [
