@@ -141,12 +141,12 @@ def _split_by_index(input_list, indices):
 
 def _time_distance(ic0, ic1, jds):
     """Find the separation in time between two set of indices
-    (index chunks), given the corresponding set of julian dates.  
+    (index chunks), given the corresponding set of julian dates.
 
     Parameters
     ----------
     ic0 : a list of indices (index chunk 0)
-    ic1 : a list of indices (index chunk 1)    
+    ic1 : a list of indices (index chunk 1)
     jds : a collection of julian dates.
 
     Returns
@@ -178,7 +178,7 @@ def _nearest_chunk(target, index_chunks, jds, self_match=False):
     -------
     list : the nearest index chunk.
     float : the separation in time between the target and the nearest chunk.
-    
+
     """
     min_dist = np.inf
     nc = None
