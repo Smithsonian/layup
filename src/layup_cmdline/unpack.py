@@ -56,7 +56,7 @@ def main():
         help="number of orbits to be processed at once",
         dest="chunk",
         type=int,
-        default=10000,
+        default=200000,
         required=False,
     )
     optional.add_argument(
