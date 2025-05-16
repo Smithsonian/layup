@@ -17,25 +17,14 @@ INPUT_READERS = {
 
 def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
     """Helper function to create the result dtype with the correct primary ID column name."""
-    # Define a structured dtype for format of unpacked output file
-
+   
     return np.dtype(
         [
             (primary_id_column_name, "O"),  # Object ID
             ("csq", "f8"),  # Chi-square value
             ("ndof", "i4"),  # Number of degrees of freedom
-            (state[0], "f8"),  # The first of 6 state vector elements
-            (sigma[0], "f8"),  # The first of 6 sigma vector elements
-            (state[1], "f8"),
-            (sigma[1], "f8"),
-            (state[2], "f8"),
-            (sigma[2], "f8"),
-            (state[3], "f8"),
-            (sigma[3], "f8"),
-            (state[4], "f8"),
-            (sigma[4], "f8"),
-            (state[5], "f8"),  # The last of 6 state vector elements
-            (sigma[5], "f8"),  # The last of 6 state vector elements
+            *[(state[i], "f8") for i in range(6)],  # State vector elements
+            *[(sigma[i], "f8") for i in range(6)],  # Sigma vector elements
             ("epochMJD_TDB", "f8"),  # Epoch
             ("niter", "i4"),  # Number of iterations
             ("method", "O"),  # Method used for orbit fitting
@@ -47,16 +36,34 @@ def _get_result_dtypes(primary_id_column_name: str, state: list, sigma: list):
 
 def unpack(res, name, orbit_para, _RESULT_DTYPES):
     """
-    unpacks a file containing a covarience matrix into assoicated uncertainties.
-    e.g. name, values (x6), covariance (6x6) ---> name, value_i, sigma_value_i, ....
+    Unpacks a file containing a covariance matrix into associated uncertainties.
 
+    Parameters
+    ----------
+    res : FitResult
+        The parsed fit result.
+    name : str
+        name of the object
+    orbit_para : list 
+        A list of parameter names corresponding to the state vector elements 
+    _RESULT_DTYPES : np,dtype
+        A structured numpy dtype defining the format of the output array. 
+    Returns
+    -------
+    output : numpy array 
+        the numpy array containing the unpacked data.
     """
 
     j = [0, 7, 14, 21, 28, 35]  # location of cov_ii [00,11,22,33,44,55]
     error_list = []
     for i, orbit_para in enumerate(orbit_para):
         error_list.append(np.sqrt(res.cov[j[i]]))
+    state_error_pairs = [(res.state[i], error_list[i]) for i in range(6)]
 
+    # Flatten the state-error pairs into a single tuple
+    state_error_tuple = tuple(item for pair in state_error_pairs for item in pair)
+
+    # Construct the output array
     output = np.array(
         [
             (
@@ -64,20 +71,7 @@ def unpack(res, name, orbit_para, _RESULT_DTYPES):
                 res.csq,
                 res.ndof,
             )
-            + (
-                res.state[0],
-                error_list[0],
-                res.state[1],
-                error_list[1],
-                res.state[2],
-                error_list[2],
-                res.state[3],
-                error_list[3],
-                res.state[4],
-                error_list[4],
-                res.state[5],
-                error_list[5],
-            )
+            + state_error_tuple
             + (
                 res.epoch - 2400000.5,  # changing from jd back to mjd
                 res.niter,
@@ -88,6 +82,7 @@ def unpack(res, name, orbit_para, _RESULT_DTYPES):
         ],
         dtype=_RESULT_DTYPES,
     )
+
     return output
 
 
@@ -95,9 +90,29 @@ def unpack_cli(
     input,
     file_format,
     output_file_stem,
+    chunk_size: int = 10_000,
+    cli_args: dict = None,
 ):
+    """
+    unpacks an input files covarience into uncertainties
 
-    primary_id_column_name = "provID"
+    Note that the output file will be written in the caller's current working directory.
+
+    Parameters
+    ----------
+    input : str
+        The path to the input file.
+    output_file_stem : str
+        The stem of the output file.
+    file_format : str, optional (default="csv")
+        The format of the output file. Must be one of: "csv", "hdf5"
+    chunk_size : int, optional (default=10_000)
+        The number of rows to read in at a time.
+  
+    cli_args : argparse, optional (default=None)
+        The argparse object that was created when running from the CLI.
+    """
+    primary_id_column_name = cli_args.primary_id_column_name if cli_args else "provID"
 
     input_file = Path(input)
     if file_format == "csv":
@@ -149,24 +164,34 @@ def unpack_cli(
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, orbit_para, orbit_para_sigma)
 
     # read data
-    data = reader_class(
+    full_reader = reader_class(
         input_file,
         format_column_name="FORMAT",
         primary_id_column_name=primary_id_column_name,
-    ).read_rows()
+    )
 
-    # loop that parses each row/object and unpacked
-    for row in data:
+    # Calculate the start and end indices for each chunk, as a list of tuples
+    # of the form (start, end) where start is the starting index of the chunk
+    # and the last index of the chunk + 1.
+    total_rows = full_reader.get_row_count()
+    chunks = [(i, min(i + chunk_size, total_rows)) for i in range(0, total_rows, chunk_size)]
 
-        res = parse_fit_result(
-            row
-        )  # res.epoch is converted to jd in this function. It is converted back to mjd in output
-        res_unpacked = unpack(res, row[0], orbit_para, _RESULT_DTYPES)
+    for chunk_start, chunk_end in chunks:
+        # Read the chunk of data
+        chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
 
-        # All results go to a single output file
-        if file_format == "hdf5":
-            write_hdf5(res_unpacked, output_file, key="data")
-        else:
-            write_csv(res_unpacked, output_file)
+        # loop that parses each row/object and unpacks
+        for row in chunk_data:
+
+            res = parse_fit_result(
+                row
+            )  # res.epoch is converted to jd in this function. It is converted back to mjd in output
+            res_unpacked = unpack(res, row[0], orbit_para, _RESULT_DTYPES)
+
+            # All results go to a single output file
+            if file_format == "hdf5":
+                write_hdf5(res_unpacked, output_file, key="data")
+            else:
+                write_csv(res_unpacked, output_file)
 
     print(f"Data has been written to {output_file}")
