@@ -189,28 +189,20 @@ def parse_fit_result(
     res : FitResult
         The parsed fit result.
     """
+    res = FitResult()
+
     if orbit_colm_flag == True:
-        res = FitResult()
         res.csq = fit_result_row["csq"]  # The chi-squared value of the fit
         res.ndof = fit_result_row["ndof"]  # The number of degrees of freedom
-        # The state vector of the fit result
-        res.state = res.state = [fit_result_row[param] for param in orbit_para]
-        # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
-        res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
-
-        # Construct the flattened covariance matrix from the columns of the fit result
-        res.cov = np.array([fit_result_row[col] for col in get_cov_columns()])
         # The number of iterations used during the fitting process.
         res.niter = fit_result_row["niter"]
-    else:
-        res = FitResult()
-        # The state vector of the fit result
-        res.state = res.state = [fit_result_row[param] for param in orbit_para]
-        # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
-        res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
 
-        # Construct the flattened covariance matrix from the columns of the fit result
-        res.cov = np.array([fit_result_row[col] for col in get_cov_columns()])
+    # The state vector of the fit result
+    res.state = res.state = [fit_result_row[param] for param in orbit_para]
+    # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
+    res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
+    # Construct the flattened covariance matrix from the columns of the fit result
+    res.cov = np.array([fit_result_row[col] if fit_result_row[col] else 0.0 for col in get_cov_columns()])
 
     return res
 
