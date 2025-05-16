@@ -94,7 +94,7 @@ def main():
         "--output_format",
         help="output file format.",
         dest="output_format",
-        type=str,
+        type=str.lower,
         default="csv",
         required=False,
     )
