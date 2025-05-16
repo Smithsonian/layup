@@ -29,6 +29,7 @@ class ObjectDataReader(abc.ABC):
         format_column_name: str = None,
         required_columns: list[str] = [],
         primary_id_column_name: str = "ObjID",
+        station_column_name: str = "stn",
         **kwargs,
     ):
         """Set up the reader.
@@ -56,6 +57,7 @@ class ObjectDataReader(abc.ABC):
         self._format_column_name = format_column_name
         self._required_columns = required_columns
         self._primary_id_column_name = primary_id_column_name
+        self._station_column_name = station_column_name
 
     @abc.abstractmethod
     def get_reader_info(self):

@@ -220,16 +220,21 @@ class CSVDataReader(ObjectDataReader):
         else:
             data_seperator = ","
 
+        fixed_dtypes = {self._primary_id_column_name: str}
+        if self._station_column_name is not None:
+            fixed_dtypes[self._station_column_name] = str
+
         res_df = pd.read_csv(
             self.filename,
             sep=data_seperator,
             skiprows=skip_rows,
             nrows=block_size,
-            dtype={self._primary_id_column_name: str},
+            dtype=fixed_dtypes,
         )
 
         res_df.columns = [col.strip() for col in res_df.columns]
         records = res_df.to_records(index=False)
+
         return np.array(records, dtype=records.dtype.descr)
 
     def _build_id_map(self):

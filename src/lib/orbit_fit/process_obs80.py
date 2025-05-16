@@ -6,15 +6,14 @@ Do the catalog debiasing according to Eggl et al ...
 """
 
 # Import standard packages
-import os
 import sys
+
+import healpy as hp
 
 # Import third-party packages
 import numpy as np
-import spiceypy as spice
 import pandas as pd
-import healpy as hp
-
+import spiceypy as spice
 import support_routines as tr
 
 first = lambda x: x[0]
@@ -95,6 +94,9 @@ cat_codes = {
 def data_weight_Veres2017(obsCode, jd_tdb, catalog=None):
     # Need to put in the photographic and other observation
     # types
+
+    if not isinstance(obsCode, str):
+        raise ValueError("obsCode must be a string")
 
     dw = 1.5
     if obsCode == "703":
@@ -238,7 +240,7 @@ for cat in mpc_catalogs:
     columns.extend([cat + "_ra", cat + "_dec", cat + "_pm_ra", cat + "_pm_dec"])
 
 biasdf = pd.read_csv(
-    "/Users/mholman/astrocat_debiasing/debias/hires_data/bias.dat", sep="\s+", skiprows=23, names=columns
+    "/Users/mholman/astrocat_debiasing/debias/hires_data/bias.dat", sep=r"\s+", skiprows=23, names=columns
 )
 
 

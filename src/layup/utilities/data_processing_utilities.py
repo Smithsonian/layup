@@ -332,6 +332,10 @@ class LayupObservatory(SorchaObservatory):
         res = []
         for row in data:
             obscode = row["stn"]
+            if not isinstance(obscode, str):
+                raise ValueError(
+                    f"observatory code {obscode} is not a string and instead has type {type(obscode)}"
+                )
             coords = self.ObservatoryXYZ.get(obscode, None)
             if coords is None or None in coords or np.isnan(coords).any():
                 # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
