@@ -36,7 +36,7 @@ def main():
         "--input-type",
         help="input format type of file",
         dest="i",
-        type=str,
+        type=str.lower,
         default="csv",
         required=False,
     )

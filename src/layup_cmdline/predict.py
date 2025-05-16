@@ -110,7 +110,7 @@ def main():
         "--input-type",
         help="Input format type of file (csv or hdf5)",
         dest="i",
-        type=str,
+        type=str.lower,
         default="csv",
         required=False,
     )
