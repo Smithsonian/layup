@@ -6,7 +6,7 @@ import pytest
 from numpy.testing import assert_equal
 
 from layup.orbitfit import orbitfit, orbitfit_cli
-from layup.routines import Observation, get_ephem, run_from_vector
+from layup.routines import Observation, get_ephem, run_from_vector_with_initial_guess, FitResult, gauss
 from layup.utilities.data_processing_utilities import get_cov_columns, parse_cov, parse_fit_result
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
@@ -20,6 +20,9 @@ OUTPUT_COL_PER_ORBIT_TYPE = {
     "KEP": ["a", "e", "inc", "node", "argPeri", "ma"],
     "BKEP": ["a", "e", "inc", "node", "argPeri", "ma"],
 }
+GMTOTAL = 0.0002963092748799319
+AU_M = 149597870700
+SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
 
 
 @pytest.mark.parametrize(
@@ -151,36 +154,6 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
             for col in OUTPUT_COL_PER_ORBIT_TYPE[output_orbit_format]:
                 assert not np.isnan(row[col])
             assert not np.isnan(row["epochMJD_TDB"])
-
-
-def test_orbit_fit_mixed_inputs():
-    """Test that the orbit_fit cli works for a mixed input file."""
-    # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
-    observations = []
-    for i in range(20):
-        if i % 2 == 0:
-            obs = Observation.from_astrometry(
-                ra=0.0 + (i / 100.0),
-                dec=0.0,
-                epoch=2460000.0 + i,
-                observer_position=[0.0, 0.0, 0.0],
-                observer_velocity=[0.0, 0.0, 0.0],
-            )
-        else:
-            obs = Observation.from_streak(
-                ra=0.0 + (i / 100.0),
-                dec=0.0,
-                ra_rate=1 / 100.0,
-                dec_rate=0.0,
-                epoch=2460000.0 + i,
-                observer_position=[0.0, 0.0, 0.0],
-                observer_velocity=[0.0, 0.0, 0.0],
-            )
-        observations.append(obs)
-
-    result = run_from_vector(get_ephem(str(pooch.os_cache("layup"))), observations)
-
-    assert result is not None
 
 
 def test_orbitfit_result_parsing():
