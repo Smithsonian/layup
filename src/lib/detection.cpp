@@ -276,6 +276,7 @@ namespace orbit_fit
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         "Construct a Streak observation")
+            .def_readwrite("objID", &Observation::objID, "object ID as a string")	    
             .def_readwrite("epoch", &Observation::epoch, "Observation epoch (as a double)")
             .def_readwrite("observation_type", &Observation::observation_type, "Variant holding the observation data")
             .def_readwrite("observer_position", &Observation::observer_position, "Observer position as a 3D vector")

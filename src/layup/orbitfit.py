@@ -336,7 +336,7 @@ def do_fit(observations, seq, cache_dir):
     Returns
     -------
     FitResult
-        The result of the orbit fit.a
+        The result of the orbit fit.
     """
     # Get gauss solution, using the first, middle, and last observation
     # of the primary sequence
@@ -353,25 +353,109 @@ def do_fit(observations, seq, cache_dir):
 
     assist_ephem = get_ephem(cache_dir)
 
-    #! I think this can be a `for/else loop...`
-    # Fit primary interval, starting with gauss solution
-    x = solns[0]
-    obs = [observations[i] for i in seq[0]]
+    for j, x in enumerate(solns):
+        obs = [observations[i] for i in seq[0]]
+        print(obs[0].objID, 'primary interval', j, flush=True)
+        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+
+        if x.flag == 0:
+            next_initial_guess = x            
+            break
+
+    if x.flag != 0:
+        print(f"Primary interval failed. Total observations: {len(obs), observations[0].objID} ", flush=True)
+        logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
+        logger.debug(f"Ppliting the first interval and trying again")
+        sl = len(seq[0])//2
+        seq2 = [seq[0][0:sl], seq[0][sl:]] + seq[1:]
+        return do_fit(observations, seq2, cache_dir)
+
+    # Attempt to fit all the data, given the fit of the primary interval
+    print(obs[0].objID, 'full span', flush=True)    
+    obs = observations
     x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
 
-    if (x.flag != 0) and len(solns) > 1:
-        x = solns[1]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    elif (x.flag != 0) and len(solns) > 2:
-        x = solns[2]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    # If that failed, build up the solution slowly
     if x.flag != 0:
-        logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
-        x.flag = 3  # caution
+        print(obs[0].objID, 'iterative', flush=True)        
+        obs = []
+        x = next_initial_guess        
+        for j, sq in enumerate(seq):
+            obs += [observations[i] for i in sq]
+            obs = sorted(obs, key = lambda det: det.epoch)
+            print(obs[0].objID, j, "of", len(seq), sq, len(obs), flush=True)
+            x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+            print("flag:", x.flag, flush=True)
+            if x.flag != 0:
+                x.flag = 4
+                break
+    logger.debug(f"Result `state`: {x.state}")
+    logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
+
+    return x
+
+def do_fit_new(observations, seq, cache_dir):
+    """Carry out an orbit fit to the observations in a
+    series of steps.  A list of lists of observation indices
+    specifies the order in which the fit proceeds.
+
+    A Gauss preliminary order is fit for the 0-th segment,
+    using the first, middle, and last observations in that
+    segement.
+
+    Then an orbit fit is done on the 0-th segment, using the
+    initial orbit from Gauss.  If that fails, any other preliminary
+    solutions are tried.
+
+    Next, a fit to the full set of observations is attempted, given
+    the fit to the primary segment as an initial guess.  If that
+    succeeds, the solution is returned.
+
+    Otherwise, adjacent segments of observations are added and
+    the fit is updated, iteratively.
+
+    Parameters
+    ----------
+    observations : list
+        A time-ordered list of observations
+    seq : list of lists
+        A list of lists of observation indices.
+
+    Returns
+    -------
+    FitResult
+        The result of the orbit fit.
+    """
+    # Get gauss solution, using the first, middle, and last observation
+    # of the primary sequence
+    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0])/2)], seq[0][-1]
+    logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
+    solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
+
+    # If gauss fails, try something else.
+    if not solns:
+        logger.debug("gauss failed")
+        x = FitResult()
+        x.flag = 5
         return x
 
+    assist_ephem = get_ephem(cache_dir)
+
+    for i, x in enumerate(solns):
+        obs = [observations[i] for i in seq[0]]
+        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+
+        if x.flag == 0:
+            next_inital_guess = x
+            break
+
+    if x.flag != 0:
+        logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
+        logger.debug(f"Ppliting the first interval and trying again")
+        sl = len(seq[0])//2
+        seq2 = [seq[0][0:sl], seq[0][sl:]] + seq[1:]
+        return do_fit_new(observations, seq2, cache_dir)
+    
     # Attempt to fit all the data, given the fit of the primary interval
     obs = observations
     x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
@@ -379,10 +463,10 @@ def do_fit(observations, seq, cache_dir):
     # If that failed, build up the solution slowly
     if x.flag != 0:
         obs = []
-        x = solns[0]
-        for i, sq in enumerate(seq):
+        x = next_initial_guess
+        for sq in seq:
             obs += [observations[i] for i in sq]
-            print(i, "of", len(seq), obs[0], sq)
+            print(i, "of", len(seq), sq)
             x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
             print("flag:", x.flag)
             if x.flag != 0:
@@ -393,9 +477,6 @@ def do_fit(observations, seq, cache_dir):
     else:
         logger.debug(f"Result `state`: {x.state}")
         logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
-
-    return x
-
 
 def _orbitfit(
     data,

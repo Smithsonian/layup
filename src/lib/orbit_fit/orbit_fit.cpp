@@ -617,6 +617,13 @@ namespace orbit_fit
 
         cov = C.inverse();
 
+	for(size_t i = 0; i < resid_vec.size(); i++){
+	    residuals this_resid = resid_vec[i];
+	    printf("%9s %.5lf %2d %5lu %8.1le %8.1le\n", detections[i].objID.c_str(), detections[i].epoch, flag, i, this_resid.x_resid*206265, this_resid.y_resid*206265);
+	    fflush(stdout);
+	}
+	
+
         return flag;
     }
 
@@ -1011,6 +1018,10 @@ namespace orbit_fit
         p1.vz = initial_guess.state[5];
         double epoch = initial_guess.epoch;
 
+	printf("in\n");	
+	print_initial_condition(p1, epoch);
+	fflush(stdout);
+
         flag = orbit_fit(
             ephem,
             p1,
@@ -1041,6 +1052,10 @@ namespace orbit_fit
         result.state[3] = p1.vx;
         result.state[4] = p1.vy;
         result.state[5] = p1.vz;
+
+	print_initial_condition(p1, epoch);
+	printf("out\n");
+	fflush(stdout);
 
 	if (flag == 0) {
             // Populate our covariance matrix
