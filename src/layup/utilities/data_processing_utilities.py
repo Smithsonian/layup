@@ -202,7 +202,19 @@ def parse_fit_result(
     # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
     res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
     # Construct the flattened covariance matrix from the columns of the fit result
-    res.cov = np.array([fit_result_row[col] if fit_result_row[col] else 0.0 for col in get_cov_columns()])
+    cov = np.zeros(36)
+    for i, col in enumerate(get_cov_columns()):
+        try:
+            # If there is no value in the input file that this row came from,
+            # the fit_result_row[col] will be np.nan.
+            if not np.isnan(fit_result_row[col]):
+                cov[i] = fit_result_row[col]
+            else:
+                cov[i] = 0.0
+        except ValueError:
+            # If the `col` column isn't present in fit_result_row, we assign 0.0
+            cov[i] = 0.0
+    res.cov = cov
 
     return res
 
