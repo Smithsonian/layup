@@ -316,7 +316,15 @@ def do_fit(observations, seq, cache_dir):
     segement.
 
     Then an orbit fit is done on the 0-th segment, using the
-    initial orbit from Gauss.
+    initial orbit from Gauss.  If that fails, any other preliminary
+    solutions are tried.
+
+    Next, a fit to the full set of observations is attempted, given
+    the fit to the primary segment as an initial guess.  If that
+    succeeds, the solution is returned.
+
+    Otherwise, adjacent segments of observations are added and
+    the fit is updated, iteratively.
 
     Parameters
     ----------
