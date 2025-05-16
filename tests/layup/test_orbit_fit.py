@@ -50,6 +50,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
             self.weight_data = False
             self.g = g  # Command line argument for initial guesses file
             self.output_orbit_format = output_orbit_format
+            self.iod = "gauss"
 
     # Now run the orbit_fit cli with overwrite set to True
     orbitfit_cli(
@@ -254,3 +255,38 @@ def test_orbitfit_with_streak_observations():
     assert fitted_orbits_incomplete is not None
     n_uniq_ids = sum([1 if id else 0 for id in set(incomplete_input_data["orbitID"])])
     assert_equal(len(fitted_orbits_incomplete), n_uniq_ids)
+
+
+def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
+    """Test that the orbit_fit cli works for a small CSV file."""
+    # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
+    os.chdir(tmpdir)
+    guess_file_stem = "test_guess"
+
+    test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
+
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.ar_data_file_path = None
+            self.primary_id_column_name = "provID"
+            self.separate_flagged = False
+            self.force = False
+            self.debias = False
+            self.weight_data = False
+            self.g = g  # Command line argument for initial guesses file
+            self.output_orbit_format = ("BCART_EQ",)
+            self.iod = "bad_iod"
+
+    with pytest.raises(ValueError) as e:
+        # Now run the orbit_fit cli with overwrite set to True
+        orbitfit_cli(
+            input=test_input_filepath,
+            input_file_format="ADES_csv",
+            output_file_stem=guess_file_stem,  # Our first run will create our initial guess file
+            output_file_format="csv",
+            chunk_size=10_000,
+            num_workers=1,
+            cli_args=FakeCliArgs(),
+        )
+
+        assert "The IOD, bad_iod is not supported" in str(e.value)

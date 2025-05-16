@@ -77,7 +77,7 @@ def main():
         "-i",
         "--iod",
         help="IOD choice",
-        dest="i",
+        dest="iod",
         default="gauss",
         required=False,
     )
