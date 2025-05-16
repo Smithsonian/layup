@@ -127,7 +127,6 @@ def _split_by_index(input_list, indices):
     Returns
     -------
     list of lists."""
-    
     result = []
     sublist = []
     for i, _ in enumerate(input_list):
