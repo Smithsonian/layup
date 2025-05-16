@@ -50,6 +50,25 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-ch",
+        "--chunksize",
+        help="number of orbits to be processed at once",
+        dest="chunk",
+        type=int,
+        default=200000,
+        required=False,
+    )
+    optional.add_argument(
+        "-pid",
+        "--primary-id-column-name",
+        help="Column name in input file that contains the primary ID of the object.",
+        dest="primary_id_column_name",
+        type=str,
+        default="provID",
+        required=False,
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -80,6 +99,8 @@ def execute(args):
         input=args.input,
         file_format=args.i,
         output_file_stem=args.o,
+        chunk_size=args.chunk,
+        cli_args=args,
     )
 
 
