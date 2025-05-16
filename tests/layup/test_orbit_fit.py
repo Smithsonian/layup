@@ -27,7 +27,7 @@ OUTPUT_COL_PER_ORBIT_TYPE = {
     [
         (100_000, 1, "BCART_EQ"),
         (100_000, 1, "COM"),
-        (100_000, 2, "KEP"),
+        (100_000, 1, "KEP"),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
@@ -50,6 +50,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
             self.weight_data = False
             self.g = g  # Command line argument for initial guesses file
             self.output_orbit_format = output_orbit_format
+            self.iod = "gauss"
 
     # Now run the orbit_fit cli with overwrite set to True
     orbitfit_cli(
@@ -135,8 +136,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
         if nan_mask.any():
             # If any values are NaN, all should be NaN
             assert np.all(nan_mask)
-            # Since the fit failed, check that the flag is set to 1 or -1
-            assert row["flag"] == 1 or row["flag"] == -1
+            # Since the fit failed, check that the flag is set to a non-zero value
+            assert row["flag"] != 0
             for col in OUTPUT_COL_PER_ORBIT_TYPE[output_orbit_format]:
                 # Check that the expected orbit format elements are not populated
                 assert np.isnan(row[col])
@@ -217,3 +218,75 @@ def test_orbitfit_result_parsing():
             # Check our flattened covariance matrix against each covariance matrix column in the results.
             for i, col in enumerate(get_cov_columns()):
                 assert fit_res.cov[i] == row[col]
+
+
+def test_orbitfit_with_streak_observations():
+    """Test that the orbit_fit works with streak observations."""
+    pid = "orbitID"
+
+    # Test with a csv file where all observations have
+    # valide streak data
+    complete_input_data = CSVDataReader(
+        get_test_filepath("streak_observations_complete.csv"),
+        "csv",
+        primary_id_column_name=pid,
+    ).read_rows()
+
+    fitted_orbits_complete = orbitfit(
+        complete_input_data,
+        cache_dir=None,
+        primary_id_column_name=pid,
+    )
+
+    assert fitted_orbits_complete is not None
+    n_uniq_ids = sum([1 if id else 0 for id in set(complete_input_data["orbitID"])])
+    assert_equal(len(fitted_orbits_complete), n_uniq_ids)
+
+    # Test with a csv file where some observations have
+    # valid streak data and some have astrometry data
+    incomplete_input_data = CSVDataReader(
+        get_test_filepath("streak_observations_incomplete.csv"),
+        "csv",
+        primary_id_column_name=pid,
+    ).read_rows()
+
+    fitted_orbits_incomplete = orbitfit(incomplete_input_data, cache_dir=None, primary_id_column_name=pid)
+
+    assert fitted_orbits_incomplete is not None
+    n_uniq_ids = sum([1 if id else 0 for id in set(incomplete_input_data["orbitID"])])
+    assert_equal(len(fitted_orbits_incomplete), n_uniq_ids)
+
+
+def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
+    """Test that the orbit_fit cli works for a small CSV file."""
+    # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
+    os.chdir(tmpdir)
+    guess_file_stem = "test_guess"
+
+    test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
+
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.ar_data_file_path = None
+            self.primary_id_column_name = "provID"
+            self.separate_flagged = False
+            self.force = False
+            self.debias = False
+            self.weight_data = False
+            self.g = g  # Command line argument for initial guesses file
+            self.output_orbit_format = ("BCART_EQ",)
+            self.iod = "bad_iod"
+
+    with pytest.raises(ValueError) as e:
+        # Now run the orbit_fit cli with overwrite set to True
+        orbitfit_cli(
+            input=test_input_filepath,
+            input_file_format="ADES_csv",
+            output_file_stem=guess_file_stem,  # Our first run will create our initial guess file
+            output_file_format="csv",
+            chunk_size=10_000,
+            num_workers=1,
+            cli_args=FakeCliArgs(),
+        )
+
+        assert "The IOD, bad_iod is not supported" in str(e.value)

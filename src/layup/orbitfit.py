@@ -7,10 +7,18 @@ from typing import Literal, Optional
 import numpy as np
 import pooch
 import spiceypy as spice
+
 from numpy.lib import recfunctions as rfn
 
+from layup.routines import (
+    FitResult,
+    Observation,
+    gauss,
+    get_ephem,
+    run_from_vector_with_initial_guess,
+)
 from layup.convert import convert
-from layup.routines import Observation, get_ephem, run_from_vector, run_from_vector_with_initial_guess
+
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
@@ -34,6 +42,10 @@ INPUT_FORMAT_READERS = {
     "ADES_xml": (None, None),
     "ADES_hdf5": (HDF5DataReader, None),
 }
+
+GMtotal = 0.0002963092748799319
+AU_M = 149597870700
+SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
 
 
 def _get_result_dtypes(primary_id_column_name: str):
@@ -103,6 +115,322 @@ def _use_star_astrometry(data):
     return data
 
 
+def _split_by_index(input_list, indices):
+    """Split an input list into a list of sublists, with break
+    points at the provided indices.
+
+    Parameters
+    ----------
+    input_list : a list of, in this case, integers.
+    indices : a list of indices at which to split the input list.
+
+    Returns
+    -------
+    list of lists."""
+    result = []
+    sublist = []
+    for i, _ in enumerate(input_list):
+        if i in indices:
+            result.append(sublist)
+            sublist = [i]
+        else:
+            sublist.append(i)
+    result.append(sublist)  # Append the last sublist
+    return result
+
+
+def _time_distance(ic0, ic1, jds):
+    """Find the separation in time between two set of indices
+    (index chunks), given the corresponding set of julian dates.
+
+    Parameters
+    ----------
+    ic0 : a list of indices (index chunk 0)
+    ic1 : a list of indices (index chunk 1)
+    jds : a collection of julian dates.
+
+    Returns
+    -------
+    float : the size of the time gap separating the two chunks.
+    """
+    if ic0 == ic1:
+        return 0.0
+    jds0 = jds[ic0]
+    jds1 = jds[ic1]
+    td0 = np.abs(jds0.min() - jds1.max())
+    td1 = np.abs(jds1.min() - jds0.max())
+    return min(td0, td1)
+
+
+def _nearest_chunk(target, index_chunks, jds, self_match=False):
+    """Given an index chunk (target) and the set of all the index
+    chunks, find the index chunk that is nearest in time, that has
+    the smallest separation in time.
+
+    Parameters
+    ----------
+    target : a list of indices (index chunk)
+    index_chunks : a list of lists of indices
+    jds : a collection of julian dates.
+    self_match : allow the target to match to itself
+
+    Returns
+    -------
+    list : the nearest index chunk.
+    float : the separation in time between the target and the nearest chunk.
+
+    """
+    min_dist = np.inf
+    nc = None
+    for i, ic in enumerate(index_chunks):
+        if ic == target and self_match:
+            min_dist = 0.0
+            nc = ic
+        elif ic == target:
+            continue
+        else:
+            td = _time_distance(target, ic, jds)
+            if td < min_dist:
+                min_dist = td
+                nc = ic
+    return nc, min_dist
+
+
+def _next_nearest(chunk_sequence, index_chunks, jds):
+    """Given a sequence of index chunks and a collection of other index
+    chunks, find the index chunk that is nearest in time to the sequence.
+    This will be the next one to include in the fit.
+
+    Parameters
+    ----------
+    chunk_sequence : a list of lists of indices
+    index_chunks : a list of lists of indices
+    jds : a collection of julian dates.
+    self_match : allow the target to match to itself
+
+    Returns
+    -------
+    list : the nearest index chunk.
+    """
+    nc = min([_nearest_chunk(target, index_chunks, jds) for target in chunk_sequence], key=lambda x: x[1])
+    return nc[0]
+
+
+def _iterate_sequence(sequence, other_chunks, jds):
+    """Given a sequence of index chunks and a collection of other index
+    chunks, iteratively build the sequence.
+
+    Parameters
+    ----------
+    sequence : a list of lists of indices (the start of the sequence)
+    other_chunks : a list of lists of indices
+    jds : a collection of julian dates.
+
+    Returns
+    -------
+    list of lists : the resulting list of lists of indices
+    """
+    seq = sequence.copy()
+    ocs = other_chunks.copy()
+    while ocs != []:
+        nc = _next_nearest(seq, ocs, jds)
+        seq.append(nc)
+        ocs.remove(nc)
+    return seq
+
+
+def _build_sequence(jds, sep_dt=90.0):
+    """Given a set of julian dates, in the order of the observations,
+    split the observations into sets of indices that have gaps of at
+    least sep_dt (days) between them.  These are index chunks.  Then
+    develop a sequence of the index chunks that will be fit in order.
+    The first chunk will have the longest time span.  The next will
+    be the closest in time to the first.  The next will be the closest
+    in time to the first two, etc.
+
+    Parameters
+    ----------
+    jds : a collection of julian dates in order of the observations (sorted).
+    sep_dt: float the mininum separation between chunks
+
+
+    Returns
+    -------
+    list of lists : the resulting sequence of lists of indices that
+    will be fit.
+    """
+    intervals = jds[1:] - jds[:-1]
+    intervals = np.insert(intervals, 0, 0.0, axis=0)
+    index_chunks = _split_by_index(jds, np.argwhere(intervals > sep_dt))
+    start_index = np.argmax([jds[ic].max() - jds[ic].min() for ic in index_chunks])
+    start_chunk = index_chunks[start_index]
+    remainder = index_chunks.copy()
+    remainder.remove(start_chunk)
+    seq = _iterate_sequence([start_chunk], remainder, jds)
+    return seq
+
+
+def create_empty_result(id, dtypes):
+    """Create an empty return object
+
+    Parameters
+    ----------
+    id : str
+        The id of the object to provide an empty result for
+    dtypes : np.array
+        The list of datatypes for the structured array.
+
+    Returns
+    -------
+    np.array
+        Empty numpy structured array
+    """
+    return np.array(
+        [
+            (
+                id,
+                np.nan,  # csq
+                0,  # ndof
+            )
+            + (np.nan,) * 6  # Flat state vector
+            + (
+                np.nan,  # epoch
+                0,  # niter
+                np.nan,  # method
+                -1,  # flag
+                "NONE",  # format
+            )
+            + (np.nan,) * 36  # Flat covariance matrix
+        ],
+        dtype=dtypes,
+    )
+
+
+def do_gauss_iod(observations, seq):
+    """Calculate an initial orbit estimate using Gauss's method.
+
+    Parameters
+    ----------
+    observations : list[Observation]
+        The list of Observations used for the orbit estimate
+    seq : list[list[int]
+        The list of lists of indexes of observations that are closely spaced in time.
+
+    Returns
+    -------
+    list[FitResult]
+        A collection of orbit fit results that can be used to perform a higher
+        quality fit estimate.
+    """
+    # Get gauss solution, using the first, middle, and last observation
+    # of the primary sequence
+    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
+    logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
+    solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
+
+    return solns
+
+
+def do_fit(observations, seq, cache_dir, iod="gauss"):
+    """Carry out an orbit fit to the observations in a
+    series of steps.  A list of lists of observation indices
+    specifies the order in which the fit proceeds.
+
+    A Gauss preliminary order is fit for the 0-th segment,
+    using the first, middle, and last observations in that
+    segment.
+
+    Then an orbit fit is done on the 0-th segment, using the
+    initial orbit from Gauss.  If that fails, any other preliminary
+    solutions are tried.
+
+    Next, a fit to the full set of observations is attempted, given
+    the fit to the primary segment as an initial guess.  If that
+    succeeds, the solution is returned.
+
+    Otherwise, adjacent segments of observations are added and
+    the fit is updated, iteratively.
+
+    Parameters
+    ----------
+    observations : list
+        A time-ordered list of observations
+    seq : list of lists
+        A list of lists of observation indices.
+    iod : str
+        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        Default is 'gauss'.
+
+    Returns
+    -------
+    FitResult
+        The result of the orbit fit.
+    """
+
+    if iod.lower() == "gauss":
+        solns = do_gauss_iod(observations, seq)
+    else:
+        raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
+
+    # If the selected iod fails, try something else.
+    if not solns:
+        logger.debug(f"The iod {iod} failed")
+        x = FitResult()
+        x.flag = 5
+        return x
+
+    assist_ephem = get_ephem(cache_dir)
+
+    #! I think this can be a `for/else loop...`
+    # Fit primary interval, starting with gauss solution
+    x = solns[0]
+    obs = [observations[i] for i in seq[0]]
+    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+
+    if (x.flag != 0) and len(solns) > 1:
+        x = solns[1]
+        obs = [observations[i] for i in seq[0]]
+        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    elif (x.flag != 0) and len(solns) > 2:
+        x = solns[2]
+        obs = [observations[i] for i in seq[0]]
+        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    if x.flag != 0:
+        logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
+        x.flag = 3  # caution
+        return x
+
+    # Attempt to fit all the data, given the fit of the primary interval
+    obs = observations
+    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+
+    # If that failed, build up the solution slowly
+    if x.flag != 0:
+        obs = []
+        x = solns[0]
+        for i, sq in enumerate(seq):
+            obs += [observations[i] for i in sq]
+            print(i, "of", len(seq), obs[0], sq)
+            x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+            print("flag:", x.flag)
+            if x.flag != 0:
+                x.flag = 4
+                break
+            logger.debug(f"Result `state`: {x.state}")
+            logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
+    else:
+        logger.debug(f"Result `state`: {x.state}")
+        logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
+
+    return x
+
+
+def do_other_fit(iod: str):
+    """This is a place holder function for future IOD implememtations that require
+    more significant data manipulation."""
+    raise ValueError(f"The IOD, {iod} is not supported. Please use a supported IOD.")
+
+
 def _orbitfit(
     data,
     cache_dir: str,
@@ -111,6 +439,7 @@ def _orbitfit(
     bias_dict: dict = None,
     sort_array: bool = True,
     weight_data: bool = False,
+    iod: str = "gauss",
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -135,6 +464,9 @@ def _orbitfit(
     weight_data : bool
         Whether to apply data weighting based on the observation code, date, catalog
         and program. Default is False.
+    iod : str
+        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        Default is 'gauss'.
     """
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
     if len(data) == 0:
@@ -157,7 +489,9 @@ def _orbitfit(
             logger.debug("Initial guess data is from a failed run. Using default initial guess.")
             initial_guess = None
 
-    if _is_valid_data(data):  # checks data being supplied to c ++ code is valid
+    if not _is_valid_data(data):  # checks data being supplied to c++ code is valid
+        output = create_empty_result(id=data[primary_id_column_name][0], dtypes=_RESULT_DTYPES)
+    else:
         # sort the observations by the obstime if specified by the user
         if sort_array:
             data = np.sort(data, order="obstime", kind="mergesort")
@@ -166,6 +500,7 @@ def _orbitfit(
         column_names = data.dtype.names
         astcat_column_present = "astcat" in column_names
         program_column_present = "program" in column_names
+        position_rates_columns_present = all(col in column_names for col in ["rarate", "decrate"])
 
         # Accommodate occultation measurements. These measurements are implied when
         # the "ra" and "dec" columns are None. In this case, we will use the "starra"
@@ -191,14 +526,26 @@ def _orbitfit(
         # radians.
         observations = []
         for d in data:
-            o = Observation.from_astrometry_with_id(
-                str(d[primary_id_column_name]),
-                d["ra"] * np.pi / 180.0,
-                d["dec"] * np.pi / 180.0,
-                convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
-                [d["x"], d["y"], d["z"]],  # Barycentric position
-                [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
-            )
+            if position_rates_columns_present and (not np.isnan(d["rarate"]) and not np.isnan(d["decrate"])):
+                o = Observation.from_streak_with_id(
+                    str(d[primary_id_column_name]),
+                    d["ra"] * np.pi / 180.0,
+                    d["dec"] * np.pi / 180.0,
+                    d["rarate"],
+                    d["decrate"],
+                    convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
+                    [d["x"], d["y"], d["z"]],  # Barycentric position
+                    [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
+                )
+            else:
+                o = Observation.from_astrometry_with_id(
+                    str(d[primary_id_column_name]),
+                    d["ra"] * np.pi / 180.0,
+                    d["dec"] * np.pi / 180.0,
+                    convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
+                    [d["x"], d["y"], d["z"]],  # Barycentric position
+                    [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
+                )
 
             if weight_data:
                 data_weight = data_weight_Veres2017(
@@ -219,9 +566,15 @@ def _orbitfit(
         else:
             kernels_loc = str(cache_dir)
 
+        jds = convert_tdb_date_to_julian_date(data["obstime"])
+        sequence = _build_sequence(jds, sep_dt=90.0)
+
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
-            res = run_from_vector(get_ephem(kernels_loc), observations)
+            if iod.lower() in ["gauss"]:
+                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower())
+            else:
+                res = do_other_fit(iod=iod.lower())
         else:
             guess_to_use = parse_fit_result(initial_guess)
             res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
@@ -247,26 +600,6 @@ def _orbitfit(
             ],
             dtype=_RESULT_DTYPES,
         )
-    else:
-        output = np.array(
-            [
-                (
-                    data[primary_id_column_name][0],
-                    np.nan,  # csq
-                    0,  # ndof
-                )
-                + (np.nan,) * 6  # Flat state vector
-                + (
-                    np.nan,  # epoch
-                    0,  # niter
-                    np.nan,  # method
-                    -1,  # flag
-                    "NONE",  # format
-                )
-                + (np.nan,) * 36  # Flat covariance matrix
-            ],
-            dtype=_RESULT_DTYPES,
-        )
 
     return output
 
@@ -279,6 +612,7 @@ def orbitfit(
     primary_id_column_name="provID",
     debias=False,
     weight_data=False,
+    iod="gauss",
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -299,6 +633,9 @@ def orbitfit(
     weight_data : bool
         Whether to apply data weighting based on the observation code, date, catalog
         and program. Default is False.
+    iod : str
+        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        Default is 'gauss'.
     """
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
@@ -324,6 +661,7 @@ def orbitfit(
         initial_guess=initial_guess,
         bias_dict=bias_dict,
         weight_data=weight_data,
+        iod=iod,
     )
 
 
@@ -362,12 +700,14 @@ def orbitfit_cli(
         guess_file = Path(cli_args.g) if cli_args.g is not None else None
         weight_data = cli_args.weight_data
         output_orbit_format = cli_args.output_orbit_format
+        iod = cli_args.iod
     else:
         cache_dir = None
         debias = False
         guess_file = None
         weight_data = False
         output_orbit_format = "COM"  # Default output orbit format.
+        iod = "gauss"
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -467,6 +807,7 @@ def orbitfit_cli(
             primary_id_column_name=_primary_id_column_name,
             debias=debias,
             weight_data=weight_data,
+            iod=iod,
         )
 
         # Convert the fit_orbits to the preferred output format

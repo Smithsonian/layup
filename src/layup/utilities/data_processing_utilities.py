@@ -164,7 +164,18 @@ def parse_cov(orbit_row, flatten=False):
     return res if flatten else res.reshape((6, 6))
 
 
-def parse_fit_result(fit_result_row):
+def parse_fit_result(
+    fit_result_row,
+    orbit_colm_flag=True,
+    orbit_para=[
+        "x",
+        "y",
+        "z",
+        "xdot",
+        "ydot",
+        "zdot",
+    ],
+):
     """
     Parse the initial guess data from a structured numpy array representing our
     orbit fit output result.
@@ -178,25 +189,29 @@ def parse_fit_result(fit_result_row):
     res : FitResult
         The parsed fit result.
     """
-    res = FitResult()
-    res.csq = fit_result_row["csq"]  # The chi-squared value of the fit
-    res.ndof = fit_result_row["ndof"]  # The number of degrees of freedom
-    # The state vector of the fit result
-    res.state = [
-        fit_result_row["x"],
-        fit_result_row["y"],
-        fit_result_row["z"],
-        fit_result_row["xdot"],
-        fit_result_row["ydot"],
-        fit_result_row["zdot"],
-    ]
-    # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
-    res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
+    if orbit_colm_flag == True:
+        res = FitResult()
+        res.csq = fit_result_row["csq"]  # The chi-squared value of the fit
+        res.ndof = fit_result_row["ndof"]  # The number of degrees of freedom
+        # The state vector of the fit result
+        res.state = res.state = [fit_result_row[param] for param in orbit_para]
+        # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
+        res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
 
-    # Construct the flattened covariance matrix from the columns of the fit result
-    res.cov = np.array([fit_result_row[col] for col in get_cov_columns()])
-    # The number of iterations used during the fitting process.
-    res.niter = fit_result_row["niter"]
+        # Construct the flattened covariance matrix from the columns of the fit result
+        res.cov = np.array([fit_result_row[col] for col in get_cov_columns()])
+        # The number of iterations used during the fitting process.
+        res.niter = fit_result_row["niter"]
+    else:
+        res = FitResult()
+        # The state vector of the fit result
+        res.state = res.state = [fit_result_row[param] for param in orbit_para]
+        # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
+        res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
+
+        # Construct the flattened covariance matrix from the columns of the fit result
+        res.cov = np.array([fit_result_row[col] for col in get_cov_columns()])
+
     return res
 
 
@@ -351,10 +366,8 @@ class LayupObservatory(SorchaObservatory):
                     bary_obs_pos, bary_obs_vel = np.array([np.nan] * 3), np.array([np.nan] * 3)
             # Create a structured array for our barycentric coordinates with appropriate dtypes.
             # Needed to adjust the units here.
-            bary_obs_pos /= AU_KM
-            bary_obs_vel *= (24 * 60 * 60) / AU_KM
-            x, y, z = bary_obs_pos[0], bary_obs_pos[1], bary_obs_pos[2]
-            vx, vy, vz = bary_obs_vel[0], bary_obs_vel[1], bary_obs_vel[2]
+            x, y, z = bary_obs_pos / AU_KM
+            vx, vy, vz = bary_obs_vel * (24 * 60 * 60) / AU_KM
             output_dtype = [
                 ("x", "<f8"),
                 ("y", "<f8"),

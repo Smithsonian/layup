@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
-from numpy.testing import assert_equal
+from numpy.testing import assert_equal, assert_array_equal
 
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
@@ -372,3 +372,29 @@ def test_has_cov_columns_not_all_columns():
     data = np.empty(1, dtype=dtypes)
 
     assert has_cov_columns(data) is False
+
+
+def test_constant_results_with_repeated_calls():
+    """Test that we can call obscodes_to_barycentric multiple times from the cache
+    and get identical answers each time."""
+    csv_reader = CSVDataReader(
+        filename=get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv"),
+        sep="csv",
+        primary_id_column_name="provID",
+    )
+    data = csv_reader.read_rows()
+
+    observatory = LayupObservatory()
+    # Check that the cache is empty
+    assert_equal(len(observatory.cached_obs), 0)
+
+    # Add an et column to the data representing the ephemeris time in tdb
+    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et_col, usemask=False)
+
+    processed_data = observatory.obscodes_to_barycentric(data)
+    processed_data_2 = observatory.obscodes_to_barycentric(data)
+
+    for i, j in zip(processed_data, processed_data_2):
+        if not np.isnan(i["x"]):
+            assert_array_equal(i, j)

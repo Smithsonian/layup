@@ -77,7 +77,7 @@ def main():
         "-i",
         "--iod",
         help="IOD choice",
-        dest="i",
+        dest="iod",
         default="gauss",
         required=False,
     )
@@ -94,7 +94,7 @@ def main():
         "--output_format",
         help="output file format.",
         dest="output_format",
-        type=str,
+        type=str.lower,
         default="csv",
         required=False,
     )
