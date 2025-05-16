@@ -74,6 +74,8 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
 
     # Ensure that the epoch_utc column is present and in the correct format
     assert all(isinstance(epoch, str) for epoch in output_data["epoch_UTC"])
+    # Validate the first epoch_UTC value has the expectd time
+    assert output_data["epoch_UTC"][0] == "2026 FEB 20 00:00:00"
     assert all(len(epoch) == 20 for epoch in output_data["epoch_UTC"])
     # All of our start and end dates for our predictions are in the year 2026
     assert all(epoch.startswith("2026") for epoch in output_data["epoch_UTC"])
