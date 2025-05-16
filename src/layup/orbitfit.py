@@ -306,14 +306,39 @@ def create_empty_result(id, dtypes):
     )
 
 
-def do_fit(observations, seq, cache_dir):
+def do_gauss_iod(observations, seq):
+    """Calculate an initial orbit estimate using Gauss's method.
+
+    Parameters
+    ----------
+    observations : list[Observation]
+        The list of Observations used for the orbit estimate
+    seq : list[list[int]
+        The list of lists of indexes of observations that are closely spaced in time.
+
+    Returns
+    -------
+    list[FitResult]
+        A collection of orbit fit results that can be used to perform a higher
+        quality fit estimate.
+    """
+    # Get gauss solution, using the first, middle, and last observation
+    # of the primary sequence
+    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
+    logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
+    solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
+
+    return solns
+
+
+def do_fit(observations, seq, cache_dir, iod="gauss"):
     """Carry out an orbit fit to the observations in a
     series of steps.  A list of lists of observation indices
     specifies the order in which the fit proceeds.
 
     A Gauss preliminary order is fit for the 0-th segment,
     using the first, middle, and last observations in that
-    segement.
+    segment.
 
     Then an orbit fit is done on the 0-th segment, using the
     initial orbit from Gauss.  If that fails, any other preliminary
@@ -332,21 +357,24 @@ def do_fit(observations, seq, cache_dir):
         A time-ordered list of observations
     seq : list of lists
         A list of lists of observation indices.
+    iod : str
+        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        Default is 'gauss'.
 
     Returns
     -------
     FitResult
-        The result of the orbit fit.a
+        The result of the orbit fit.
     """
-    # Get gauss solution, using the first, middle, and last observation
-    # of the primary sequence
-    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
-    logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
-    solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
 
-    # If gauss fails, try something else.
+    if iod.lower() == "gauss":
+        solns = do_gauss_iod(observations, seq)
+    else:
+        raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
+
+    # If the selected iod fails, try something else.
     if not solns:
-        logger.debug("gauss failed")
+        logger.debug(f"The iod {iod} failed")
         x = FitResult()
         x.flag = 5
         return x
@@ -397,6 +425,12 @@ def do_fit(observations, seq, cache_dir):
     return x
 
 
+def do_other_fit(iod: str):
+    """This is a place holder function for future IOD implememtations that require
+    more significant data manipulation."""
+    raise ValueError(f"The IOD, {iod} is not supported. Please use a supported IOD.")
+
+
 def _orbitfit(
     data,
     cache_dir: str,
@@ -405,6 +439,7 @@ def _orbitfit(
     bias_dict: dict = None,
     sort_array: bool = True,
     weight_data: bool = False,
+    iod: str = "gauss",
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -429,6 +464,9 @@ def _orbitfit(
     weight_data : bool
         Whether to apply data weighting based on the observation code, date, catalog
         and program. Default is False.
+    iod : str
+        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        Default is 'gauss'.
     """
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
     if len(data) == 0:
@@ -533,8 +571,10 @@ def _orbitfit(
 
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
-            # res = run_from_vector(get_ephem(kernels_loc), observations)
-            res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc)
+            if iod.lower() in ["gauss"]:
+                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower())
+            else:
+                res = do_other_fit(iod=iod.lower())
         else:
             guess_to_use = parse_fit_result(initial_guess)
             res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
@@ -572,6 +612,7 @@ def orbitfit(
     primary_id_column_name="provID",
     debias=False,
     weight_data=False,
+    iod="gauss",
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -592,6 +633,9 @@ def orbitfit(
     weight_data : bool
         Whether to apply data weighting based on the observation code, date, catalog
         and program. Default is False.
+    iod : str
+        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        Default is 'gauss'.
     """
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
@@ -617,6 +661,7 @@ def orbitfit(
         initial_guess=initial_guess,
         bias_dict=bias_dict,
         weight_data=weight_data,
+        iod=iod,
     )
 
 
@@ -655,12 +700,14 @@ def orbitfit_cli(
         guess_file = Path(cli_args.g) if cli_args.g is not None else None
         weight_data = cli_args.weight_data
         output_orbit_format = cli_args.output_orbit_format
+        iod = cli_args.iod
     else:
         cache_dir = None
         debias = False
         guess_file = None
         weight_data = False
         output_orbit_format = "COM"  # Default output orbit format.
+        iod = "gauss"
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -760,6 +807,7 @@ def orbitfit_cli(
             primary_id_column_name=_primary_id_column_name,
             debias=debias,
             weight_data=weight_data,
+            iod=iod,
         )
 
         # Convert the fit_orbits to the preferred output format
