@@ -13,6 +13,7 @@ from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,
     get_format,
+    layup_furnish_spiceypy,
     parse_fit_result,
     process_data,
 )
@@ -26,7 +27,7 @@ def _get_result_dtypes(primary_id_column_name: str):
     return np.dtype(
         [
             (primary_id_column_name, "O"),  # Object ID
-            ("epochJD_TDB", "f8"),  # Time for prediction
+            ("epoch_UTC", "O"),  # Time for prediction
             ("ra_deg", "f8"),
             ("dec_deg", "f8"),
             ("rho_x", "f8"),  # The first of the 3 rho unit vector
@@ -73,16 +74,21 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
         obs.epoch = times[i]
         observations.append(obs)
 
+    # Load kernels for time conversion.
+    layup_furnish_spiceypy(kernels_loc)
+
     predict_results = []
     for row in data:
         fit = parse_fit_result(row)
         pred_res = predict_sequence(get_ephem(kernels_loc), fit, observations, numpy_to_eigen(fit.cov, 6, 6))
 
         for pred in pred_res:
+            jd_tdb = spice.str2et(f"jd {pred.epoch} tdb")
+            utc_time = spice.et2utc(jd_tdb, "C", 0)
             predict_results.append(
                 (
                     row[primary_id_column_name],
-                    pred.epoch,
+                    utc_time,
                     pred.rho[0],  # place holder
                     pred.rho[0],  # place holder
                     pred.rho[0],

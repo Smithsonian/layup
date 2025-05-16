@@ -71,3 +71,9 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
 
     assert np.all(output_data["ra_deg"] <= 360.0) and np.all(output_data["ra_deg"] >= 0.0)
     assert np.all(output_data["dec_deg"] <= 90.0) and np.all(output_data["dec_deg"] >= -90.0)
+
+    # Ensure that the epoch_utc column is present and in the correct format
+    assert all(isinstance(epoch, str) for epoch in output_data["epoch_UTC"])
+    assert all(len(epoch) == 20 for epoch in output_data["epoch_UTC"])
+    # All of our start and end dates for our predictions are in the year 2026
+    assert all(epoch.startswith("2026") for epoch in output_data["epoch_UTC"])
