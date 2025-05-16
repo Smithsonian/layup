@@ -21,7 +21,7 @@ def main():
         "--config",
         help="Input configuration file name",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
 
@@ -63,9 +63,9 @@ def execute(args):
     # layup.AuxiliaryConfigs) for the current version of layup. A user can
     # download new files by running layup and specifying in the config file
     # under the section [AUXILIARY] a new filename and url.
-    if args.c:
+    if args.config:
         find_file_or_exit(args.c, "-c, --config")
-        configs = LayupConfigs(args.c)
+        configs = LayupConfigs(args.config)
     else:
         configs = LayupConfigs()
 

@@ -5,10 +5,12 @@ and adapts them to jax, implementing the autograd jacobians needed for this proc
 
 import jax
 import jax.numpy as jnp
+import numba
+import numpy as np
 from jax import config
 from jax.scipy.linalg import block_diag
-import numpy as np
-import numba
+
+from layup.utilities.data_processing_utilities import parse_cov
 
 config.update("jax_enable_x64", True)
 
@@ -622,6 +624,43 @@ jac_cometary_xyz = jax.jacobian(universal_cometary, argnums=(1, 2, 3, 4, 5, 6))
 jac_keplerian_xyz = jax.jacobian(universal_keplerian, argnums=(1, 2, 3, 4, 5, 6))
 
 
+# @jax.jit
+def covariance_ecl_to_eq(covariance):
+    """
+    Converts a covariance matrix from ecliptic to equatorial coordinates.
+
+    Parameters
+    ----------
+    covariance : numpy array
+        The covariance matrix to convert.
+
+    Returns
+    -------
+    numpy array
+        The converted covariance matrix.
+    """
+    jj_rotation = np.array(block_diag(ECL_TO_EQ_ROTATION_MATRIX.T, ECL_TO_EQ_ROTATION_MATRIX.T))
+    return jj_rotation @ covariance @ jj_rotation.T
+
+
+def covariance_eq_to_ecl(covariance):
+    """
+    Converts a covariance matrix from equatorial to ecliptic coordinates.
+
+    Parameters
+    ----------
+    covariance : numpy array
+        The covariance matrix to convert.
+
+    Returns
+    -------
+    numpy array
+        The converted covariance matrix.
+    """
+    jj_rotation = np.array(block_diag(EQ_TO_ECL_ROTATION_MATRIX.T, EQ_TO_ECL_ROTATION_MATRIX.T))
+    return jj_rotation @ covariance @ jj_rotation.T
+
+
 @jax.jit
 def covariance_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     r = jnp.array([x, y, z])
@@ -652,6 +691,7 @@ def covariance_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB, covariance):
     return covar
 
 
+# Note that this function is not jax compatible since it uses universal_cartesian
 def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB, covariance):
     x, y, z, vx, vy, vz = universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB)
     jac = jac_cometary_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
@@ -662,6 +702,7 @@ def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB,
     return covar
 
 
+# Note that this function is not jax compatible since it uses universal_cartesian
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
     q = a * (1 - e)
     tp = epochMJD_TDB - M * np.sqrt(a**3 / mu)
@@ -672,3 +713,72 @@ def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB,
 
     covar = jj_rotation @ jac_inv @ covariance @ jac_inv.T @ jj_rotation.T
     return covar
+
+
+def parse_covariance_row_to_CART(row, gm_total, gm_sun):
+    """
+    Parses a row of orbit data, unpacking the flattened covariance matrix
+    and converting it to an equatorial cartesian format regardless of the input format.
+
+    Note that there is not a meaningful distinction between cartesian and
+    barycentric cartesian coordinates here.
+
+    The input format of the row is read from the "FORMAT" column and
+    acceptable input formats are CART, COM, KEP, BCART, BCART_EQ, BCOM, and BKEP.
+
+    Parameters
+    ----------
+    row : numpy structured array
+        The row of data to parse the covariance matrix from.
+    gm_total : float
+        The gravitational parameter for the total system.
+    gm_sun : float
+        The gravitational parameter for the Sun.
+    """
+    init_format = row["FORMAT"]
+    if init_format not in ["CART", "BCART", "BCART_EQ", "COM", "BCOM", "KEP", "BKEP"]:
+        raise ValueError(f"Unknown orbit format: {init_format}")
+
+    # Parse our 6x6 covariance matrix
+    cov = parse_cov(row)
+
+    if init_format == "BCART_EQ":
+        # We are already in equatorial cartesian coordinates
+        return cov
+
+    # Now we want to convert the covariance matrix to an equatorial cartesian format
+    if init_format in ["CART", "BCART"]:
+        # Since this is a translation we do not need to do anything
+        # differently for CART vs BCART. We just need to convert
+        # the covariance matrix to equatorial coordinates.
+        cov = covariance_ecl_to_eq(cov)
+    elif init_format in ["COM", "BCOM"]:
+        # Convert the covariance matrix from COM/BCOM to cartesian
+        mu = gm_total if init_format == "BCOM" else gm_sun
+        cov = covariance_xyz_cometary(
+            mu,
+            row["q"],
+            row["e"],
+            # Convert from degrees to radians
+            row["inc"] * np.pi / 180.0,
+            row["node"] * np.pi / 180.0,
+            row["argPeri"] * np.pi / 180.0,
+            row["t_p_MJD_TDB"],
+            row["epochMJD_TDB"],
+            cov,
+        )
+    elif init_format in ["KEP", "BKEP"]:
+        # Convert the covariance matrix from BKEP to cartesian.
+        a = row["a"]
+        e = row["e"]
+        # Convert from degrees to radians
+        incl = row["inc"] * np.pi / 180.0
+        longnode = row["node"] * np.pi / 180.0
+        argperi = row["argPeri"] * np.pi / 180.0
+        M = row["ma"] * np.pi / 180
+        if np.pi < M:
+            M -= 2 * np.pi
+
+        mu = gm_total if init_format == "BKEP" else gm_sun
+        cov = covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, row["epochMJD_TDB"], cov)
+    return cov

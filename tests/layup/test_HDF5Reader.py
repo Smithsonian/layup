@@ -124,7 +124,7 @@ def test_HDFDataReader_missing_format():
     assert "Format column FORMAT not found" in str(e1.value)
 
 
-def test_CSVDataReader_mixed_formats():
+def test_HDFDataReader_mixed_formats():
     """Test that we fail if the format column has mixed formats."""
     with pytest.raises(SystemExit) as e1:
         hdf_reader = HDF5DataReader(get_test_filepath("CART_mixed_format.h5"), format_column_name="FORMAT")
@@ -137,3 +137,20 @@ def test_file_count():
     reader = HDF5DataReader(get_test_filepath("BCOM.h5"))
     row_count = reader.get_row_count()
     assert row_count == 814
+
+
+def test_HDF5DataReader_primary_id_is_str():
+    """Ensure that when the primary ID is a string, it is read in as a string."""
+    reader = HDF5DataReader(get_test_filepath("CART_with_numeric_objid.h5"))
+
+    expected_objids = [
+        "12345",
+        "00015",
+        "00021",
+        "00024",
+        "00044",
+    ]
+
+    all_data = reader.read_rows()
+    assert all(isinstance(i, str) for i in all_data["ObjID"])
+    assert all(all_data["ObjID"] == expected_objids)

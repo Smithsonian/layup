@@ -1,5 +1,5 @@
 #
-# The `layup visualize` subcommand implementation
+# The `layup unpack` subcommand implementation
 #
 import argparse
 from layup_cmdline.layupargumentparser import LayupArgumentParser
@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 def main():
     parser = LayupArgumentParser(
-        prog="layup visualize",
+        prog="layup unpack",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="This would start visualize",
+        description="This would unpack covariance matrix into the orbital uncertainties",
     )
 
     positionals = parser.add_argument_group("Positional arguments")
@@ -24,6 +24,13 @@ def main():
     )
 
     optional = parser.add_argument_group("Optional arguments")
+
+    optional.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite output file",
+    )
     optional.add_argument(
         "-i",
         "--input-type",
@@ -34,39 +41,31 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "-n",
-        "--num",
-        help="random number of orbits to take from input file",
-        dest="n",
-        type=str,
-        default=1000,
-        required=False,
-    )
-    optional.add_argument(
-        "-d",
-        "--dimensions",
-        help="dimensions the plot will be in [2D, 3D]",
-        dest="d",
-        type=str,
-        default="2D",
-        required=False,
-    )
-    optional.add_argument(
-        "-b",
-        "--backend",
-        help="backend used for plotting [matplot, plotly]",
-        dest="b",
-        type=str,
-        default="matplot",
-        required=False,
-    )
-    optional.add_argument(
         "-o",
         "--output",
         help="output file stem. default path is current working directory",
         dest="o",
         type=str,
-        default="output",
+        default="unpacked_output",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-ch",
+        "--chunksize",
+        help="number of orbits to be processed at once",
+        dest="chunk",
+        type=int,
+        default=200000,
+        required=False,
+    )
+    optional.add_argument(
+        "-pid",
+        "--primary-id-column-name",
+        help="Column name in input file that contains the primary ID of the object.",
+        dest="primary_id_column_name",
+        type=str,
+        default="provID",
         required=False,
     )
 
@@ -76,17 +75,14 @@ def main():
 
 
 def execute(args):
-
+    from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
-
-    # from layup.visualize import visualize_cli
 
     # check input exists
     find_file_or_exit(args.input, "input")
 
     # Check that output directory exists
     find_directory_or_exit(args.o, "-o, --")
-
     # check format of input file
     if args.i.lower() == "csv":
         output_file = args.o + ".csv"
@@ -95,11 +91,17 @@ def execute(args):
     else:
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
-    if args.d.upper() not in ["2D", "3D"]:
-        sys.exit("ERROR: -d --dimensions must be '2D' or '3D'")
+    # check for overwriting output file
+    warn_or_remove_file(str(output_file), args.force, logger)
+    from layup.unpack import unpack_cli
 
-    if args.b not in ["matplot", "plotly"]:
-        sys.exit("ERROR: -b --backend must be 'matplot' or 'plotly'")
+    unpack_cli(
+        input=args.input,
+        file_format=args.i,
+        output_file_stem=args.o,
+        chunk_size=args.chunk,
+        cli_args=args,
+    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,20 @@
+COD W84
+CON P. Bernardinelli, University of Pennsylvania
+CON [pedrobe@physics.upenn.edu]
+OBS D. E. Survey
+MEA P. Bernardinelli, G. Bernstein, M. Sako
+TEL 4.0-m CTIO reflector + CCD
+NET Gaia DR2
+COM Observations of new TNOs from the Dark Energy Survey
+ACK NEW DISTANT trans-Neptunian objects from Dark Energy Survey
+AC2 pedrobe@physics.upenn.edu
+     0000024* C2016 10 02.18440 00 35 08.563+01 31 50.69         23.27i      W84
+     0000024  C2018 10 18.19616 00 43 50.866+02 48 22.76         23.21z      W84
+     0000024  C2013 12 02.11176 00 16 27.499-00 54 53.07         23.97g      W84
+     0000024  C2018 10 18.19480 00 43 50.863+02 48 22.73         23.53i      W84
+     0000024  C2013 11 23.09831 00 16 44.703-00 53 51.35         22.97i      W84
+     0000024  C2014 08 18.30926 00 28 26.166+00 28 11.76         23.11z      W84
+     0000024  C2016 09 09.31225 00 36 55.866+01 42 54.81         23.25r      W84
+     0000024  C2016 09 09.31362 00 36 55.863+01 42 54.92         23.18i      W84
+     0000024  C2013 10 13.11349 00 19 15.574-00 40 27.12         23.04i      W84
+     0000024  C2016 09 09.31500 00 36 55.848+01 42 54.75         24.28g      W84

@@ -984,9 +984,9 @@ namespace orbit_fit
         return result;
     }
 
-    std::optional<FitResult> run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
+    FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
     {
-        int success = 0;
+        int success = 1;
         size_t iters;
         double chi2_final;
         size_t dof;
@@ -1026,57 +1026,36 @@ namespace orbit_fit
 
         dof = 2 * detections.size() - 6;
 
-        if (flag == 0)
-        {
+        FitResult result;
+	
+        result.method = "orbit_fit";
+        result.flag = flag;
 
-            Eigen::MatrixXd obs_cov(2, 2);
-            predict(
-                ephem,
-                p1,
-                epoch,
-                detections[0],
-                cov,
-                obs_cov);
-            std::cout << "obs_cov: \n"
-                      << obs_cov << std::endl;
+        result.epoch = epoch;
+        result.csq = chi2_final;
+        result.ndof = dof;
+        result.niter = iters;
+        result.state[0] = p1.x;
+        result.state[1] = p1.y;
+        result.state[2] = p1.z;
+        result.state[3] = p1.vx;
+        result.state[4] = p1.vy;
+        result.state[5] = p1.vz;
 
-            size_t last = detections.size() - 1;
-            predict(
-                ephem,
-                p1,
-                epoch,
-                detections[last],
-                cov,
-                obs_cov);
-            std::cout << "obs_cov: \n"
-                      << obs_cov << std::endl;
-
-            FitResult result;
-
-            result.niter = iters;
-            result.csq = chi2_final;
-            result.ndof = dof;
-            result.flag = flag;
-            result.method = "orbit_fit";
-
-            result.epoch = epoch;
-            result.state = {p1.x, p1.y, p1.z, p1.vx, p1.vy, p1.vz};
-
-            for(int i = 0; i < 6; i++)
+	if (flag == 0) {
+            // Populate our covariance matrix
+            for (int i = 0; i < 6; i++)
             {
-                for(int j = 0; j < 6; j++)
+                for (int j = 0; j < 6; j++)
                 {
                     // flatten the covariance matrix
-                    result.cov[(i * 6) + j] = cov(i,j);
+                    result.cov[(i * 6) + j] = cov(i, j);
                 }
             }
+        }
 
-            return result;
-        }
-        else
-        {
-            return std::nullopt;
-        }
+	return result;
+
     }
 
 #ifdef Py_PYTHON_H

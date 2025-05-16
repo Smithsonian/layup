@@ -2,13 +2,12 @@
 # The `layup orbitfit` subcommand implementation
 #
 import argparse
+import logging
 import sys
 
-from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup.utilities.cli_utilities import warn_or_remove_file
+from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-import logging
-
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +56,14 @@ def main():
         default=10000,
         required=False,
     )
+    optional.add_argument(
+        "-d",
+        "--debias",
+        action="store_true",
+        help="Perform debiasing of the input astrometry based on catalog and epoch.",
+        required=False,
+        dest="debias",
+    )
 
     optional.add_argument(
         "-f",
@@ -70,7 +77,7 @@ def main():
         "-i",
         "--iod",
         help="IOD choice",
-        dest="i",
+        dest="iod",
         default="gauss",
         required=False,
     )
@@ -87,7 +94,7 @@ def main():
         "--output_format",
         help="output file format.",
         dest="output_format",
-        type=str,
+        type=str.lower,
         default="csv",
         required=False,
     )
@@ -121,6 +128,24 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-of",
+        "--output-orbit-format",
+        help="Orbit format for output file. [KEP, CART, COM, BKEP, BCART, BCART_EQ, BCOM]",
+        default="BCART_EQ",
+        dest="output_orbit_format",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-wd",
+        "--weight-data",
+        action="store_true",
+        help="Apply data weighting based on the observation code, date, catalog and program. ",
+        required=False,
+        dest="weight_data",
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -128,6 +153,7 @@ def main():
 
 def execute(args):
     from layup.orbitfit import orbitfit_cli
+    from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
 
     print("Starting orbitfit...")
 
@@ -142,6 +168,11 @@ def execute(args):
     if (args.type.lower()) not in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]:
         sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
 
+    # check orbit format
+    if args.output_orbit_format not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+        logger.error(
+            "ERROR: output orbit format must be 'BCART', 'BCART_EQ', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'"
+        )
     # check format of input file
     if args.output_format.lower() == "csv":
         output_file = args.o + ".csv"
@@ -160,7 +191,10 @@ def execute(args):
     configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
-        configs = LayupConfigs(args.c)
+        configs = LayupConfigs(args.config)
+
+    # check if bootstrap files are missing, and download if necessary
+    download_files_if_missing(configs.auxiliary, args)
 
     orbitfit_cli(
         input=args.input,

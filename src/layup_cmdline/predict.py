@@ -2,14 +2,13 @@
 # The `layup predict` subcommand implementation
 #
 import argparse
-import os
-from pathlib import Path
-from layup_cmdline.layupargumentparser import LayupArgumentParser
-from astropy.time import Time
-import astropy.units as u
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 
+import astropy.units as u
+
+from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ def main():
         "--conf",
         help="Optional configuration file",
         type=str,
-        dest="c",
+        dest="config",
         required=False,
     )
 
@@ -111,7 +110,7 @@ def main():
         "--input-type",
         help="Input format type of file (csv or hdf5)",
         dest="i",
-        type=str,
+        type=str.lower,
         default="csv",
         required=False,
     )
@@ -226,13 +225,17 @@ def convert_input_to_JD_TDB(input_str: str, cache_path: Path) -> float:
 
 
 def execute(args):
-    import astropy.units as u
     import re
-    from layup.predict import predict_cli
-    from layup.utilities.cli_utilities import warn_or_remove_file
-    from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
     import sys
+
+    import astropy.units as u
     import pooch
+
+    from layup.predict import predict_cli
+    from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
+    from layup.utilities.cli_utilities import warn_or_remove_file
+    from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
+    from layup.utilities.layup_configs import LayupConfigs
 
     # check input exists
     find_file_or_exit(args.input, "input")
@@ -284,8 +287,17 @@ def execute(args):
 
     timestep_day = (value * UNIT_DICT[unit_str]).to(u.day).value  # converting value into day units
 
+    configs = LayupConfigs()
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
+        configs = LayupConfigs(args.config)
+
+    # check if bootstrap files are missing, and download if necessary
+    download_files_if_missing(configs.auxiliary, args)
+
     predict_cli(
         cli_args=args,
+        input_file=args.input,
         start_date=start_date,
         end_date=end_date,
         timestep_day=timestep_day,
