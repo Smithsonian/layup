@@ -160,10 +160,10 @@ def comet_cli(
     for chunk_start, chunk_end in chunks:
         # Read the chunk of data
         chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
-        if get_format(chunk_data) != "COM":
+        if get_format(chunk_data) != "BCART_EQ":
             chunk_data = convert(
                 chunk_data,
-                convert_to="COM",
+                convert_to="BCART_EQ",
                 num_workers=num_workers,
                 cache_dir=cache_dir,
                 primary_id_column_name=primary_id_column_name,
