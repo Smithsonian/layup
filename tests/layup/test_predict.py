@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.predict import predict_cli, predict
+from layup.predict import predict, predict_cli
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -72,7 +72,6 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
     assert np.all(output_data["ra_deg"] <= 360.0) and np.all(output_data["ra_deg"] >= 0.0)
     assert np.all(output_data["dec_deg"] <= 90.0) and np.all(output_data["dec_deg"] >= -90.0)
 
-
     # Ensure that the epoch_utc column is present and in the correct format
     assert all(isinstance(epoch, str) for epoch in output_data["epoch_UTC"])
     assert all(len(epoch) == 20 for epoch in output_data["epoch_UTC"])
@@ -101,4 +100,3 @@ def test_external_predict(tmpdir):
     # make sure we generated a prediction for each object at every time step
     n_uniq_ids = sum([1 if id else 0 for id in set(data["provID"])])
     assert len(predictions) == n_uniq_ids * len(times)
->>>>>>> main
