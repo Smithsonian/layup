@@ -305,7 +305,12 @@ class LayupObservatory(SorchaObservatory):
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
 
-    def obscodes_to_barycentric(self, data, fail_on_missing=False):
+        # A dictionary of observatory coordinates for observatories that do not have a fixed position
+        # of the form {obscode: {et: (x, y, z)}}. This allows us to catch errors where multiple epochs
+        # are provided for the same observatory and the coordinates are not the same.
+        self.moving_obs_coords = {}
+
+    def obscodes_to_barycentric(self, data):
         """
         Takes a structured array of observations and returns the barycentric positions and velocites
         of the observatories.
@@ -317,9 +322,6 @@ class LayupObservatory(SorchaObservatory):
         ----------
         data : numpy structured array
             The data to process.
-        fail_on_missing : bool, optional
-            If True, raise an error if we can't compute the barycentric position of an observatory.
-            If False, return NaNs for the barycentric position of the observatory.
 
         Returns
         -------
@@ -332,12 +334,16 @@ class LayupObservatory(SorchaObservatory):
         res = []
         for row in data:
             obscode = row["stn"]
+            obscode_cache_key = obscode
             if not isinstance(obscode, str):
                 raise ValueError(
                     f"observatory code {obscode} is not a string and instead has type {type(obscode)}"
                 )
+            et = row["et"]
             coords = self.ObservatoryXYZ.get(obscode, None)
+            # Update the cached coordinates and obscode_cache_key for the case of a moving observatory
             if coords is None or None in coords or np.isnan(coords).any():
+                obscode_cache_key = f"{obscode}_{et}"
                 # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
                 if "obs_geo_x" not in row.dtype.names:
                     raise ValueError(
@@ -352,23 +358,27 @@ class LayupObservatory(SorchaObservatory):
                         f"The data must have a 'obs_geo_z' field for non-fixed postion observatory {obscode}."
                     )
                 coords = np.array([row["obs_geo_x"], row["obs_geo_y"], row["obs_geo_z"]])
-                self.ObservatoryXYZ[row["stn"]] = coords
+                if obscode_cache_key not in self.moving_obs_coords:
+                    self.moving_obs_coords[obscode_cache_key] = coords
+                else:
+                    # If the coordinates are not the same, raise an error
+                    if not np.allclose(self.moving_obs_coords[obscode_cache_key], coords):
+                        raise ValueError(
+                            f"Observatory {obscode} has different coordinates at different epochs. "
+                            f"Coordinates at epoch {et} are {coords}, but at epoch {self.moving_obs_coords[obscode_cache_key]}."
+                        )
+                # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
+                self.ObservatoryXYZ[obscode_cache_key] = coords
             # Use the observatory position to calculate the barycentric coordinates at the observed epoch
-            et = row["et"]
-            if obscode not in self.cached_obs:
-                self.cached_obs[obscode] = {}
-            try:
-                # Calculate the barycentric position and velocity of the observatory or fetch
-                # it from the cache if it has already been calculated
-                bary_obs_pos, bary_obs_vel = self.cached_obs[obscode].setdefault(
-                    et, barycentricObservatoryRates(et, obscode, self)
-                )
-            except Exception as e:
-                if fail_on_missing:
-                    raise ValueError(
-                        f"Error calculating barycentric coordinates for {obscode} at et: {et} from obstime: {row['obstime']} {e} "
-                    )
-                bary_obs_pos, bary_obs_vel = np.array([np.nan] * 3), np.array([np.nan] * 3)
+            if obscode_cache_key not in self.cached_obs:
+                self.cached_obs[obscode_cache_key] = {}
+
+            # Calculate the barycentric position and velocity of the observatory or fetch
+            # it from the cache if it has already been calculated
+            bary_obs_pos, bary_obs_vel = self.cached_obs[obscode_cache_key].setdefault(
+                et, barycentricObservatoryRates(et, obscode_cache_key, self)
+            )
+
             # Create a structured array for our barycentric coordinates with appropriate dtypes.
             # Needed to adjust the units here.
             x, y, z = bary_obs_pos / AU_KM

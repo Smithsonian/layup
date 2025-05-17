@@ -185,7 +185,7 @@ def test_layup_observatory_obscodes_to_barycentric():
     et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
     data = rfn.append_fields(data, "et", et_col, usemask=False)
 
-    processed_data = observatory.obscodes_to_barycentric(data, fail_on_missing=False)
+    processed_data = observatory.obscodes_to_barycentric(data)
     assert len(processed_data) == len(data)
     assert processed_data.dtype == [
         ("x", "<f8"),
