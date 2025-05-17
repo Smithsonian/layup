@@ -27,7 +27,8 @@ def _get_result_dtypes(primary_id_column_name: str):
     return np.dtype(
         [
             (primary_id_column_name, "O"),  # Object ID
-            ("epoch_UTC", "O"),  # Time for prediction
+            ("epoch_UTC", "O"),  # Time for prediction in UTC
+            ("epoch_JD_TDB", "f8"),  # Time for prediction in JD TDB
             ("ra_deg", "f8"),
             ("dec_deg", "f8"),
             ("rho_x", "f8"),  # The first of the 3 rho unit vector
@@ -84,12 +85,13 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
         pred_res = predict_sequence(get_ephem(kernels_loc), fit, observations, numpy_to_eigen(fit.cov, 6, 6))
 
         for pred in pred_res:
-            jd_tdb = spice.str2et(f"jd {pred.epoch} tdb")
-            utc_time = spice.et2utc(jd_tdb, "C", 0)
+            et = spice.str2et(f"jd {pred.epoch} tdb")
+            utc_time = spice.et2utc(et, "C", 0)
             predict_results.append(
                 (
                     row[primary_id_column_name],
                     utc_time,
+                    pred.epoch,  # JD TDB
                     pred.rho[0],  # place holder
                     pred.rho[0],  # place holder
                     pred.rho[0],

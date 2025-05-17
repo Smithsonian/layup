@@ -80,6 +80,8 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
     # All of our start and end dates for our predictions are in the year 2026
     assert all(epoch.startswith("2026") for epoch in output_data["epoch_UTC"])
 
+    assert all(isinstance(epoch, float) for epoch in output_data["epoch_JD_TDB"])
+
 
 def test_external_predict(tmpdir):
     """Ensure that we can run predict with data that doesn't have our csq and ndof columns."""
