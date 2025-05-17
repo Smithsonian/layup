@@ -9,6 +9,7 @@ from layup.utilities.data_processing_utilities import (
     get_cov_columns,
     get_format,
     has_cov_columns,
+    parse_fit_result,
     process_data,
 )
 from layup.utilities.data_utilities_for_tests import get_test_filepath
@@ -398,3 +399,79 @@ def test_constant_results_with_repeated_calls():
     for i, j in zip(processed_data, processed_data_2):
         if not np.isnan(i["x"]):
             assert_array_equal(i, j)
+
+
+def test_parse_fit_result():
+    """Base path test of parse_fit_results"""
+    input_csv_reader = CSVDataReader(
+        get_test_filepath("predict_chunk_BCART_EQ.csv"),
+        "csv",
+        primary_id_column_name="provID",
+    )
+
+    input_data = input_csv_reader.read_rows()
+
+    for d in input_data:
+        fit_result = parse_fit_result(d)
+
+        assert fit_result.csq != 0
+        assert fit_result.ndof != 0
+        assert fit_result.niter != 0
+        assert len(fit_result.cov) == 36
+        assert np.all(np.array(fit_result.cov) != 0.0)
+
+
+def test_parse_fit_result_no_orbit_column_in_result():
+    """Request parse_fit_results does not populate orbit prediction columns in output"""
+    input_csv_reader = CSVDataReader(
+        get_test_filepath("predict_chunk_BCART_EQ.csv"),
+        "csv",
+        primary_id_column_name="provID",
+    )
+
+    input_data = input_csv_reader.read_rows()
+
+    for d in input_data:
+        fit_result = parse_fit_result(d, orbit_colm_flag=False)
+
+        assert fit_result.csq == 0
+        assert fit_result.ndof == 0
+        assert fit_result.niter == 0
+        assert len(fit_result.cov) == 36
+        assert np.all(np.array(fit_result.cov) != 0.0)
+
+
+def test_parse_fit_result_no_covariance_in_input():
+    """Test parse_fit_results produces 0s for output of covariance if data is missing"""
+    input_csv_reader = CSVDataReader(
+        get_test_filepath("predict_chunk_BCART_EQ_no_covariance.csv"),
+        "csv",
+        primary_id_column_name="provID",
+    )
+
+    input_data = input_csv_reader.read_rows()
+
+    for d in input_data:
+        fit_result = parse_fit_result(d)
+
+        assert len(fit_result.cov) == 36
+        assert np.all(np.array(fit_result.cov) == 0.0)
+
+
+def test_parse_fit_result_missing_some_cov_columns():
+    """Test parse_fit_results produces 0s for output of covariance if the columns
+    are missing."""
+    input_csv_reader = CSVDataReader(
+        get_test_filepath("predict_chunk_BCART_EQ_missing_cov_column.csv"),
+        "csv",
+        primary_id_column_name="provID",
+    )
+
+    input_data = input_csv_reader.read_rows()
+
+    for d in input_data:
+        fit_result = parse_fit_result(d)
+
+        assert len(fit_result.cov) == 36
+        assert np.all(np.array(fit_result.cov[:-1]) != 0.0)
+        assert fit_result.cov[-1] == 0.0
