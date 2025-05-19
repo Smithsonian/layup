@@ -80,6 +80,7 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
 
     predict_results = []
     for row in data:
+
         # get the fit result (we don't need the csq and ndof values)
         fit = parse_fit_result(row, orbit_colm_flag=False)
         pred_res = predict_sequence(get_ephem(kernels_loc), fit, observations, numpy_to_eigen(fit.cov, 6, 6))
