@@ -276,6 +276,20 @@ def create_chunks(reader, chunk_size):
     return chunks
 
 
+# Simple wrapper class to mimic the arguments expected by Sorcha methods.
+class FakeSorchaArgs:
+    def __init__(self, cache_dir=None):
+        # Sorcha allows this argument to be None, so simply use that here
+        self.ar_data_file_path = cache_dir
+
+
+def layup_furnish_spiceypy(cache_dir):
+    """A simple wrapper to furnish spiceypy kernels."""
+    # A simple class to mimic the arguments processed by Sorcha's observatory class
+    config = LayupConfigs()
+    furnish_spiceypy(FakeSorchaArgs(cache_dir), config.auxiliary)
+
+
 class LayupObservatory(SorchaObservatory):
     """
     A wrapper around Sorcha's Observatory class to provide additional functionality for Layup.
@@ -293,18 +307,11 @@ class LayupObservatory(SorchaObservatory):
 
         # Get Layup configs
         config = LayupConfigs()
-        self.cache_dir = cache_dir
 
-        # A simple class to mimic the arguments processed by Sorcha's observatory class
-        class FakeSorchaArgs:
-            def __init__(self, cache_dir=None):
-                # Sorcha allows this argument to be None, so simply use that here
-                self.ar_data_file_path = cache_dir
+        # Furnish the spiceypy kernels
+        layup_furnish_spiceypy(cache_dir)
 
-        # Furnish spiceypy kernels used for calculating barycentric positions
-        fake_args = FakeSorchaArgs(self.cache_dir)
-        furnish_spiceypy(fake_args, config.auxiliary)
-        super().__init__(fake_args, config.auxiliary)
+        super().__init__(FakeSorchaArgs(cache_dir), config.auxiliary)
 
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}

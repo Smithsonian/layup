@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.predict import predict_cli
+from layup.predict import predict, predict_cli
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -71,3 +71,36 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
 
     assert np.all(output_data["ra_deg"] <= 360.0) and np.all(output_data["ra_deg"] >= 0.0)
     assert np.all(output_data["dec_deg"] <= 90.0) and np.all(output_data["dec_deg"] >= -90.0)
+
+    # Ensure that the epoch_utc column is present and in the correct format
+    assert all(isinstance(epoch, str) for epoch in output_data["epoch_UTC"])
+    # Validate the first epoch_UTC value has the expectd time
+    assert output_data["epoch_UTC"][0] == "2026 FEB 20 00:00:00"
+    assert all(len(epoch) == 20 for epoch in output_data["epoch_UTC"])
+    # All of our start and end dates for our predictions are in the year 2026
+    assert all(epoch.startswith("2026") for epoch in output_data["epoch_UTC"])
+
+    assert all(isinstance(epoch, float) for epoch in output_data["epoch_JD_TDB"])
+
+
+def test_external_predict(tmpdir):
+    """Ensure that we can run predict with data that doesn't have our csq and ndof columns."""
+    # this file contains some rows with csq and ndof columns and some without
+    # so this should test that all functionality remains the same.
+    data = CSVDataReader(
+        get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
+    ).read_rows()
+
+    times = np.arange(2461091.50080075, 2461101.50080075 + 0.5, step=0.5)
+    predictions = predict(
+        data,
+        obscode="X05",
+        times=times,
+        num_workers=1,
+        cache_dir=None,
+        primary_id_column_name="provID",
+    )
+
+    # make sure we generated a prediction for each object at every time step
+    n_uniq_ids = sum([1 if id else 0 for id in set(data["provID"])])
+    assert len(predictions) == n_uniq_ids * len(times)
