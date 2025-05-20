@@ -426,7 +426,7 @@ def skyplane_cov_to_radec_cov(ra, dec, cov_xx, cov_xy, cov_yy):
     an on-sky covariance matrix (error ellipse)
 
     Code adapted from B&K routines
-    
+
     Parameters
     ----------
     ra: numpy array
