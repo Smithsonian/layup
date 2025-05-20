@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import matplotlib as mpl
 
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
@@ -115,7 +116,28 @@ def construct_ellipse(
 
     return r
 
-
+@mpl.rc_context({
+    'axes.linewidth' : 1.875,
+    'grid.linewidth' : 1.5,
+    'lines.linewidth' : 2.25,
+    'lines.markersize' : 9.0,
+    'patch.linewidth' : 1.5,
+    'xtick.major.width' : 1.875,
+    'ytick.major.width' : 1.875,
+    'xtick.minor.width' : 1.5,
+    'ytick.minor.width' : 1.5,
+    'xtick.major.size' : 9.0,
+    'ytick.major.size' : 9.0,
+    'xtick.minor.size' : 6.0,
+    'ytick.minor.size' : 6.0,
+    'font.size' : 18.0,
+    'axes.labelsize' : 18.0,
+    'xtick.labelsize' : 16.5,
+    'ytick.labelsize' : 16.5,
+    'legend.fontsize' : 16.5,
+    'legend.title_fontsize' : 18.0,
+    'axes.titlesize' : 32
+})
 def matplot_2D(orb_array, planets, no_planets, no_sun, output, fade):
     """
     Create a 2D orbit distribution plot using matplot as a backend.
@@ -142,8 +164,6 @@ def matplot_2D(orb_array, planets, no_planets, no_sun, output, fade):
     """
     import matplotlib.pyplot as plt
     from matplotlib.collections import LineCollection
-
-    plt.style.use("./src/layup/matplot2d.mplstyle")
 
     fig, axs = plt.subplots(1, 2, layout="constrained", figsize=(20, 9))
     fig.patch.set_facecolor("k")
