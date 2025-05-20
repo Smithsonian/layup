@@ -418,3 +418,52 @@ def get_format(data):
     else:
         logger.error("Data does not contain 'FORMAT' column")
         raise ValueError("Data does not contain 'FORMAT' column")
+
+
+def skyplane_cov_to_radec_cov(ra, dec, cov_xx, cov_xy, cov_yy):
+    """
+    Transforms the sky plane covariance matrix into
+    an on-sky covariance matrix (error ellipse)
+
+    Code adapted from B&K routines
+    
+    Parameters
+    ----------
+    ra: numpy array
+        right ascension of the observation (deg)
+    dec: numpy array
+        declination of the observation (deg)
+    cov_xx: numpy array
+        (x,x) entry of the sky plane cov matrix (radians)
+    cov_xy: numpy array
+        (x,y) entry of the sky plane cov matrix (radians)
+    cov_yy: numpy array
+        (y,y) entry of the sky plane cov matrix (radians)
+
+    Returns
+    -----------
+    numpy array
+        semi-major axis of the error ellipse (arcsec)
+    numpy array
+        semi-minor axis of the error ellipse (arcsec)
+    numpy array
+        position angle of the error ellipse (degrees)
+    """
+
+    xx = cov_xx * np.cos(dec) * np.cos(dec)
+    xy = cov_xy * np.cos(dec)
+    yy = cov_yy
+    PA = 0.5 * np.arctan2(2.0 * xy, (xx - yy)) * 180.0 / np.pi
+    # Put PA N through E
+    PA = 90.0 - PA
+    bovasqrd = (xx + yy - np.sqrt(np.power(xx - yy, 2.0) + np.power(2.0 * xy, 2.0))) / (
+        xx + yy + np.sqrt(np.power(xx - yy, 2.0) + np.power(2.0 * xy, 2.0))
+    )
+    det = xx * yy - xy * xy
+    b = np.power(det * bovasqrd, 0.25)  # this is in radians
+    a = np.power(det / bovasqrd, 0.25)
+
+    b *= (180 / np.pi) * 3600  # this is now in arcsec
+    a *= (180 / np.pi) * 3600  # this is now in arcsec
+
+    return a, b, PA

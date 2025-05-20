@@ -16,6 +16,7 @@ from layup.utilities.data_processing_utilities import (
     layup_furnish_spiceypy,
     parse_fit_result,
     process_data,
+    skyplane_cov_to_radec_cov,
 )
 from layup.utilities.file_io import CSVDataReader
 from layup.utilities.file_io.file_output import write_csv
@@ -107,6 +108,9 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
 
     results = np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
     results["ra_deg"], results["dec_deg"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
+    results["a_arcsec"], results["b_arcsec"], results["PA_deg"] = skyplane_cov_to_radec_cov(
+        results["ra_deg"], results["dec_deg"], results["obs_cov0"], results["obs_cov3"], results["obs_cov1"]
+    )
 
     return results
 
