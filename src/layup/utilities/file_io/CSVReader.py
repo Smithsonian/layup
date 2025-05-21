@@ -9,7 +9,20 @@ from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 # Characters we remove from column names.
 _INVALID_COL_CHARS = "!#$%&‘()*+, ./:;<=>?@[\\]^{|}~"
 
-VALID_FILE_FORMATS = ["csv", "comma", "whitespace", "pipe", "psv", "|"]
+# Note that the separators (aside from whitespace) are all single characters. This
+# is important as it means that in all cases of calling `read_csv` the C parser
+# will be used under the hood. If the separators are multiple characters, other
+# than `/s+` the slower Python parser will be used. See the pandas.read_csv doc:
+# https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html
+VALID_FILE_FORMATS = {
+    "csv": ",",
+    "comma": ",",
+    ",": ",",
+    "whitespace": "\\s+",
+    "psv": "|",
+    "pipe": "|",
+    "|": "|",
+}
 
 # Any pre-header line that starts with one of these strings will be ignored.
 # CAUTION! - Avoid adding a character that would exclude the column header line.
@@ -49,6 +62,8 @@ class CSVDataReader(ObjectDataReader):
             logger.error(f"ERROR: Unrecognized delimiter ({sep})")
             sys.exit(f"ERROR: Unrecognized delimiter ({sep})")
         self.sep = sep
+
+        self.data_separator = VALID_FILE_FORMATS[self.sep]
 
         # Number of lines of comments before the header line.
         self.num_pre_header_lines = 0
@@ -150,15 +165,14 @@ class CSVDataReader(ObjectDataReader):
         """
         logger = logging.getLogger(__name__)
 
-        if self.sep == "csv" or self.sep == "comma":
-            column_names = [col.strip() for col in header_line.split(",")]
-        elif self.sep == "psv" or self.sep == "pipe" or self.sep == "|":
-            column_names = [col.strip() for col in header_line.split("|")]
-        elif self.sep == "whitespace":
+        # This is a bit ugly, but splitting the header in this way, means that we
+        # can generally define the value separators at the top of the file, _and_
+        # use pandas C parser when we call `read_csv`, which is significantly
+        # faster than the alternatively Python parser.
+        if self.sep == "whitespace":
             column_names = header_line.split()
         else:
-            logger.error(f"ERROR: Unrecognized delimiter ({self.sep})")
-            sys.exit(f"ERROR: Unrecognized delimiter ({self.sep})")
+            column_names = [col.strip() for col in header_line.split(self.data_separator)]
 
         if len(column_names) < 2:
             error_str = (
@@ -211,22 +225,15 @@ class CSVDataReader(ObjectDataReader):
                 [i for i in range(self.header_row_index + 1, self.header_row_index + 1 + block_start)]
             )
 
-        # Read in the data from self.filename, extracting the header row, and skipping in all of
-        # block_size rows, skipping all of the skip_rows.
-        if self.sep == "whitespace":
-            data_seperator = "\\s+"
-        elif self.sep == "pipe" or self.sep == "psv" or self.sep == "|":
-            data_seperator = "|"
-        else:
-            data_seperator = ","
-
         fixed_dtypes = {self._primary_id_column_name: str}
         if self._station_column_name is not None:
             fixed_dtypes[self._station_column_name] = str
 
+        # Read in the data from self.filename, extracting the header row, reading
+        # in `block_size` rows, and skipping the `skip_rows`.
         res_df = pd.read_csv(
             self.filename,
-            sep=data_seperator,
+            sep=self.data_separator,
             skiprows=skip_rows,
             nrows=block_size,
             dtype=fixed_dtypes,
@@ -242,28 +249,13 @@ class CSVDataReader(ObjectDataReader):
         if self.obj_id_table is not None:
             return
 
-        if self.sep == "whitespace":
-            self.obj_id_table = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                usecols=[self._primary_id_col_index],
-                header=self.header_row_index,
-            )
-        elif self.sep == "pipe" or self.sep == "psv" or self.sep == "|":
-            self.obj_id_table = pd.read_csv(
-                self.filename,
-                sep="|",
-                usecols=[self._primary_id_col_index],
-                header=self.header_row_index,
-                dtype={self._primary_id_column_name: str},
-            )
-        else:
-            self.obj_id_table = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                usecols=[self._primary_id_col_index],
-                header=self.header_row_index,
-            )
+        self.obj_id_table = pd.read_csv(
+            self.filename,
+            sep=self.data_separator,
+            usecols=[self._primary_id_col_index],
+            header=self.header_row_index,
+            dtype={self._primary_id_column_name: str},
+        )
 
         self.obj_id_table.columns = [col.strip() for col in self.obj_id_table.columns]
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
@@ -295,27 +287,14 @@ class CSVDataReader(ObjectDataReader):
         skipped_row.extend([False])  # Keep the the column header
         skipped_row.extend(~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids))
 
-        # Read in the data from self.filename, extracting the header row, and skipping in all of
-        # block_size rows, skipping all of the skip_rows.
-        if self.sep == "whitespace":
-            res_df = pd.read_csv(
-                self.filename,
-                sep="\\s+",
-                skiprows=(lambda x: skipped_row[x]),
-            )
-        elif self.sep == "pipe" or self.sep == "psv" or self.sep == "|":
-            res_df = pd.read_csv(
-                self.filename,
-                sep="|",
-                skiprows=(lambda x: skipped_row[x]),
-                dtype={self._primary_id_column_name: str},
-            )
-        else:
-            res_df = pd.read_csv(
-                self.filename,
-                delimiter=",",
-                skiprows=(lambda x: skipped_row[x]),
-            )
+        # Read in the data from self.filename, extracting the header row, reading
+        # in `block_size` rows, and skipping all the `skip_rows`.
+        res_df = pd.read_csv(
+            self.filename,
+            sep=self.data_separator,
+            skiprows=(lambda x: skipped_row[x]),
+            dtype={self._primary_id_column_name: str},
+        )
 
         res_df.columns = [col.strip() for col in res_df.columns]
         records = res_df.to_records(index=False)
