@@ -7,3 +7,6 @@
 [submodule "include/eigen"]
 	path = include/eigen
 	url = https://gitlab.com/libeigen/eigen.git
+[submodule "include/autodiff"]
+	path = include/autodiff
+	url = https://github.com/autodiff/autodiff.git
