@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
-from numpy.testing import assert_equal, assert_array_equal
+from numpy.testing import assert_array_equal, assert_equal
 
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
@@ -14,6 +14,7 @@ from layup.utilities.data_processing_utilities import (
 )
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
+from layup.utilities.file_io.Obs80Reader import Obs80DataReader
 
 
 def no_op(data):
@@ -174,8 +175,8 @@ def test_parallelization(n_rows, n_workers):
 
 def test_layup_observatory_obscodes_to_barycentric():
     """Test that we can process the obscodes data."""
-    csv_reader = CSVDataReader(get_test_filepath("100_random_mpc_ADES.csv"), "csv")
-    data = csv_reader.read_rows()
+    reader = Obs80DataReader(get_test_filepath("03666_no_bad_dates.txt"))
+    data = reader.read_rows()
 
     observatory = LayupObservatory()
     # Check that the cache is empty
@@ -196,22 +197,78 @@ def test_layup_observatory_obscodes_to_barycentric():
         ("vz", "<f8"),
     ]
 
-    # The test file has observatories with no set barycentric positions
-    # so we should expect NaNs for all of these
-
-    # Check that fail_on_missing=True raises an error
-    with pytest.raises(ValueError):
-        _ = observatory.obscodes_to_barycentric(data, fail_on_missing=True)
-
-    # Drop nans from the results
-    nan_free_data = processed_data[~np.isnan(processed_data["x"])]
-    assert len(nan_free_data) > 0
-    assert len(nan_free_data) != len(data)
-
     # Check that the cache is populated
     assert len(observatory.cached_obs) > 0
     for key in observatory.cached_obs:
         assert len(observatory.cached_obs[key]) > 0
+
+
+def test_moving_observatory_coordinate_cache():
+    """Test that populate_observatory correctly populates the cache, is consistent across calls, and raises errors when required fields are missing."""
+    observatory = LayupObservatory()
+
+    # Define test data
+    obscode = "C51"  # WISE (space observatory)
+    ets = np.array([2451545.0, 2451546.0, 2451547.0])  # Example ephemeris times
+    row_dtype = [
+        ("obs_geo_x", "<f8"),
+        ("obs_geo_y", "<f8"),
+        ("obs_geo_z", "<f8"),
+    ]
+    data = np.array(
+        [
+            (1.0, 2.0, 3.0),
+            (4.0, 5.0, 6.0),
+            (7.0, 8.0, 9.0),
+        ],
+        dtype=row_dtype,
+    )
+    for i in range(len(data)):
+        row = data[i]
+        et = ets[i]
+
+        # Test errors when required fields are missing
+        row_missing_x = np.array((np.nan, 2.0, 3.0), dtype=row_dtype)
+        with pytest.raises(ValueError):
+            observatory.populate_observatory(obscode, et, row_missing_x)
+
+        row_missing_y = np.array((1.0, np.nan, 3.0), dtype=row_dtype)
+        with pytest.raises(ValueError):
+            observatory.populate_observatory(obscode, et, row_missing_y)
+
+        row_missing_z = np.array((1.0, 2.0, np.nan), dtype=row_dtype)
+        with pytest.raises(ValueError):
+            observatory.populate_observatory(obscode, et, row_missing_z)
+
+        # Test errors when the observatory position columns are missing
+        for i in range(3):
+            missing_col_dtype = row_dtype.copy()
+            # Replace the ith observatory column with an unexpected column
+            missing_col_dtype[i] = ("bad", "<f8")
+            row_missing_col = np.array((1.0, 2.0, 3.0), dtype=missing_col_dtype)
+            with pytest.raises(ValueError):
+                observatory.populate_observatory(obscode, et, row_missing_col)
+
+        # Test observatory coordinate caches are empty for the obscode and epoch
+        expected_cache_key = f"{obscode}_{et}"
+        assert None in observatory.ObservatoryXYZ[obscode]
+        assert expected_cache_key not in observatory.ObservatoryXYZ
+
+        # Test cache population
+        cache_key = observatory.populate_observatory(obscode, et, row)
+        assert cache_key == expected_cache_key
+        assert expected_cache_key in observatory.ObservatoryXYZ
+        assert np.allclose(observatory.ObservatoryXYZ[cache_key], list(row))
+
+        # Test consistency across multiple calls
+        cache_key_2 = observatory.populate_observatory(obscode, et, row)
+        assert expected_cache_key == cache_key_2
+        assert np.allclose(observatory.ObservatoryXYZ[cache_key_2], list(row))
+
+        # Test error when coordinates are inconsistent across epochs
+        row_inconsistent = np.array((10.0, 12.0, 13.0), dtype=row_dtype)
+        with pytest.raises(ValueError):
+            observatory.populate_observatory(obscode, et, row_inconsistent)
 
 
 def test_get_format():
@@ -396,7 +453,7 @@ def test_constant_results_with_repeated_calls():
     processed_data = observatory.obscodes_to_barycentric(data)
     processed_data_2 = observatory.obscodes_to_barycentric(data)
 
-    for i, j in zip(processed_data, processed_data_2):
+    for i, j in zip(processed_data, processed_data_2, strict=False):
         if not np.isnan(i["x"]):
             assert_array_equal(i, j)
 

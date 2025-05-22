@@ -57,7 +57,7 @@ class CSVDataReader(ObjectDataReader):
         super().__init__(**kwargs)
         self.filename = filename
 
-        if sep not in VALID_FILE_FORMATS.keys():
+        if sep not in VALID_FILE_FORMATS:
             logger = logging.getLogger(__name__)
             logger.error(f"ERROR: Unrecognized delimiter ({sep})")
             sys.exit(f"ERROR: Unrecognized delimiter ({sep})")
@@ -225,6 +225,10 @@ class CSVDataReader(ObjectDataReader):
                 [i for i in range(self.header_row_index + 1, self.header_row_index + 1 + block_start)]
             )
 
+        fixed_dtypes = {self._primary_id_column_name: str}
+        if self._station_column_name is not None:
+            fixed_dtypes[self._station_column_name] = str
+
         # Read in the data from self.filename, extracting the header row, reading
         # in `block_size` rows, and skipping the `skip_rows`.
         res_df = pd.read_csv(
@@ -232,11 +236,12 @@ class CSVDataReader(ObjectDataReader):
             sep=self.data_separator,
             skiprows=skip_rows,
             nrows=block_size,
-            dtype={self._primary_id_column_name: str},
+            dtype=fixed_dtypes,
         )
 
         res_df.columns = [col.strip() for col in res_df.columns]
         records = res_df.to_records(index=False)
+
         return np.array(records, dtype=records.dtype.descr)
 
     def _build_id_map(self):
