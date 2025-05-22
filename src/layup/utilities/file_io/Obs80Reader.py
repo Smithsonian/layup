@@ -97,7 +97,7 @@ class Obs80DataReader(ObjectDataReader):
         # The output data type for the structured array of the obs80 reader
         self.output_dtype = [
             (self._primary_id_column_name, "U10"),
-            ("obstime", "U25"),
+            ("obsTime", "U25"),
             ("ra", "f8"),
             ("dec", "f8"),
             ("mag", "f4"),
@@ -115,7 +115,7 @@ class Obs80DataReader(ObjectDataReader):
             "ObjID": slice(0, 5),
             "provID": slice(5, 12),
             "prg": slice(13, 14),
-            "obstime": slice(15, 32),
+            "obsTime": slice(15, 32),
             "ra": slice(32, 44),
             "dec": slice(44, 56),
             "mag": slice(65, 70),
@@ -393,7 +393,7 @@ class Obs80DataReader(ObjectDataReader):
         # obj_name = line[self.col_names["obj_name"]].strip()
         # prov_id = line[self.col_names["prov_id"]].strip()
         prg = line[self.col_names["prg"]].strip()
-        obstime = line[self.col_names["obstime"]].strip()
+        obstime = line[self.col_names["obsTime"]].strip()
         ra = line[self.col_names["ra"]].strip()
         dec = line[self.col_names["dec"]].strip()
         mag = line[self.col_names["mag"]].strip()

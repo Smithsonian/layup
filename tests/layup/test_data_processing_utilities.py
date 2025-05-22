@@ -183,7 +183,7 @@ def test_layup_observatory_obscodes_to_barycentric():
     assert_equal(len(observatory.cached_obs), 0)
 
     # Add an et column to the data representing the ephemeris time in tdb
-    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
+    et_col = np.array([spice.str2et(row["obsTime"]) for row in data], dtype="<f8")
     data = rfn.append_fields(data, "et", et_col, usemask=False)
 
     processed_data = observatory.obscodes_to_barycentric(data)
