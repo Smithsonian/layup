@@ -385,10 +385,10 @@ class LayupObservatory(SorchaObservatory):
                 # If the coordinates are not the same, raise an error
                 if not np.allclose(self.ObservatoryXYZ[obscode_cache_key], coords):
                     raise ValueError(
-                        f"Observatory {obscode} has different coordinates at different epochs. "
-                        f"Coordinates at epoch {et} are {coords}, but at epoch {self.ObservatoryXYZ[obscode_cache_key]}."
+                        f"Observatory {obscode} has different coordinates reported at the same epoch."
+                        f"Coordinates at epoch {et} previously were {self.ObservatoryXYZ[obscode_cache_key]}, but are now {coords}."
                     )
-
+            # Save the coordinates in the cache for the given obscode and epoch
             self.ObservatoryXYZ[obscode_cache_key] = coords
         return obscode_cache_key
 
