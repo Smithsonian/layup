@@ -41,6 +41,7 @@ REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
     "ra",
     "dec",
     "obstime",
+    "stn",
 ]
 
 # The list of required column names for the guessed orbits (if provided).
