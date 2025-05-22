@@ -2,6 +2,9 @@ import numpy as np
 
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
+AU_M = 149597870700
+AU_KM = AU_M / 1000.0
+
 
 def two_line_row_start(line):
     """Checks if the MPC Obs80 line is the first line of a two-line row format."""
@@ -422,12 +425,21 @@ class Obs80DataReader(ObjectDataReader):
                 raise ValueError(
                     f"Observatory codes do not match in the second line provided for the observatory position. {obs_code} and {second_line[77:80].rstrip()}"
                 )
-            flag = second_line[32:34].strip()
-            if flag in ["1", "2"]:
+            unit_flag = second_line[32:34].strip()
+            if unit_flag in ["1", "2"]:
                 # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
                 obs_geo_x = float(second_line[34] + second_line[35:45].strip())
                 obs_geo_y = float(second_line[46] + second_line[47:57].strip())
                 obs_geo_z = float(second_line[58] + second_line[59:69].strip())
+                if unit_flag == "2":
+                    # Convert from AU to km
+                    obs_geo_x *= AU_KM
+                    obs_geo_y *= AU_KM
+                    obs_geo_z *= AU_KM
+            else:
+                raise ValueError(
+                    f"Unknown observatory position unit flag '{unit_flag}' in the second line of obs80 data. Should be '1' (km) or '2' (AU)."
+                )
 
         return (
             obj_id,
