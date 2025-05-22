@@ -35,6 +35,20 @@ from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
 
+# The list of required input column names for the provided observations to be fit.
+# Note: This should not include the primary id column name.
+REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
+    "ra",
+    "dec",
+    "obstime",
+]
+
+# The list of required column names for the guessed orbits (if provided).
+# Note: This should now include the primary id column name.
+REQUIRED_INPUT_GUESS_COLUMN_NAMES = [
+    "epochMJD_TDB",
+]
+
 INPUT_FORMAT_READERS = {
     "MPC80col": (Obs80DataReader, None),
     "ADES_csv": (CSVDataReader, "csv"),
@@ -765,7 +779,12 @@ def orbitfit_cli(
     if reader_class is None:
         logger.error(f"File format {input_file_format} is not supported")
 
-    reader = reader_class(input_file, primary_id_column_name=_primary_id_column_name, sep=separator)
+    reader = reader_class(
+        input_file,
+        primary_id_column_name=_primary_id_column_name,
+        sep=separator,
+        required_columns=REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES,
+    )
     if guess_file is not None:
         # Check that the guess file exists
         if not guess_file.exists():
@@ -777,7 +796,12 @@ def orbitfit_cli(
             raise ValueError("Guess file cannot be the same as the input file")
         # Set up our initial guess file reader. Assumes a matching file format and primary id column name
         # as the input file.
-        guess_reader = reader_class(guess_file, primary_id_column_name=_primary_id_column_name, sep=separator)
+        guess_reader = reader_class(
+            guess_file,
+            primary_id_column_name=_primary_id_column_name,
+            sep=separator,
+            required_columns=REQUIRED_INPUT_GUESS_COLUMN_NAMES,
+        )
 
     chunks = create_chunks(reader, chunk_size)
 

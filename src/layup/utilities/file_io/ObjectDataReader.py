@@ -244,12 +244,12 @@ class ObjectDataReader(abc.ABC):
                 logger.error(outstr)
                 sys.exit(outstr)
 
-            # Check that the expected columns are present in this chunk
-            for col in self._required_columns:
-                if col not in input_table.dtype.names:
-                    outstr = f"ERROR: While reading table {self.filename}. Required column {col} not found."
-                    logger.error(outstr)
-                    sys.exit(outstr)
+        # Check that the expected columns are present in this chunk
+        for col in self._required_columns:
+            if col not in input_table.dtype.names:
+                outstr = f"ERROR: While reading table {self.filename}. Required column {col} not found."
+                logger.error(outstr)
+                sys.exit(outstr)
 
         # Check for NaNs or nulls.
         if kwargs.get("disallow_nan", False):  # pragma: no cover
