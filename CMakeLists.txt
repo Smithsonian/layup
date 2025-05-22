@@ -27,10 +27,16 @@ add_custom_target(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+execute_process(
+  COMMAND cmake
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/autodiff
+)
+
 include_directories(
   include/eigen
   include/assist/src
   include/rebound/src
+  include/autodiff
 )
 
 link_directories(
