@@ -104,3 +104,49 @@ def test_external_predict(tmpdir):
     # make sure we generated a prediction for each object at every time step
     n_uniq_ids = sum([1 if id else 0 for id in set(data["provID"])])
     assert len(predictions) == n_uniq_ids * len(times)
+
+
+@pytest.mark.skip
+def test_predict_output(tmpdir):
+    """Compare the output of predict (as run from the command line) against an
+    expected output."""
+
+    import subprocess
+    from pathlib import Path
+
+    os.chdir(tmpdir)
+
+    start = "2025 MAY 18 00:00:00"
+    test_filename = "holman.csv"
+    input_file = Path(get_test_filepath(test_filename))
+    temp_out_file = f"test_output_{input_file.stem}"
+
+    result = subprocess.run(
+        ["layup", "predict", str(input_file), "-f", "-o", str(temp_out_file), "-s", start]
+    )
+
+    assert result.returncode == 0
+
+    result_file = Path(f"{tmpdir}/{temp_out_file}.csv")
+    assert result_file.exists
+
+    # Create a new CSV reader to read in our output file
+    output_csv_reader = CSVDataReader(str(result_file), "csv", primary_id_column_name="provID")
+    output_data = output_csv_reader.read_rows()
+
+    # Read in the known output
+    known_output_file = get_test_filepath("holman_expected_predict.csv")
+    known_output_csv_reader = CSVDataReader(known_output_file, "csv", primary_id_column_name="provID")
+    known_data = known_output_csv_reader.read_rows()
+
+    assert np.all(output_data["epoch_UTC"] == known_data["epoch_UTC"])
+    assert np.allclose(output_data["epoch_JD_TDB"], known_data["epoch_JD_TDB"])
+    assert np.allclose(output_data["ra_deg"], known_data["ra_deg"])
+    assert np.allclose(output_data["dec_deg"], known_data["dec_deg"])
+    assert np.allclose(output_data["rho_x"], known_data["rho_x"])
+    assert np.allclose(output_data["rho_y"], known_data["rho_y"])
+    assert np.allclose(output_data["rho_z"], known_data["rho_z"])
+    assert np.allclose(output_data["obs_cov0"], known_data["obs_cov0"])
+    assert np.allclose(output_data["obs_cov1"], known_data["obs_cov1"])
+    assert np.allclose(output_data["obs_cov2"], known_data["obs_cov2"])
+    assert np.allclose(output_data["obs_cov3"], known_data["obs_cov3"])
