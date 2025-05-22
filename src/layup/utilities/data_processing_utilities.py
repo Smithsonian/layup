@@ -316,10 +316,81 @@ class LayupObservatory(SorchaObservatory):
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
 
-        # A dictionary of observatory coordinates for observatories that do not have a fixed position
-        # of the form {obscode: {et: (x, y, z)}}. This allows us to catch errors where multiple epochs
-        # are provided for the same observatory and the coordinates are not the same.
-        self.moving_obs_coords = {}
+    def create_obscode_cache_key(self, obscode, et):
+        """
+        Create a cache key for the observatory coordinates.
+
+        Parameters
+        ----------
+        obscode : str
+            The observatory code.
+        et : float
+            The ephemeris time.
+
+        Returns
+        -------
+        str
+            The cache key for the observatory coordinates.
+        """
+        return f"{obscode}_{et}"
+
+    def populate_observatory(self, obscode, et, data):
+        """
+        Populate the observatory coordinates for a given observatory code and ephemeris time and
+        provide the key that can be used to access the coordinates for the observatory in the cache
+        at the given epoch. This is used to generalize the case where the observatory
+        does not have a fixed position and the coordinates are provided in the data.
+
+        Parameters
+        ----------
+        obscode : str
+            The observatory code.
+        et : float
+            The ephemeris time.
+        data : numpy structured array
+            A row of the structured array of the orbit data to process.
+
+        Returns
+        -------
+        obscode_cache_key : str
+            The cache key for the observatory coordinates at the given epoch.
+        """
+        obscode_cache_key = obscode
+        coords = self.ObservatoryXYZ.get(obscode, None)
+        # Update the cached coordinates and obscode_cache_key for the case of a moving observatory
+        if coords is None or None in coords or np.isnan(coords).any():
+            obscode_cache_key = self.create_obscode_cache_key(obscode, et)
+            # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
+            if "obs_geo_x" not in data.dtype.names:
+                raise ValueError(
+                    f"The data must have a 'obs_geo_x' field for non-fixed position observatory {obscode}."
+                )
+            if "obs_geo_y" not in data.dtype.names:
+                raise ValueError(
+                    f"The data must have a 'obs_geo_y' field for non-fixed position observatory {obscode}."
+                )
+            if "obs_geo_z" not in data.dtype.names:
+                raise ValueError(
+                    f"The data must have a 'obs_geo_z' field for non-fixed postion observatory {obscode}."
+                )
+            coords = np.array([data["obs_geo_x"], data["obs_geo_y"], data["obs_geo_z"]])
+            # If any of the coordinates are None or NaN, raise an error
+            if coords is None or np.isnan(coords).any():
+                raise ValueError(f"Observatory {obscode} has invalid coordinates at epoch {et}: {coords}")
+
+            if obscode_cache_key not in self.ObservatoryXYZ:
+                # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
+                self.ObservatoryXYZ[obscode_cache_key] = coords
+            else:
+                # If the coordinates are not the same, raise an error
+                if not np.allclose(self.ObservatoryXYZ[obscode_cache_key], coords):
+                    raise ValueError(
+                        f"Observatory {obscode} has different coordinates at different epochs. "
+                        f"Coordinates at epoch {et} are {coords}, but at epoch {self.ObservatoryXYZ[obscode_cache_key]}."
+                    )
+
+            self.ObservatoryXYZ[obscode_cache_key] = coords
+        return obscode_cache_key
 
     def obscodes_to_barycentric(self, data):
         """
@@ -345,41 +416,16 @@ class LayupObservatory(SorchaObservatory):
         res = []
         for row in data:
             obscode = row["stn"]
-            obscode_cache_key = obscode
             if not isinstance(obscode, str):
                 raise ValueError(
                     f"observatory code {obscode} is not a string and instead has type {type(obscode)}"
                 )
             et = row["et"]
-            coords = self.ObservatoryXYZ.get(obscode, None)
-            # Update the cached coordinates and obscode_cache_key for the case of a moving observatory
-            if coords is None or None in coords or np.isnan(coords).any():
-                obscode_cache_key = f"{obscode}_{et}"
-                # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
-                if "obs_geo_x" not in row.dtype.names:
-                    raise ValueError(
-                        f"The data must have a 'obs_geo_x' field for non-fixed position observatory {obscode}."
-                    )
-                if "obs_geo_y" not in row.dtype.names:
-                    raise ValueError(
-                        f"The data must have a 'obs_geo_y' field for non-fixed position observatory {obscode}."
-                    )
-                if "obs_geo_z" not in row.dtype.names:
-                    raise ValueError(
-                        f"The data must have a 'obs_geo_z' field for non-fixed postion observatory {obscode}."
-                    )
-                coords = np.array([row["obs_geo_x"], row["obs_geo_y"], row["obs_geo_z"]])
-                if obscode_cache_key not in self.moving_obs_coords:
-                    self.moving_obs_coords[obscode_cache_key] = coords
-                else:
-                    # If the coordinates are not the same, raise an error
-                    if not np.allclose(self.moving_obs_coords[obscode_cache_key], coords):
-                        raise ValueError(
-                            f"Observatory {obscode} has different coordinates at different epochs. "
-                            f"Coordinates at epoch {et} are {coords}, but at epoch {self.moving_obs_coords[obscode_cache_key]}."
-                        )
-                # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
-                self.ObservatoryXYZ[obscode_cache_key] = coords
+
+            # Check if the observatory code is valid and populate the observatory coordinates
+            # in the cache if it is not already present (such as for a moving observatory)
+            obscode_cache_key = self.populate_observatory(obscode, et, row)
+
             # Use the observatory position to calculate the barycentric coordinates at the observed epoch
             if obscode_cache_key not in self.cached_obs:
                 self.cached_obs[obscode_cache_key] = {}
