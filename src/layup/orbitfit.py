@@ -494,7 +494,7 @@ def _orbitfit(
     else:
         # sort the observations by the obstime if specified by the user
         if sort_array:
-            data = np.sort(data, order="obstime", kind="mergesort")
+            data = np.sort(data, order="obsTime", kind="mergesort")
 
         # Check if certain columns are present in the data
         column_names = data.dtype.names
@@ -515,7 +515,7 @@ def _orbitfit(
                 d["ra"], d["dec"] = debias(
                     ra=d["ra"],
                     dec=d["dec"],
-                    epoch_jd_tdb=convert_tdb_date_to_julian_date(d["obstime"], cache_dir),
+                    epoch_jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
                     catalog=d["astcat"] if astcat_column_present else None,
                     bias_dict=bias_dict,
                 )
@@ -533,7 +533,7 @@ def _orbitfit(
                     d["dec"] * np.pi / 180.0,
                     d["rarate"],
                     d["decrate"],
-                    convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
+                    convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),  # Convert obstime to JD TDB
                     [d["x"], d["y"], d["z"]],  # Barycentric position
                     [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
                 )
@@ -542,7 +542,7 @@ def _orbitfit(
                     str(d[primary_id_column_name]),
                     d["ra"] * np.pi / 180.0,
                     d["dec"] * np.pi / 180.0,
-                    convert_tdb_date_to_julian_date(d["obstime"], cache_dir),  # Convert obstime to JD TDB
+                    convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),  # Convert obstime to JD TDB
                     [d["x"], d["y"], d["z"]],  # Barycentric position
                     [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
                 )
@@ -550,7 +550,7 @@ def _orbitfit(
             if weight_data:
                 data_weight = data_weight_Veres2017(
                     obsCode=d["stn"],
-                    jd_tdb=convert_tdb_date_to_julian_date(d["obstime"], cache_dir),
+                    jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
                     catalog=d["astcat"] if astcat_column_present else None,
                     program=d["program"] if program_column_present else None,
                 )
@@ -566,7 +566,7 @@ def _orbitfit(
         else:
             kernels_loc = str(cache_dir)
 
-        jds = convert_tdb_date_to_julian_date(data["obstime"])
+        jds = convert_tdb_date_to_julian_date(data["obsTime"])
         sequence = _build_sequence(jds, sep_dt=90.0)
 
         # Perform the orbit fitting
@@ -642,7 +642,7 @@ def orbitfit(
 
     # The units of et are seconds (from J2000). This new column is used by
     # data_processing_utilities.obscodes_to_barycentric.
-    et_col = np.array([spice.str2et(row["obstime"]) for row in data], dtype="<f8")
+    et_col = np.array([spice.str2et(row["obsTime"]) for row in data], dtype="<f8")
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
