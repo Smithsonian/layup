@@ -24,6 +24,7 @@ from layup.utilities.file_io.file_output import write_csv
 # primary id column name.
 REQUIRED_INPUT_COLUMN_NAMES = [
     "epochMJD_TDB",
+    "FORMAT",
 ]
 
 

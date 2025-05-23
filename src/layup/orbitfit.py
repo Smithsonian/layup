@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 # The list of required input column names for the provided observations to be fit.
 # Note: This should not include the primary id column name.
 REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
-    "ra",
-    "dec",
+    ("ra", "raRate"),  # Either `ra` or `raRate` must be in the file
+    ("dec", "decRate"),  # Either `dec` or `decRate` must be in the file
     "obstime",
     "stn",
 ]
@@ -48,6 +48,7 @@ REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
 # Note: This should now include the primary id column name.
 REQUIRED_INPUT_GUESS_COLUMN_NAMES = [
     "epochMJD_TDB",
+    "FORMAT",
 ]
 
 INPUT_FORMAT_READERS = {

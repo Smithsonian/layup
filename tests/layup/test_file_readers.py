@@ -93,6 +93,24 @@ def test_required_columns():
     assert set(required_columns) == set(rows.dtype.names)
 
 
+def test_required_columns_with_options():
+    """When we pass a tuple of possible values, ensure that the expected ones
+    are found."""
+    required_columns = [
+        "ObjID",
+        ("x", "foo"),
+        ("bar", "y"),
+    ]
+
+    csv_reader = CSVDataReader(
+        get_test_filepath("CART.csv"),
+        required_columns=required_columns,
+    )
+
+    rows = csv_reader.read_rows()
+    assert len(rows) == 5
+
+
 def test_data_reader_raises_when_missing_columns():
     """Ensure that ObjectReader will raise an error defined required columns are
     missing."""
@@ -103,6 +121,22 @@ def test_data_reader_raises_when_missing_columns():
             "ObjID",
             "FORMAT",
             "DOES_NOT_EXIST",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        _ = csv_reader.read_rows()
+
+
+def test_data_reader_raises_when_missing_column_options():
+    """Ensure that ObjectReader will raise an error defined required columns (with
+    multiple options are missing."""
+
+    csv_reader = CSVDataReader(
+        get_test_filepath("CART.csv"),
+        required_columns=[
+            "ObjID",
+            "FORMAT",
+            ("DOES_NOT_EXIST", "ALSO_DOES_NOT_EXIST"),
         ],
     )
     with pytest.raises(SystemExit):
