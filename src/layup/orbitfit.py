@@ -93,8 +93,8 @@ def _use_star_astrometry(data):
 
     Notes
     -----
-    The units are a bit odd here. starra and stardec are in degrees. However, deltara
-    and deltadec are in arcseconds. Thus will either convert to degrees or radians
+    The units are a bit odd here. raStar and decStar are in degrees. However, deltaRA
+    and deltaDec are in arcseconds. Thus will either convert to degrees or radians
     depending on the context.
 
     For more details see the ADES description here:
@@ -110,8 +110,8 @@ def _use_star_astrometry(data):
     data : numpy structured array
         The object data with the ra and dec values replaced by the star's astrometry.
     """
-    data["ra"] = data["starra"] + (data["deltra"] / 3600) / np.cos(data["stardec"] * np.pi / 180.0)
-    data["dec"] = data["stardec"] + (data["deltadec"] / 3600)
+    data["ra"] = data["raStar"] + (data["deltRA"] / 3600) / np.cos(data["decStar"] * np.pi / 180.0)
+    data["dec"] = data["decStar"] + (data["deltaDec"] / 3600)
     return data
 
 
