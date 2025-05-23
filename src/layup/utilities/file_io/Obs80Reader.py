@@ -108,9 +108,9 @@ class Obs80DataReader(ObjectDataReader):
             ("stn", "U3"),
             ("cat", "U1"),
             ("prg", "U1"),
-            ("obs_geo_x", "f8"),
-            ("obs_geo_y", "f8"),
-            ("obs_geo_z", "f8"),
+            ("pos1", "f8"),
+            ("pos2", "f8"),
+            ("pos3", "f8"),
         ]
 
         # define the column slices for the obs80 format

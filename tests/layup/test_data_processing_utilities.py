@@ -176,6 +176,9 @@ def test_parallelization(n_rows, n_workers):
 def test_layup_observatory_obscodes_to_barycentric():
     """Test that we can process the obscodes data."""
     reader = Obs80DataReader(get_test_filepath("03666_no_bad_dates.txt"))
+    # reader = CSVDataReader(
+    #    get_test_filepath("holman_data_with_sats_occ.csv"), primary_id_column_name="provid"
+    # )
     data = reader.read_rows()
 
     observatory = LayupObservatory()
@@ -211,9 +214,9 @@ def test_moving_observatory_coordinate_cache():
     obscode = "C51"  # WISE (space observatory)
     ets = np.array([2451545.0, 2451546.0, 2451547.0])  # Example ephemeris times
     row_dtype = [
-        ("obs_geo_x", "<f8"),
-        ("obs_geo_y", "<f8"),
-        ("obs_geo_z", "<f8"),
+        ("pos1", "<f8"),
+        ("pos2", "<f8"),
+        ("pos3", "<f8"),
     ]
     data = np.array(
         [
