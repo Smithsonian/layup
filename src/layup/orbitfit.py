@@ -498,9 +498,9 @@ def _orbitfit(
 
         # Check if certain columns are present in the data
         column_names = data.dtype.names
-        astcat_column_present = "astcat" in column_names
+        g_column_present = "astCat" in column_names
         program_column_present = "program" in column_names
-        position_rates_columns_present = all(col in column_names for col in ["rarate", "decrate"])
+        position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
 
         # Accommodate occultation measurements. These measurements are implied when
         # the "ra" and "dec" columns are None. In this case, we will use the "starra"
@@ -516,7 +516,7 @@ def _orbitfit(
                     ra=d["ra"],
                     dec=d["dec"],
                     epoch_jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
-                    catalog=d["astcat"] if astcat_column_present else None,
+                    catalog=d["astCat"] if astcat_column_present else None,
                     bias_dict=bias_dict,
                 )
 
@@ -526,13 +526,13 @@ def _orbitfit(
         # radians.
         observations = []
         for d in data:
-            if position_rates_columns_present and (not np.isnan(d["rarate"]) and not np.isnan(d["decrate"])):
+            if position_rates_columns_present and (not np.isnan(d["raRate"]) and not np.isnan(d["decRate"])):
                 o = Observation.from_streak_with_id(
                     str(d[primary_id_column_name]),
                     d["ra"] * np.pi / 180.0,
                     d["dec"] * np.pi / 180.0,
-                    d["rarate"],
-                    d["decrate"],
+                    d["raRate"],
+                    d["decRate"],
                     convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),  # Convert obstime to JD TDB
                     [d["x"], d["y"], d["z"]],  # Barycentric position
                     [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
@@ -551,7 +551,7 @@ def _orbitfit(
                 data_weight = data_weight_Veres2017(
                     obsCode=d["stn"],
                     jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
-                    catalog=d["astcat"] if astcat_column_present else None,
+                    catalog=d["astCat"] if astcat_column_present else None,
                     program=d["program"] if program_column_present else None,
                 )
 
