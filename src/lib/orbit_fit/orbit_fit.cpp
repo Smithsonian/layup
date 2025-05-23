@@ -56,6 +56,12 @@
 #include "../gauss/gauss.cpp"
 #include "predict.cpp"
 
+#include <autodiff/forward/real.hpp>
+#include <autodiff/forward/real/eigen.hpp>
+
+#include <autodiff/forward/dual.hpp>
+//using namespace autodiff;
+
 using std::cout;
 namespace py = pybind11;
 
@@ -172,6 +178,60 @@ namespace orbit_fit
             times.push_back(jd_tdb);
         }
     }
+
+    autodiff::VectorXreal stumpff(autodiff::real x){
+    /*
+    Computes the Stumpff function c_k(x) for k = 0, 1, 2, 3
+
+    Parameters
+    ----------
+    x : float
+        Argument of the Stumpff function
+
+    Returns
+    ---------
+    Stumpff struct
+    c_0(x) : float
+    c_1(x) : float
+    c_2(x) : float
+    c_3(x) : float
+    */
+    
+	int n = 0;
+	double xm = 0.1;
+
+	while(sqrt(x*x) > xm){
+	    n += 1;
+	    x /= 4;
+	}
+
+	autodiff::real c2 = (
+		   1 - x * (1 - x * (1 - x * (1 - x * (1 - x * (1 - x / 182.0) / 132.0) / 90.0) / 56.0) / 30.0) / 12.0
+		   ) / 2.0;
+	autodiff::real c3 = (
+		   1 - x * (1 - x * (1 - x * (1 - x * (1 - x * (1 - x / 210.0) / 156.0) / 110.0) / 72.0) / 42.0) / 20.0
+		   ) / 6.0;
+
+	autodiff::real c1 = 1.0 - x * c3;
+	autodiff::real c0 = 1.0 - x * c2;
+
+	while(n > 0){
+	    n -= 1;
+	    c3 = (c2 + c0 * c3) / 4.0;
+	    c2 = c1 * c1 / 2.0;
+	    c1 = c0 * c1;
+	    c0 = 2.0 * c0 * c0 - 1.0;
+	}
+
+	autodiff::VectorXreal res(4);
+	res[0] = c0;
+	res[1] = c1;
+	res[2]= c2;
+	res[3] = c3;
+
+	return res;
+    }
+    
 
     void compute_single_residuals(struct assist_ephem *ephem,
                                   struct assist_extras *ax,
