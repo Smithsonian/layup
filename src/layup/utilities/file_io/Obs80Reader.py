@@ -105,9 +105,11 @@ class Obs80DataReader(ObjectDataReader):
             ("stn", "U3"),
             ("cat", "U1"),
             ("prg", "U1"),
-            ("obs_geo_x", "f8"),
-            ("obs_geo_y", "f8"),
-            ("obs_geo_z", "f8"),
+            ("sys", "U7"),
+            ("ctr", "i4"),
+            ("pos1", "f8"),
+            ("pos2", "f8"),
+            ("pos3", "f8"),
         ]
 
         # define the column slices for the obs80 format
@@ -412,6 +414,7 @@ class Obs80DataReader(ObjectDataReader):
 
         # Process the observatory position if provided.
         obs_geo_x, obs_geo_y, obs_geo_z = np.nan, np.nan, np.nan
+        ades_sys = ""
         if second_line is not None:
             # Check that the second line is long enough to contain the observatory position.
             if len(second_line) < 80:
@@ -422,12 +425,17 @@ class Obs80DataReader(ObjectDataReader):
                 raise ValueError(
                     f"Observatory codes do not match in the second line provided for the observatory position. {obs_code} and {second_line[77:80].rstrip()}"
                 )
-            flag = second_line[32:34].strip()
-            if flag in ["1", "2"]:
+            unit_flag = second_line[32:34].strip()
+            if unit_flag in ["1", "2"]:
+                ades_sys = "ICRF_KM" if unit_flag == "1" else "ICRF_AU"
                 # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
                 obs_geo_x = float(second_line[34] + second_line[35:45].strip())
                 obs_geo_y = float(second_line[46] + second_line[47:57].strip())
                 obs_geo_z = float(second_line[58] + second_line[59:69].strip())
+            else:
+                raise ValueError(
+                    f"Unknown observatory position unit flag '{unit_flag}' in the second line of obs80 data. Should be '1' (km) or '2' (AU)."
+                )
 
         return (
             obj_id,
@@ -439,6 +447,8 @@ class Obs80DataReader(ObjectDataReader):
             obs_code,
             cat,
             prg,
+            ades_sys,
+            399,  # The 'ctr' code for the Earth
             obs_geo_x,
             obs_geo_y,
             obs_geo_z,
