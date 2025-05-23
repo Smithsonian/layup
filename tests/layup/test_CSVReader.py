@@ -475,8 +475,18 @@ def test_CSVReader_stn_as_string():
     )
     all_data = csv_reader.read_rows()
     assert all(isinstance(stn, str) for stn in all_data["stn"])
+    expected_stations = {
+        "568",
+        "950",
+        "304",
+        "695",
+        "705",
+        "250",
+    }
+    assert set(all_data["stn"]) == expected_stations
 
     objs = ["2000 FV53", "2003 BG91", "2003 BF91", "2003 BH91"]
     obj_data = csv_reader.read_objects(objs)
     assert len(obj_data) == (len(all_data))
-    assert all(isinstance(stn, str) for stn in all_data["stn"])
+    assert all(isinstance(stn, str) for stn in obj_data["stn"])
+    assert set(obj_data["stn"]) == expected_stations
