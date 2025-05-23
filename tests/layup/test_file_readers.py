@@ -98,8 +98,10 @@ def test_required_columns_with_options():
     are found."""
     required_columns = [
         "ObjID",
-        ("x", "foo"),
-        ("bar", "y"),
+        (
+            set(["foo", "bar"]),  # This will not be found
+            set(["x", "y"]),  # This set of columns should be found
+        ),
     ]
 
     csv_reader = CSVDataReader(
@@ -136,7 +138,7 @@ def test_data_reader_raises_when_missing_column_options():
         required_columns=[
             "ObjID",
             "FORMAT",
-            ("DOES_NOT_EXIST", "ALSO_DOES_NOT_EXIST"),
+            (set(["DOES_NOT_EXIST", "ALSO_DOES_NOT_EXIST"]),),
         ],
     )
     with pytest.raises(SystemExit):
