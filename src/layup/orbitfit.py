@@ -38,8 +38,10 @@ logger = logging.getLogger(__name__)
 # The list of required input column names for the provided observations to be fit.
 # Note: This should not include the primary id column name.
 REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
-    ("ra", "raRate"),  # Either `ra` or `raRate` must be in the file
-    ("dec", "decRate"),  # Either `dec` or `decRate` must be in the file
+    (
+        set(["ra", "dec"]),  # Either `ra` and `dec` must be in the file
+        set(["raRate", "decRate"]),  # Or `raRate` and `decRate` must be in the file
+    ),
     "obsTime",
     "stn",
 ]

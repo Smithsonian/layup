@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.data_utilities_for_tests import get_test_filepath
+from layup.utilities.file_io.CSVReader import CSVDataReader
 
 
 @pytest.mark.parametrize("use_cache", [True, False])
@@ -464,3 +464,29 @@ def test_CSVDataReader_primary_col_is_string():
     all_data = csv_reader.read_rows()
     assert all(isinstance(i, str) for i in all_data["ObjID"])
     assert all(all_data["ObjID"] == expected_objids)
+
+
+def test_CSVReader_stn_as_string():
+    """Tests that the station column is read in as a string."""
+    csv_reader = CSVDataReader(
+        get_test_filepath("bernstein_2004_kbos_data_with_sats_occ.csv"),
+        "csv",
+        primary_id_column_name="provID",
+    )
+    all_data = csv_reader.read_rows()
+    assert all(isinstance(stn, str) for stn in all_data["stn"])
+    expected_stations = {
+        "568",
+        "950",
+        "304",
+        "695",
+        "705",
+        "250",
+    }
+    assert set(all_data["stn"]) == expected_stations
+
+    objs = ["2000 FV53", "2003 BG91", "2003 BF91", "2003 BH91"]
+    obj_data = csv_reader.read_objects(objs)
+    assert len(obj_data) == (len(all_data))
+    assert all(isinstance(stn, str) for stn in obj_data["stn"])
+    assert set(obj_data["stn"]) == expected_stations

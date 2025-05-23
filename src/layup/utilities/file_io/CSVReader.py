@@ -192,6 +192,20 @@ class CSVDataReader(ObjectDataReader):
 
         self._primary_id_col_index = column_names.index(self._primary_id_column_name)
 
+    def _get_fixed_dtypes(self):
+        """Get a dictionary of the fixed dtypes for the columns in the CSV file.
+
+        Returns
+        -------
+        fixed_dtypes : dict
+            A dictionary of the fixed dtypes for the columns in the CSV file.
+            The keys are the column names and the values are assigned dtype.
+        """
+        fixed_dtypes = {self._primary_id_column_name: str}
+        if self._station_column_name is not None:
+            fixed_dtypes[self._station_column_name] = str
+        return fixed_dtypes
+
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
         """Reads in a set number of rows from the input.
 
@@ -225,10 +239,6 @@ class CSVDataReader(ObjectDataReader):
                 [i for i in range(self.header_row_index + 1, self.header_row_index + 1 + block_start)]
             )
 
-        fixed_dtypes = {self._primary_id_column_name: str}
-        if self._station_column_name is not None:
-            fixed_dtypes[self._station_column_name] = str
-
         # Read in the data from self.filename, extracting the header row, reading
         # in `block_size` rows, and skipping the `skip_rows`.
         res_df = pd.read_csv(
@@ -236,7 +246,7 @@ class CSVDataReader(ObjectDataReader):
             sep=self.data_separator,
             skiprows=skip_rows,
             nrows=block_size,
-            dtype=fixed_dtypes,
+            dtype=self._get_fixed_dtypes(),
         )
 
         res_df.columns = [col.strip() for col in res_df.columns]
@@ -293,7 +303,7 @@ class CSVDataReader(ObjectDataReader):
             self.filename,
             sep=self.data_separator,
             skiprows=(lambda x: skipped_row[x]),
-            dtype={self._primary_id_column_name: str},
+            dtype=self._get_fixed_dtypes(),
         )
 
         res_df.columns = [col.strip() for col in res_df.columns]
