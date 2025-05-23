@@ -396,6 +396,10 @@ class LayupObservatory(SorchaObservatory):
                     f"Observatory {obscode} has an unsupported center {data['ctr']}. Please use the 399 (Earth)."
                 )
 
+            # Convert the coordinates to km if they are in AU
+            if data["sys"] == "ICRF_AU":
+                coords *= AU_KM
+
             if obscode_cache_key not in self.ObservatoryXYZ:
                 # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
                 self.ObservatoryXYZ[obscode_cache_key] = coords
