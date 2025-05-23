@@ -9,8 +9,6 @@ from layup.utilities.cli_utilities import warn_or_remove_file
 from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 
-logger = logging.getLogger(__name__)
-
 
 def main():
     parser = LayupArgumentParser(
@@ -155,7 +153,11 @@ def execute(args):
     from layup.orbitfit import orbitfit_cli
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
 
-    print("Starting orbitfit...")
+    my_name = __name__.replace("layup_cmdline.", "layup.")
+    print(my_name)
+    logger = logging.getLogger(my_name)
+
+    logger.info("Starting orbitfit...")
 
     if args.g and args.i == "gauss":
         args.i = None

@@ -28,6 +28,8 @@ VALID_FILE_FORMATS = {
 # CAUTION! - Avoid adding a character that would exclude the column header line.
 PRE_HEADER_COMMENT_AND_EXCLUDE_STRINGS = ("#", "!")
 
+logger = logging.getLogger(__name__)
+
 
 class CSVDataReader(ObjectDataReader):
     """A class to read in object data files stored as CSV or whitespace
@@ -58,7 +60,6 @@ class CSVDataReader(ObjectDataReader):
         self.filename = filename
 
         if sep not in VALID_FILE_FORMATS:
-            logger = logging.getLogger(__name__)
             logger.error(f"ERROR: Unrecognized delimiter ({sep})")
             sys.exit(f"ERROR: Unrecognized delimiter ({sep})")
         self.sep = sep
@@ -124,7 +125,7 @@ class CSVDataReader(ObjectDataReader):
 
     def _validate_header_line(self):
         """Read and validate the header line (first line of the file)"""
-        logger = logging.getLogger(__name__)
+
         with open(self.filename) as fh:
             for i, line in enumerate(fh):
                 # If the line starts with a comment character, increment the pre-header line count
@@ -163,7 +164,6 @@ class CSVDataReader(ObjectDataReader):
         header_line : str
             The proposed header line.
         """
-        logger = logging.getLogger(__name__)
 
         # This is a bit ugly, but splitting the header in this way, means that we
         # can generally define the value separators at the top of the file, _and_
