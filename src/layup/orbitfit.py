@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
     ("ra", "raRate"),  # Either `ra` or `raRate` must be in the file
     ("dec", "decRate"),  # Either `dec` or `decRate` must be in the file
-    "obstime",
+    "obsTime",
     "stn",
 ]
 

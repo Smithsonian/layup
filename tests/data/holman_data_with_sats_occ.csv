@@ -1,4 +1,4 @@
-provid,ra,dec,obstime,stn,sys,ctr,pos1,pos2,pos3,astcat,rmsra,rmsdec,rmstime,rmscorr,deltadec,deltara,rastar,decstar,unctime,mag,rmsmag,band
+provid,ra,dec,obsTime,stn,sys,ctr,pos1,pos2,pos3,astCat,rmsRA,rmsDec,rmsTime,rmsCorr,deltaDec,deltaRA,raStar,decStar,uncTime,mag,rmsMag,band
 1979 HP,72.51275,19.82031,1938-11-28T23:19:29.568Z,024,,,,,,UNK,,,,,,,,,,,,
 1979 HP,72.53,19.80,1938-11-28T23:19:40.800Z,024,,,,,,UNK,,,,,,,,,,14.7,,B
 1979 HP,332.37892,-13.42381,1953-10-01T05:38:30.048Z,675,,,,,,UNK,,,,,,,,,,,,
