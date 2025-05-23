@@ -2,9 +2,6 @@ import numpy as np
 
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
-AU_M = 149597870700
-AU_KM = AU_M / 1000.0
-
 
 def two_line_row_start(line):
     """Checks if the MPC Obs80 line is the first line of a two-line row format."""
@@ -108,6 +105,8 @@ class Obs80DataReader(ObjectDataReader):
             ("stn", "U3"),
             ("cat", "U1"),
             ("prg", "U1"),
+            ("sys", "U7"),
+            ("ctr", "i4"),
             ("pos1", "f8"),
             ("pos2", "f8"),
             ("pos3", "f8"),
@@ -415,6 +414,7 @@ class Obs80DataReader(ObjectDataReader):
 
         # Process the observatory position if provided.
         obs_geo_x, obs_geo_y, obs_geo_z = np.nan, np.nan, np.nan
+        ades_sys = ""
         if second_line is not None:
             # Check that the second line is long enough to contain the observatory position.
             if len(second_line) < 80:
@@ -427,15 +427,11 @@ class Obs80DataReader(ObjectDataReader):
                 )
             unit_flag = second_line[32:34].strip()
             if unit_flag in ["1", "2"]:
+                ades_sys = "ICRF_KM" if unit_flag == "1" else "ICRF_AU"
                 # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
                 obs_geo_x = float(second_line[34] + second_line[35:45].strip())
                 obs_geo_y = float(second_line[46] + second_line[47:57].strip())
                 obs_geo_z = float(second_line[58] + second_line[59:69].strip())
-                if unit_flag == "2":
-                    # Convert from AU to km
-                    obs_geo_x *= AU_KM
-                    obs_geo_y *= AU_KM
-                    obs_geo_z *= AU_KM
             else:
                 raise ValueError(
                     f"Unknown observatory position unit flag '{unit_flag}' in the second line of obs80 data. Should be '1' (km) or '2' (AU)."
@@ -451,6 +447,8 @@ class Obs80DataReader(ObjectDataReader):
             obs_code,
             cat,
             prg,
+            ades_sys,
+            399,  # The 'ctr' code for the Earth
             obs_geo_x,
             obs_geo_y,
             obs_geo_z,

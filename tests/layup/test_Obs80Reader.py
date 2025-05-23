@@ -103,6 +103,8 @@ def test_read_obs_pos_units():
     obs_pos_z = 2386.0656
 
     # Check that the observatory position is in km
+    assert data[-5] == "ICRF_KM"
+    assert data[-4] == 399
     assert data[-3] == pytest.approx(obs_pos_x, rel=1e-5)
     assert data[-2] == pytest.approx(obs_pos_y, rel=1e-5)
     assert data[-1] == pytest.approx(obs_pos_z, rel=1e-5)
@@ -110,9 +112,11 @@ def test_read_obs_pos_units():
     # Now try again with a unit flag of 2. This should read the input as AU which is then converted to km.
     au_second_line = second_line[:32] + "2" + second_line[33:]
     au_data = reader.convert_obs80(first_line, au_second_line)
-    assert au_data[-3] == pytest.approx(obs_pos_x * 149597870.7, rel=1e-5)
-    assert au_data[-2] == pytest.approx(obs_pos_y * 149597870.7, rel=1e-5)
-    assert au_data[-1] == pytest.approx(obs_pos_z * 149597870.7, rel=1e-5)
+    assert au_data[-5] == "ICRF_AU"
+    assert au_data[-4] == 399
+    assert au_data[-3] == pytest.approx(obs_pos_x, rel=1e-5)
+    assert au_data[-2] == pytest.approx(obs_pos_y, rel=1e-5)
+    assert au_data[-1] == pytest.approx(obs_pos_z, rel=1e-5)
 
     bad_second_line = second_line[:32] + "3" + second_line[33:]
     with pytest.raises(ValueError):
