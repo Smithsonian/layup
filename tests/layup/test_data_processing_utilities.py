@@ -173,12 +173,15 @@ def test_parallelization(n_rows, n_workers):
     assert_equal(sum(processed_data["cnt"]), len(data))
 
 
-def test_layup_observatory_obscodes_to_barycentric():
+@pytest.mark.parametrize("test_filename", ["holman_data_with_sats_occ.csv", "03666_no_bad_dates.txt"])
+def test_layup_observatory_obscodes_to_barycentric(test_filename):
     """Test that we can process the obscodes data."""
-    reader = Obs80DataReader(get_test_filepath("03666_no_bad_dates.txt"))
-    # reader = CSVDataReader(
-    #    get_test_filepath("holman_data_with_sats_occ.csv"), primary_id_column_name="provid"
-    # )
+    if test_filename.endswith(".txt"):
+        reader = Obs80DataReader(get_test_filepath(test_filename))
+    elif test_filename.endswith(".csv"):
+        reader = CSVDataReader(get_test_filepath(test_filename), primary_id_column_name="provid")
+    else:
+        raise ValueError("Unsupported file format")
     data = reader.read_rows()
 
     observatory = LayupObservatory()
@@ -214,15 +217,17 @@ def test_moving_observatory_coordinate_cache():
     obscode = "C51"  # WISE (space observatory)
     ets = np.array([2451545.0, 2451546.0, 2451547.0])  # Example ephemeris times
     row_dtype = [
+        ("sys", "U7"),
+        ("ctr", "i4"),
         ("pos1", "<f8"),
         ("pos2", "<f8"),
         ("pos3", "<f8"),
     ]
     data = np.array(
         [
-            (1.0, 2.0, 3.0),
-            (4.0, 5.0, 6.0),
-            (7.0, 8.0, 9.0),
+            ("ICRF_KM", 399, 1.0, 2.0, 3.0),
+            ("ICRF_KM", 399, 4.0, 5.0, 6.0),
+            ("ICRF_KM", 399, 7.0, 8.0, 9.0),
         ],
         dtype=row_dtype,
     )
@@ -231,24 +236,33 @@ def test_moving_observatory_coordinate_cache():
         et = ets[i]
 
         # Test errors when required fields are missing
-        row_missing_x = np.array((np.nan, 2.0, 3.0), dtype=row_dtype)
+        row_invalid_sys = np.array(("BAD", 399, 1.0, 2.0, 3.0), dtype=row_dtype)
+        with pytest.raises(ValueError):
+            observatory.populate_observatory(obscode, et, row_invalid_sys)
+
+        row_invalid_ctr = np.array(("ICRF_KM", 398, 1.0, 2.0, 3.0), dtype=row_dtype)
+        with pytest.raises(ValueError):
+            observatory.populate_observatory(obscode, et, row_invalid_ctr)
+
+        row_missing_x = np.array(("ICRF_KM", 399, np.nan, 2.0, 3.0), dtype=row_dtype)
         with pytest.raises(ValueError):
             observatory.populate_observatory(obscode, et, row_missing_x)
 
-        row_missing_y = np.array((1.0, np.nan, 3.0), dtype=row_dtype)
+        row_missing_y = np.array(("ICRF_KM", 399, 1.0, np.nan, 3.0), dtype=row_dtype)
         with pytest.raises(ValueError):
             observatory.populate_observatory(obscode, et, row_missing_y)
 
-        row_missing_z = np.array((1.0, 2.0, np.nan), dtype=row_dtype)
+        row_missing_z = np.array(("ICRF_KM", 399, 1.0, 2.0, np.nan), dtype=row_dtype)
         with pytest.raises(ValueError):
             observatory.populate_observatory(obscode, et, row_missing_z)
 
         # Test errors when the observatory position columns are missing
-        for i in range(3):
+
+        for i in range(5):
             missing_col_dtype = row_dtype.copy()
             # Replace the ith observatory column with an unexpected column
-            missing_col_dtype[i] = ("bad", "<f8")
-            row_missing_col = np.array((1.0, 2.0, 3.0), dtype=missing_col_dtype)
+            missing_col_dtype[i] = ("bad", "O")
+            row_missing_col = np.array(("ICRF_KM", 399, 1.0, 2.0, 3.0), dtype=missing_col_dtype)
             with pytest.raises(ValueError):
                 observatory.populate_observatory(obscode, et, row_missing_col)
 
@@ -261,15 +275,15 @@ def test_moving_observatory_coordinate_cache():
         cache_key = observatory.populate_observatory(obscode, et, row)
         assert cache_key == expected_cache_key
         assert expected_cache_key in observatory.ObservatoryXYZ
-        assert np.allclose(observatory.ObservatoryXYZ[cache_key], list(row))
+        assert np.allclose(observatory.ObservatoryXYZ[cache_key], list(row)[2:])
 
         # Test consistency across multiple calls
         cache_key_2 = observatory.populate_observatory(obscode, et, row)
         assert expected_cache_key == cache_key_2
-        assert np.allclose(observatory.ObservatoryXYZ[cache_key_2], list(row))
+        assert np.allclose(observatory.ObservatoryXYZ[cache_key_2], list(row)[2:])
 
         # Test error when coordinates are inconsistent across epochs
-        row_inconsistent = np.array((10.0, 12.0, 13.0), dtype=row_dtype)
+        row_inconsistent = np.array(("ICRF_KM", 399, 10.0, 12.0, 13.0), dtype=row_dtype)
         with pytest.raises(ValueError):
             observatory.populate_observatory(obscode, et, row_inconsistent)
 
