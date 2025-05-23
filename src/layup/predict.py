@@ -20,6 +20,13 @@ from layup.utilities.data_processing_utilities import (
 from layup.utilities.file_io import CSVDataReader
 from layup.utilities.file_io.file_output import write_csv
 
+# The list of required input column names. Note: This should not include the
+# primary id column name.
+REQUIRED_INPUT_COLUMN_NAMES = [
+    "epochMJD_TDB",
+    "FORMAT",
+]
+
 
 def _get_result_dtypes(primary_id_column_name: str):
     """Helper function to create the result dtype with the correct primary ID column name."""
@@ -191,7 +198,12 @@ def predict_cli(
 
     times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
 
-    reader = CSVDataReader(input_file, primary_id_column_name=cli_args.primary_id_column_name, sep="csv")
+    reader = CSVDataReader(
+        input_file,
+        primary_id_column_name=cli_args.primary_id_column_name,
+        sep="csv",
+        required_columns=REQUIRED_INPUT_COLUMN_NAMES,
+    )
 
     chunks = create_chunks(reader, chunk_size=cli_args.chunk)
 
