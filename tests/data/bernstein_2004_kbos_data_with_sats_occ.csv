@@ -1,4 +1,4 @@
-provid,ra,dec,obstime,stn,sys,ctr,pos1,pos2,pos3,astcat,rmsra,rmsdec,rmstime,rmscorr,deltadec,deltara,rastar,decstar,unctime,mag,rmsmag,band
+provID,ra,dec,obstime,stn,sys,ctr,pos1,pos2,pos3,astcat,rmsra,rmsdec,rmstime,rmscorr,deltadec,deltara,rastar,decstar,unctime,mag,rmsmag,band
 2000 FV53,204.89583,-10.70975,2000-03-31T13:21:25.056Z,568,,,,,,UNK,,,,,,,,,,22.9,,R
 2000 FV53,204.89529,-10.70947,2000-03-31T13:55:41.376Z,568,,,,,,UNK,,,,,,,,,,22.9,,R
 2000 FV53,204.85167,-10.68936,2000-04-02T12:46:33.312Z,568,,,,,,UNK,,,,,,,,,,22.8,,R
