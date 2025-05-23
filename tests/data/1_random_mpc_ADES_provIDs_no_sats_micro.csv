@@ -1,4 +1,4 @@
-provID,actualProvID,ra,dec,obstime,stn,rmsra,rmsdec,rmstime,rmscorr,unctime
+provID,actualProvID,ra,dec,obsTime,stn,rmsRA,rmsDec,rmsTime,rmsCorr,uncTime
 119839,2002 CX17,129.41192,23.83381,2002-01-21T05:41:03.840Z,704,,,,,
 119839,2002 CX17,129.40108,23.83494,2002-01-21T06:45:09.504Z,704,,,,,
 119839,2002 CX17,129.39771,23.83558,2002-01-21T07:06:29.088Z,704,,,,,

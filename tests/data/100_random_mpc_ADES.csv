@@ -1,4 +1,4 @@
-ObjID,provid,ra,dec,obstime,stn,rmsra,rmsdec,rmstime,rmscorr,unctime
+ObjID,provid,ra,dec,obsTime,stn,rmsRA,rmsDec,rmsTime,rmsCorr,uncTime
 119839,2002 CX17,138.93912,17.23753,1997-03-04T05:06:21.600Z,704,,,,,
 119839,2002 CX17,138.91971,17.23875,1997-03-04T07:43:35.616Z,704,,,,,
 119839,2002 CX17,327.33458,-13.43625,1999-09-03T05:07:08.256Z,691,,,,,
