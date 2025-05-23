@@ -85,3 +85,39 @@ def test_read_primary_id_as_str():
     assert len(data) == 10
     assert all(isinstance(i, str) for i in data["provID"])
     assert data["provID"][0] == "0000024"
+
+
+def test_read_obs_pos_units():
+    """Test that we read in observatory position units correctly."""
+    # Create a reader and read in the lines
+    reader = Obs80DataReader(get_test_filepath("03666.txt"))
+
+    # Two lines pulled from 03666.txt
+    first_line = "03666         S2015 08 23.89823 03 55 05.36 +17 52 12.2                L~1WXlC51"
+    second_line = "03666         s2015 08 23.89823 1 + 1788.6473 + 6184.6473 + 2386.0656   ~1WXlC51"
+
+    data = reader.convert_obs80(first_line, second_line)
+
+    obs_pos_x = 1788.6473
+    obs_pos_y = 6184.6473
+    obs_pos_z = 2386.0656
+
+    # Check that the observatory position is in km
+    assert data[-5] == "ICRF_KM"
+    assert data[-4] == 399
+    assert data[-3] == pytest.approx(obs_pos_x, rel=1e-5)
+    assert data[-2] == pytest.approx(obs_pos_y, rel=1e-5)
+    assert data[-1] == pytest.approx(obs_pos_z, rel=1e-5)
+
+    # Now try again with a unit flag of 2. This should read the input as AU which is then converted to km.
+    au_second_line = second_line[:32] + "2" + second_line[33:]
+    au_data = reader.convert_obs80(first_line, au_second_line)
+    assert au_data[-5] == "ICRF_AU"
+    assert au_data[-4] == 399
+    assert au_data[-3] == pytest.approx(obs_pos_x, rel=1e-5)
+    assert au_data[-2] == pytest.approx(obs_pos_y, rel=1e-5)
+    assert au_data[-1] == pytest.approx(obs_pos_z, rel=1e-5)
+
+    bad_second_line = second_line[:32] + "3" + second_line[33:]
+    with pytest.raises(ValueError):
+        reader.convert_obs80(first_line, bad_second_line)
