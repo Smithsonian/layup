@@ -361,22 +361,44 @@ class LayupObservatory(SorchaObservatory):
         if coords is None or None in coords or np.isnan(coords).any():
             obscode_cache_key = self.create_obscode_cache_key(obscode, et)
             # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
-            if "obs_geo_x" not in data.dtype.names:
+            if "sys" not in data.dtype.names:
                 raise ValueError(
-                    f"The data must have a 'obs_geo_x' field for non-fixed position observatory {obscode}."
+                    f"The data must have a 'sys' field for the reference frame of non-fixed position observatory {obscode}."
                 )
-            if "obs_geo_y" not in data.dtype.names:
+            if "ctr" not in data.dtype.names:
                 raise ValueError(
-                    f"The data must have a 'obs_geo_y' field for non-fixed position observatory {obscode}."
+                    f"The data must have a 'ctr' field for non-fixed position observatory {obscode}."
                 )
-            if "obs_geo_z" not in data.dtype.names:
+            if "pos1" not in data.dtype.names:
                 raise ValueError(
-                    f"The data must have a 'obs_geo_z' field for non-fixed postion observatory {obscode}."
+                    f"The data must have a 'pos1' field for non-fixed position observatory {obscode}."
                 )
-            coords = np.array([data["obs_geo_x"], data["obs_geo_y"], data["obs_geo_z"]])
+            if "pos2" not in data.dtype.names:
+                raise ValueError(
+                    f"The data must have a 'pos2' field for non-fixed position observatory {obscode}."
+                )
+            if "pos3" not in data.dtype.names:
+                raise ValueError(
+                    f"The data must have a 'pos3' field for non-fixed postion observatory {obscode}."
+                )
+            coords = np.array([data["pos1"], data["pos2"], data["pos3"]])
             # If any of the coordinates are None or NaN, raise an error
             if coords is None or np.isnan(coords).any():
                 raise ValueError(f"Observatory {obscode} has invalid coordinates at epoch {et}: {coords}")
+
+            # Check if the coordinates are in a reference frame that we support.
+            if data["sys"] not in ["ICRF_KM", "ICRF_AU"]:
+                raise ValueError(
+                    f"Observatory {obscode} has an unsupported reference frame {data['sys']} at epoch {et}. Please use ICRF_KM or ICRF_AU."
+                )
+            if data["ctr"] != 399:
+                raise ValueError(
+                    f"Observatory {obscode} has an unsupported center {data['ctr']}. Please use the 399 (Earth)."
+                )
+
+            # Convert the coordinates to km if they are in AU
+            if data["sys"] == "ICRF_AU":
+                coords *= AU_KM
 
             if obscode_cache_key not in self.ObservatoryXYZ:
                 # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
