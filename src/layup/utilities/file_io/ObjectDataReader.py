@@ -248,7 +248,7 @@ class ObjectDataReader(abc.ABC):
         input_column_names_set = set(input_table.dtype.names)
         for col in self._required_columns:
             # If there are multiple options for this required column
-            # i.e. col = ("ra", "raRate")
+            # i.e. col = ( set(["ra", "dec"]), set(["raRate", "decRate"]) )
             if isinstance(col, tuple):
                 found = False
                 for col_set in col:
@@ -256,7 +256,10 @@ class ObjectDataReader(abc.ABC):
                         found = True
                         break
                 if not found:
-                    outstr = f"ERROR: While reading table {self.filename}. Required column {col} not found."
+                    outstr = (
+                        f"ERROR: While reading table {self.filename}."
+                        f"At least one of the following sets of columns {col} must be present."
+                    )
                     logger.error(outstr)
                     sys.exit(outstr)
             else:

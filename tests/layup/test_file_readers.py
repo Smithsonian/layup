@@ -138,7 +138,10 @@ def test_data_reader_raises_when_missing_column_options():
         required_columns=[
             "ObjID",
             "FORMAT",
-            (set(["DOES_NOT_EXIST", "ALSO_DOES_NOT_EXIST"]),),
+            (
+                set(["DOES_NOT_EXIST", "ALSO_DOES_NOT_EXIST"]),
+                set(["NOPE", "ALSO_NOPE"]),
+            ),
         ],
     )
     with pytest.raises(SystemExit):
