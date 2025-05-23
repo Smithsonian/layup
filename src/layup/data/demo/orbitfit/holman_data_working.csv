@@ -1,4 +1,4 @@
-provID,ra,dec,obstime,stn,rmsra,rmsdec,rmstime,rmscorr,unctime
+provID,ra,dec,obsTime,stn,rmsRA,rmsDec,rmsTime,rmsCorr,uncTime
 1979 HP,110.65546,21.27819,1989-01-04T13:36:00.288Z,875,,,,,
 1979 HP,110.65062,21.27922,1989-01-04T14:08:00.096Z,875,,,,,
 1979 HP,110.20954,21.36036,1989-01-06T13:59:00.096Z,875,,,,,
