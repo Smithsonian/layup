@@ -27,16 +27,17 @@ dependencies = [
 ]
 
 [project.scripts]
-layup = "layup_cmdline.main:main"
-layup-visualize = "layup_cmdline.visualize:main"
-layup-orbitfit = "layup_cmdline.orbitfit:main"
-layup-predict = "layup_cmdline.predict:main"
-layup-bootstrap = "layup_cmdline.bootstrap:main"
-layup-init = "layup_cmdline.init:main"
-layup-convert = "layup_cmdline.convert:main"
-layup-comet = "layup_cmdline.comet:main"
-layup-demo = "layup_cmdline.demo:main"
-layup-unpack = "layup_cmdline.unpack:main"
+layup = "layup.cmdline.main:main"
+layup-visualize = "layup.cmdline.visualize:main"
+layup-orbitfit = "layup.cmdline.orbitfit:main"
+layup-predict = "layup.cmdline.predict:main"
+layup-bootstrap = "layup.cmdline.bootstrap:main"
+layup-init = "layup.cmdline.init:main"
+layup-convert = "layup.cmdline.convert:main"
+layup-comet = "layup.cmdline.comet:main"
+layup-demo = "layup.cmdline.demo:main"
+layup-unpack = "layup.cmdline.unpack:main"
+layup-log = "layup.cmdline.log:main"
 
 [project.urls]
 "Source Code" = "https://github.com/Smithsonian/layup"

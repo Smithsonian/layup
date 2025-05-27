@@ -7,7 +7,7 @@ import sys
 
 from layup.utilities.cli_utilities import warn_or_remove_file
 from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
-from layup_cmdline.layupargumentparser import LayupArgumentParser
+from layup.cmdline.layupargumentparser import LayupArgumentParser
 
 
 def main():
@@ -153,9 +153,7 @@ def execute(args):
     from layup.orbitfit import orbitfit_cli
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
 
-    my_name = __name__.replace("layup_cmdline.", "layup.")
-    print(my_name)
-    logger = logging.getLogger(my_name)
+    logger = logging.getLogger(__name__)
 
     logger.info("Starting orbitfit...")
 

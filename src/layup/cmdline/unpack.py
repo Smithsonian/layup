@@ -2,7 +2,7 @@
 # The `layup unpack` subcommand implementation
 #
 import argparse
-from layup_cmdline.layupargumentparser import LayupArgumentParser
+from layup.cmdline.layupargumentparser import LayupArgumentParser
 import logging
 import sys
 

@@ -3,7 +3,7 @@
 #
 import argparse
 import pooch
-from layup_cmdline.layupargumentparser import LayupArgumentParser
+from layup.cmdline.layupargumentparser import LayupArgumentParser
 
 from layup.utilities.file_access_utils import find_file_or_exit
 

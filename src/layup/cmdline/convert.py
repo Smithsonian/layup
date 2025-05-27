@@ -5,7 +5,7 @@ import argparse
 import logging
 import sys
 
-from layup_cmdline.layupargumentparser import LayupArgumentParser
+from layup.cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
 

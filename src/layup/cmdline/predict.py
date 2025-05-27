@@ -8,7 +8,7 @@ from pathlib import Path
 
 import astropy.units as u
 
-from layup_cmdline.layupargumentparser import LayupArgumentParser
+from layup.cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
 
