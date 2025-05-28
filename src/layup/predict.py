@@ -35,10 +35,12 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("rho_x", "f8"),  # The first of the 3 rho unit vector
             ("rho_y", "f8"),
             ("rho_z", "f8"),
-            ("obs_cov0", "f8"),  # The first of 4 of the observer covariance
-            ("obs_cov1", "f8"),
-            ("obs_cov2", "f8"),
-            ("obs_cov3", "f8"),
+            ("obs_cov_xx", "f8"),  # The first of 4 of the observer covariance
+            ("obs_cov_yy", "f8"),
+            ("obs_cov_xy", "f8"),
+            ("a_arcsec", "f8"),
+            ("b_arcsec", "f8"),
+            ("PA_deg", "f8"),
         ]
     )
 
@@ -100,16 +102,22 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
                     pred.rho[1],
                     pred.rho[2],
                     pred.obs_cov[0],
-                    pred.obs_cov[1],
                     pred.obs_cov[2],
-                    pred.obs_cov[3],
+                    pred.obs_cov[1],
+                    0.0,
+                    0.0,
+                    0.0,
                 )
             )
 
     results = np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
     results["ra_deg"], results["dec_deg"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
     results["a_arcsec"], results["b_arcsec"], results["PA_deg"] = skyplane_cov_to_radec_cov(
-        results["ra_deg"], results["dec_deg"], results["obs_cov0"], results["obs_cov3"], results["obs_cov1"]
+        results["ra_deg"],
+        results["dec_deg"],
+        results["obs_cov_xx"],
+        results["obs_cov_yy"],
+        results["obs_cov_xy"],
     )
 
     return results
