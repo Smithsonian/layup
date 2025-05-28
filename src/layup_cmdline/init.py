@@ -2,7 +2,7 @@
 # The `layup init` subcommand implementation
 #
 import argparse
-from layup.cmdline.layupargumentparser import LayupArgumentParser
+from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 
 def execute(args):  # pragma: no cover

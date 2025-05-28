@@ -2,7 +2,7 @@
 # The `layup visualize` subcommand implementation
 #
 import argparse
-from layup.cmdline.layupargumentparser import LayupArgumentParser
+from layup_cmdline.layupargumentparser import LayupArgumentParser
 import logging
 import sys
 
@@ -78,8 +78,10 @@ def main():
 def execute(args):
 
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
+    from layup.utilities.layup_logging import LayupLogger
 
-    # from layup.visualize import visualize_cli
+    layup_logger = LayupLogger()
+    logger = layup_logger.get_logger("layup.visualize_cmdline")
 
     # check input exists
     find_file_or_exit(args.input, "input")
@@ -93,12 +95,15 @@ def execute(args):
     elif args.i.lower() == "hdf5":
         output_file = args.o + ".h5"
     else:
+        logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
     if args.d.upper() not in ["2D", "3D"]:
+        logger.error(f"Value for -d --dimensions must be '2D' or '3D', but is {args.d.upper()}")
         sys.exit("ERROR: -d --dimensions must be '2D' or '3D'")
 
     if args.b not in ["matplot", "plotly"]:
+        logger.error(f"Value for -b --backend must be 'matplot' or 'plotly', but is {args.b}")
         sys.exit("ERROR: -b --backend must be 'matplot' or 'plotly'")
 
 

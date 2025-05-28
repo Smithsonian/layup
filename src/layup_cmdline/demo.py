@@ -1,4 +1,4 @@
-from layup.cmdline.layupargumentparser import LayupArgumentParser
+from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 #
 # layup demo prepare

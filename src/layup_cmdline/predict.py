@@ -8,7 +8,7 @@ from pathlib import Path
 
 import astropy.units as u
 
-from layup.cmdline.layupargumentparser import LayupArgumentParser
+from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +236,10 @@ def execute(args):
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
     from layup.utilities.layup_configs import LayupConfigs
+    from layup.utilities.layup_logging import LayupLogger
+
+    layup_logger = LayupLogger()
+    logger = layup_logger.get_logger("layup.predict_cmdline")
 
     # check input exists
     find_file_or_exit(args.input, "input")
@@ -263,6 +267,7 @@ def execute(args):
     elif args.i.lower() == "hdf5":
         output_file = args.o + ".h5"
     else:
+        logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
     # check for overwriting output file
@@ -270,7 +275,8 @@ def execute(args):
 
     # check that start date is before end date
     if end_date <= start_date:
-        sys.exit(f"Start date {start_date} is after than end date {end_date}")
+        logger.error(f"Start date {start_date} is after than end date {end_date}")
+        sys.exit(f"ERROR: Start date {start_date} is after than end date {end_date}")
 
     # converting timestep argument args.t into a float in day units.
     timestep_str = args.t
@@ -278,11 +284,13 @@ def execute(args):
         r"(?P<float>\d+(\.\d*)?)(?P<unit>\w+)", timestep_str.strip()
     )  # parses float/int and unit
     if not match:
+        logger.error(f"Could not parse timestep: {timestep_str}")
         sys.exit(f"Could not parse timestep: {timestep_str}")
     value = float(match.group("float"))
     unit_str = match.group("unit").lower()
 
     if unit_str not in UNIT_DICT:
+        logger.error(f"Unsupported unit, {unit_str}, for timestep: {timestep_str}.")
         sys.exit(f"Unsupported unit, {unit_str}, for timestep: {timestep_str}.")
 
     timestep_day = (value * UNIT_DICT[unit_str]).to(u.day).value  # converting value into day units

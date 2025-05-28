@@ -1,23 +1,18 @@
 import logging
 import sys
-import threading
 
 from datetime import datetime
-from multiprocessing import Manager
 from pathlib import Path
 
 
 class LayupLogger:
 
     def __init__(self, log_directory="."):
-        self.q = Manager().Queue(-1)
         self._prepare_logger(log_directory)
-        self._start_logger()
 
     def get_logger(self, name):
         """Convenience function to return a logger under the top level logger.
-        This is identical to calling:
-        `logger = logging.getLogger(__name__)`
+        This is identical to calling `logger = logging.getLogger(__name__)`
 
         Parameters
         ----------
@@ -45,7 +40,7 @@ class LayupLogger:
         """Called when the context manager exits. Used only to call _stop_logger
         to terminate the loop in the queue and kill the queue thread.
         """
-        self._stop_logger()
+        pass
 
     def _prepare_logger(self, log_directory="."):
         """Setup for the primary logger.
@@ -98,24 +93,3 @@ class LayupLogger:
 
         # Return the top level logger
         return logger
-
-    def _start_logger(self):
-        """Start the thread that runs the log listener queue"""
-        self.logger_thread = threading.Thread(target=self._logger_listener)
-        self.logger_thread.start()
-
-    def _logger_listener(self):
-        """An infinite loop that reads off the queue and emits log records to
-        the top level logger.
-        """
-        while True:
-            record = self.q.get()
-            if record is None:
-                break
-            logger = logging.getLogger(record.name)
-            logger.handle(record)
-
-    def _stop_logger(self):
-        """End the infinite loop and kill the thread where the queue was running."""
-        self.q.put(None)
-        self.logger_thread.join()
