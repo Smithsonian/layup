@@ -14,7 +14,7 @@ def execute():
     layup_logger = LayupLogger()
     logger = layup_logger.get_logger("layup.log_cmdline")
     logger.info("About to call `log_cli`.")
-    log_cli(layup_logger)
+    log_cli()
     logger.info("All done.")
 
 
