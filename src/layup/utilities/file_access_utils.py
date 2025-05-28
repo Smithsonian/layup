@@ -6,6 +6,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
 def find_file_or_exit(arg_fn, argname):
     """Checks to see if a file given by a filename exists. If it doesn't,
     this fails gracefully and exits to the command line.

@@ -505,4 +505,4 @@ def convert_cli(
         else:
             write_csv(converted_data, output_file)
 
-    print(f"Data has been written to {output_file}")
+    logger.info(f"Data has been written to {output_file}")

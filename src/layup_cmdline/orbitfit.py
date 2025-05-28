@@ -164,13 +164,15 @@ def execute(args):
         logger.error("Cannot provide both an IOD and initial guess file.")
         sys.exit("ERROR: IOD and initial guess file cannot be called together")
 
+    supported_file_formats = ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]
     find_file_or_exit(arg_fn=args.input, argname="positional input")
     if args.ar_data_file_path:
         find_directory_or_exit(args.ar_data_file_path, argname="--a --ar-data-path")
-    if (args.type.lower()) not in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]:
-        logger.error(f"Unsupported file type provided, {args.type}."
-                     "Supported file types are: [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
-        sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
+    if (args.type.lower()) not in supported_file_formats:
+        logger.error(
+            f"Unsupported file type provided, {args.type}. Valid types are: {supported_file_formats}"
+        )
+        sys.exit(f"Unsupported file type provided, {args.type}. Valid types are: {supported_file_formats}")
 
     # check orbit format
     supported_orbit_formats = ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]
