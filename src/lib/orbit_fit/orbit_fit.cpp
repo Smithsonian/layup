@@ -55,12 +55,1389 @@
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
 #include "predict.cpp"
+#include "mattodiff.hpp"
+#include "stumpff.hpp"
+
+#define PI 3.14159265358979323846
+#define TWOPI 6.283185307179586476925287
 
 using std::cout;
 namespace py = pybind11;
 
+
 namespace orbit_fit
 {
+
+    typedef struct
+    {
+	Dual f;
+	Dual fp;
+	Dual fpp;
+	Dual fppp;
+    } DRootResult;
+
+    typedef struct
+    {
+	double f;
+	double fp;
+	double fpp;
+	double fppp;
+    } RootResult;
+
+    RootResult root_function(double s, double mu, double alpha, double r0, double r0dot, double t){
+	/*
+	  Root function used in the Halley minimizer
+	  Computes the zeroth, first, second, and third derivatives
+	  of the universal Kepler equation f
+
+	  Parameters
+	  ----------
+	  s : float
+	  Eccentric anomaly
+	  mu : float
+	  Standard gravitational parameter GM
+	  alpha : float
+	  Total energy
+	  r0 : float
+	  Initial position
+	  r0dot : float
+	  Initial velocity
+	  t : float
+	  Time
+
+	  Returns
+	  -------
+	  f : float
+	  universal Kepler equation)
+	  fp : float
+	  (first derivative of f
+	  fpp : float
+	  second derivative of f
+	  fppp : float
+	  third derivative of f
+
+	*/
+
+	Stumpff cs = stumpff(alpha * s * s);
+	double c0 = cs.c0;
+	double c1 = cs.c1;
+	double c2 = cs.c2;
+	double c3 = cs.c3;
+    
+	double zeta = mu - alpha * r0;
+	double f = r0 * s * c1 + r0 * r0dot * s * s * c2 + mu * s * s * s * c3 - t;
+	double fp = r0 * c0 + r0 * r0dot * s * c1 + mu * s * s * c2; // This is equivalent to r
+	double fpp = zeta * s * c1 + r0 * r0dot * c0;
+	double fppp = zeta * c0 - r0 * r0dot * alpha * s * c1;
+
+	RootResult rr;
+	rr.f = f;
+	rr.fp = fp;
+	rr.fpp = fpp;
+	rr.fppp = fppp;
+	return rr;
+    }
+
+    DRootResult droot_function(Dual s, double mu, Dual alpha, Dual r0, Dual r0dot, Dual t){
+	/*
+	  Root function used in the Halley minimizer
+	  Computes the zeroth, first, second, and third derivatives
+	  of the universal Kepler equation f
+
+	  Parameters
+	  ----------
+	  s : float
+	  Eccentric anomaly
+	  mu : float
+	  Standard gravitational parameter GM
+	  alpha : float
+	  Total energy
+	  r0 : float
+	  Initial position
+	  r0dot : float
+	  Initial velocity
+	  t : float
+	  Time
+
+	  Returns
+	  -------
+	  f : float
+	  universal Kepler equation)
+	  fp : float
+	  (first derivative of f
+	  fpp : float
+	  second derivative of f
+	  fppp : float
+	  third derivative of f
+	*/
+
+	DStumpff cs = dstumpff(alpha * s * s);
+	Dual c0 = cs.c0;
+	Dual c1 = cs.c1;
+	Dual c2 = cs.c2;
+	Dual c3 = cs.c3;
+
+	Dual zeta = mu - alpha * r0;
+	Dual f = r0 * s * c1 + r0 * r0dot * s * s * c2 + mu * s * s * s * c3 - t;
+	Dual fp = r0 * c0 + r0 * r0dot * s * c1 + mu * s * s * c2; // This is equivalent to r
+	Dual fpp = zeta * s * c1 + r0 * r0dot * c0;
+	Dual fppp = zeta * c0 - r0 * r0dot * alpha * s * c1;
+
+	DRootResult rr;
+	rr.f = f;
+	rr.fp = fp;
+	rr.fpp = fpp;
+	rr.fppp = fppp;
+	return rr;
+    }
+
+    typedef struct
+    {
+	int flag;
+	double x;
+	double fp;
+    } HalleyResult;
+
+    HalleyResult halley_safe(double x1, double x2, double mu, double alpha, double r0, double r0dot, double t, double xacc=2e-15, size_t maxit=100){
+	/*
+	  Applies the Halley root finding algorithm on the universal Kepler equation
+
+	  Parameters
+	  ----------
+	  x1 : float
+	  Previous guess used in minimization
+	  x2 : float
+	  Current guess for minimization
+	  mu : float
+	  Standard gravitational parameter GM
+	  alpha : float
+	  Total energy
+	  r0 : float
+	  Initial position
+	  r0dot : float
+	  Initial velocity
+	  t : float
+	  Time
+	  xacc : float
+	  Accuracy in x before algorithm declares convergence
+	  maxit : int
+	  Maximum number of iterations
+
+	  Returns
+	  ----------
+	  : boolean
+	  True if minimization converged, False otherwise
+	  : float
+	  Solution
+	  : float
+	  First derivative of solution
+
+	*/
+	// verify the bracket
+	// Use these values later
+	RootResult rr_l = root_function(x1, mu, alpha, r0, r0dot, t);
+	double fl = rr_l.f;
+	double fpl = rr_l.fp;
+	double fppl = rr_l.fpp;
+    
+	RootResult rr_h = root_function(x2, mu, alpha, r0, r0dot, t);
+	double fh = rr_h.f;
+	double fph = rr_h.fp;
+	double fpph = rr_h.fpp;
+
+	double f, fp, fpp, fppp;
+    
+	if((fl > 0.0 && fh > 0.0) || (fl < 0.0 && fh < 0.0)){
+	    return {1, x1, fl};
+	}
+	if(fl == 0){
+	    return {0, x1, fpl};
+	}
+	if(fh == 0){
+	    return{0, x2, fph};
+	}
+
+	double xl, xh, rts;
+	    
+	// Orient the search so that f(xl) < 0 and f(xh)>0
+	if(fl < 0.0){
+	    xl = x1;
+	    xh = x2;
+	}else{
+	    xh = x1;
+	    xl = x2;
+	}
+
+	// Use the initial values
+	if(fabs(fl) < fabs(fh)){
+	    rts = xl;
+	    f = fl;
+	    fp = fpl;
+	    fpp = fppl;
+	}else{
+	    rts = xh;
+	    f = fh;
+	    fp = fph;
+	    fpp = fpph;
+	}
+
+	rts = 0.5 * (x1 + x2);        // Initialize the guess for root
+	double dxold = fabs(x2 - x1); // the “stepsize before last"
+	double dx = dxold;            // and the last step.
+
+	RootResult rr = root_function(rts, mu, alpha, r0, r0dot, t);
+	f = rr.f;
+	fp = rr.fp;
+	fpp = rr.fpp;
+	fppp = rr.fppp;
+
+	for(size_t j = 0; j < maxit; j++){ // Loop over allowed iterations.
+	    // Check the criteria.
+	    if((((rts - xh) * fp - f) * ((rts - xl) * fp - f) > 0.0) ||
+	       (fabs(2.0 * f) > fabs(dxold * fp))){
+		// Bisect the interval
+		dxold = dx;
+		dx = 0.5 * (xh - xl);
+		rts = xl + dx;
+		if(fabs(dx / rts) < xacc){
+		    return {0, rts, fp};
+		}
+	    }else{
+		// Take a Hally step
+		dxold = dx;
+		dx = -f / fp;
+		dx = -f /(fp + dx * fpp / 2.0 );
+		dx = -f /(fp + dx * fpp / 2.0 + dx * dx * fppp / 6.0);	    
+		rts += dx;
+		if(fabs(dx / rts) < xacc){
+		    return {0, rts, fp};
+		}
+	    }
+	    rr = root_function(rts, mu, alpha, r0, r0dot, t);
+	    //printf("here %lf %lf %lf %lf %lf\n", rts, f, fp, fpp, fppp);    
+	
+	    f = rr.f;
+	    fp = rr.fp;
+	    fpp = rr.fpp;
+	    fppp = rr.fppp;	
+	    
+	    // Maintain the bracket on the root.
+	    if(f < 0.0){
+		xl = rts;
+		fl = f;
+	    }else{
+		xh = rts;
+		fh = f;
+	    }
+	}
+
+	return {1, rts, fp};
+    
+    }
+
+    typedef struct
+    {
+	int flag;
+	Dual x;
+	Dual fp;
+    } DHalleyResult;
+
+    DHalleyResult halley_safe(Dual x1, Dual x2, double mu, Dual alpha, Dual r0, Dual r0dot, Dual t,  Dual xg=-1000.0, double xacc=2e-15, size_t maxit=100){
+	/*
+	  Applies the Halley root finding algorithm on the universal Kepler equation
+
+	  Parameters
+	  ----------
+	  x1 : float
+	  Previous guess used in minimization
+	  x2 : float
+	  Current guess for minimization
+	  mu : float
+	  Standard gravitational parameter GM
+	  alpha : float
+	  Total energy
+	  r0 : float
+	  Initial position
+	  r0dot : float
+	  Initial velocity
+	  t : float
+	  Time
+	  xacc : float
+	  Accuracy in x before algorithm declares convergence
+	  maxit : int
+	  Maximum number of iterations
+
+	  Returns
+	  ----------
+	  : boolean
+	  True if minimization converged, False otherwise
+	  : float
+	  Solution
+	  : float
+	  First derivative of solution
+
+	*/
+	// verify the bracket
+	// Use these values later
+	DRootResult rr_l = droot_function(x1, mu, alpha, r0, r0dot, t);
+	Dual fl = rr_l.f;
+	Dual fpl = rr_l.fp;
+	Dual fppl = rr_l.fpp;
+    
+	DRootResult rr_h = droot_function(x2, mu, alpha, r0, r0dot, t);
+	Dual fh = rr_h.f;
+	Dual fph = rr_h.fp;
+	Dual fpph = rr_h.fpp;
+
+	Dual f, fp, fpp, fppp;
+    
+	if((fl > 0.0 && fh > 0.0) || (fl < 0.0 && fh < 0.0)){
+	    return {1, x1, fl};
+	}
+	if(fl == 0){
+	    return {0, x1, fpl};
+	}
+	if(fh == 0){
+	    return{0, x2, fph};
+	}
+
+	Dual xl, xh, rts;
+
+	// Orient the search so that f(xl) < 0 and f(xh)>0
+	if(fl < 0.0){
+	    xl = x1;
+	    xh = x2;
+	}else{
+	    xh = x1;
+	    xl = x2;
+	}
+
+	// Use the initial values
+	if(fabs(fl.real) < fabs(fh.real)){
+	    rts = xl;
+	    f = fl;
+	    fp = fpl;
+	    fpp = fppl;
+	}else{
+	    rts = xh;
+	    f = fh;
+	    fp = fph;
+	    fpp = fpph;
+	}
+
+	rts = 0.5 * (x1 + x2);        // Initialize the guess for root
+
+	if(xg.real != -1000.0){
+	    rts = xg;
+	}
+	Dual dxold = (x2 - x1);     // the “stepsize before last"
+	Dual dx = dxold;            // and the last step.
+
+	DRootResult rr = droot_function(rts, mu, alpha, r0, r0dot, t);
+	f = rr.f;
+	fp = rr.fp;
+	fpp = rr.fpp;
+	fppp = rr.fppp;
+
+	for(size_t j = 0; j < maxit; j++){ // Loop over allowed iterations.
+	    //printf("j: %lu\n", j);	
+	    // Check the criteria.
+	    if((((rts - xh) * fp - f) * ((rts - xl) * fp - f) > 0.0) ||
+	       (fabs((2.0 * f).real) > fabs((dxold * fp).real))){
+		// Bisect the interval
+		dxold = dx;
+		dx = 0.5 * (xh - xl).real;
+		rts = xl + dx;
+		if(fabs((dx / rts).real) < xacc){
+		    return {0, rts, fp};
+		}
+	    }else{
+		// Take a Hally step
+		dxold = dx;
+		dx = -f / fp;
+		dx = -f /(fp + dx * fpp / 2.0 );
+		dx = -f /(fp + dx * fpp / 2.0 + dx * dx * fppp / 6.0);
+		rts = rts + dx;
+		if(fabs((dx / rts).real) < xacc){
+		    return {0, rts, fp};
+		}
+	    }
+	    rr = droot_function(rts, mu, alpha, r0, r0dot, t);
+	
+	    f = rr.f;
+	    fp = rr.fp;
+	    fpp = rr.fpp;
+	    fppp = rr.fppp;	
+	    
+	    // Maintain the bracket on the root.
+	    if(f.real < 0.0){
+		xl = rts;
+		fl = f;
+	    }else{
+		xh = rts;
+		fh = f;
+	    }
+	}
+
+	return {1, rts, fp};
+    
+    }
+
+    typedef struct
+    {
+	double x, y, z;
+	double xd, yd, zd;
+    } CartesianState;
+
+    typedef struct
+    {
+	int flag;
+	CartesianState state;
+    } CartesianResult;
+
+
+    CartesianResult universal_cartesian(double mu, double q, double e,
+					double incl, double longnode, double argperi, double tp,
+					double epochMJD_TDB,
+					size_t maxit=100				    
+					){
+	/*
+	  Converts from a series of orbital elements into state vectors
+	  using the universal variable formulation
+
+	  The output vector will be oriented in the same system as
+	  the positional angles (i, Omega, omega)
+
+	  Note that mu, q, tp and epochMJD_TDB must have compatible units
+	  As an example, if q is in au and tp/epoch are in days, mu must
+	  be in (au^3)/days^2
+
+	  Parameters
+	  ----------
+	  mu : float
+	  Standard gravitational parameter GM (see note above about units)
+	  q : float
+	  Perihelion (see note above about units)
+	  e : float
+	  Eccentricity
+	  incl : float
+	  Inclination (radians)
+	  longnode : float
+	  Longitude of ascending node (radians)
+	  argperi : float
+	  Argument of perihelion (radians)
+	  tp : float
+	  Time of perihelion passage in TDB scale (see note above about units)
+	  epochMJD_TDB : float
+	  Epoch (in TDB) when the elements are defined (see note above about units)
+
+	  Returns
+	  ----------
+	  : float
+	  x coordinate
+	  : float
+	  y coordinate
+	  : float
+	  z coordinate
+	  : float
+	  x velocity
+	  : float
+	  y velocity
+	  : float
+	  z velocity
+	*/
+
+	double t = epochMJD_TDB - tp;
+	/*
+	// MJH: I removed this part because I haven't
+	// implemented the fmod function for dual numbers
+	// because it's discontinuous.
+	//
+	double a, per;      
+	if(e < 1){
+	// Remove extra full orbits
+	a = q / (1.0 - e);
+        per = TWOPI / sqrt(mu / (a * a * a));
+	t = std::fmod(t, per);
+	}
+	*/
+
+	// Establish constants for Kepler's equation,
+	// starting at pericenter.
+	double r0 = q;
+	double r0dot = 0.0;
+	double v2 = mu * (1.0 + e) / q;
+	double alpha = 2.0 * mu / r0 - v2;
+
+	// bracket the root
+	double ds = (t - 0.0) / 100.0;
+	double s_prev = 0.0;
+	RootResult rr = root_function(s_prev, mu, alpha, r0, r0dot, t);
+
+	double f_prev = rr.f;
+
+	double s = s_prev + ds;
+
+	rr = root_function(s, mu, alpha, r0, r0dot, t);
+	double f = rr.f;
+
+	while(f * f_prev > 0.0){
+	    s_prev = s;
+	    f_prev = f;
+	    s = s_prev + ds;
+	    rr = root_function(s, mu, alpha, r0, r0dot, t);
+	    f = rr.f;
+	}
+
+
+	CartesianResult cr;
+	int flag;
+
+	HalleyResult hr = halley_safe(s_prev, s, mu, alpha, r0, r0dot, t);
+	flag = hr.flag;
+	double ss = hr.x;
+	double fp = hr.fp;
+
+	if(flag != 0){
+	    printf("flag: %d\n", flag);
+	}
+	size_t count = 0;
+	while(flag != 0){
+	    rr = root_function(s, mu, alpha, r0, r0dot, t);
+	    f = rr.f;
+	    fp = rr.fp;
+	    s_prev = s;
+	    s = s - f / fp;
+	    hr = halley_safe(s_prev, s, mu, alpha, r0, r0dot, t);
+	    flag = hr.flag;
+	    ss = hr.x;
+	    fp = hr.fp;
+	    count += 1;
+	    if(count > maxit){
+		cr.flag = 1;
+		return cr;
+	    }
+	}
+
+	Stumpff cs = stumpff(alpha * ss * ss);
+	double c0 = cs.c0;
+	double c1 = cs.c1;
+	double c2 = cs.c2;
+	double c3 = cs.c3;
+
+	double r = r0 * c0 + r0 * r0dot * ss * c1 + mu * ss * ss * c2; // This is equivalent to fp.
+
+	double g1 = c1 * ss;
+	double g2 = c2 * ss * ss;
+	double g3 = c3 * ss * ss * ss;
+
+	f = 1.0 - (mu / r0) * g2;
+	double g = t - mu * g3;
+	double fdot = -(mu / (r * r0)) * g1;
+	double gdot = 1.0 - (mu / r) * g2;
+
+	// define position and velocity at pericenter
+	double x0 = q;
+	double y0 = 0.0;
+	double z0 = 0.0;
+	double xd0 = 0.0;
+	double yd0 = sqrt(v2);
+	double zd0 = 0;
+
+	// compute position and velocity at time t (from pericenter)
+	double xt = f * x0 + g * xd0;
+	double yt = f * y0 + g * yd0;
+	double zt = f * z0 + g * zd0;    
+	double xdt = fdot * x0 + gdot * xd0;
+	double ydt = fdot * y0 + gdot * yd0;
+	double zdt = fdot * z0 + gdot * zd0;    
+
+	// rotate by argument of perihelion in orbit plane
+	double cosw = cos(argperi);
+	double sinw = sin(argperi);
+	double xp = xt * cosw - yt * sinw;
+	double yp = xt * sinw + yt * cosw;
+	double zp = zt;
+	double xdp = xdt * cosw - ydt * sinw;
+	double ydp = xdt * sinw + ydt * cosw;
+	double zdp = zdt;
+
+	// rotate by inclination about x axis 
+	double cosi = cos(incl);
+	double sini = sin(incl);
+	double x = xp;
+	double y = yp * cosi - zp * sini;
+	double z = yp * sini + zp * cosi;
+	double xd = xdp;
+	double yd = ydp * cosi - zdp * sini;
+	double zd = ydp * sini + zdp * cosi;
+
+	// rotate by longitude of node about z axis 
+	double cosnode = cos(longnode);
+	double sinnode = sin(longnode);
+	xp = x * cosnode - y * sinnode;
+	yp = x * sinnode + y * cosnode;
+	zp = z;
+	xdp = xd * cosnode - yd * sinnode;
+	ydp = xd * sinnode + yd * cosnode;
+	zdp = zd;
+
+	cr.flag = 0;
+	cr.state = {xp, yp, zp, xdp, ydp, zdp};
+
+	return cr;  
+    }
+
+    typedef struct
+    {
+	Dual x, y, z;
+	Dual xd, yd, zd;
+    } DCartesianState;
+
+    typedef struct
+    {
+	int flag;
+	DCartesianState state;
+	Dual s;
+    } DCartesianResult;
+
+    DCartesianResult universal_cartesian(double mu, Dual q, Dual e,
+					 Dual incl, Dual longnode, Dual argperi, Dual tp,
+					 double epochMJD_TDB,
+					 Dual sg=-1000.0,
+					 size_t maxit=100				    
+					 ){
+	/*
+	  Converts from a series of orbital elements into state vectors
+	  using the universal variable formulation
+
+	  The output vector will be oriented in the same system as
+	  the positional angles (i, Omega, omega)
+
+	  Note that mu, q, tp and epochMJD_TDB must have compatible units
+	  As an example, if q is in au and tp/epoch are in days, mu must
+	  be in (au^3)/days^2
+
+	  Parameters
+	  ----------
+	  mu : float
+	  Standard gravitational parameter GM (see note above about units)
+	  q : float
+	  Perihelion (see note above about units)
+	  e : float
+	  Eccentricity
+	  incl : float
+	  Inclination (radians)
+	  longnode : float
+	  Longitude of ascending node (radians)
+	  argperi : float
+	  Argument of perihelion (radians)
+	  tp : float
+	  Time of perihelion passage in TDB scale (see note above about units)
+	  epochMJD_TDB : float
+	  Epoch (in TDB) when the elements are defined (see note above about units)
+
+	  Returns
+	  ----------
+	  : float
+	  x coordinate
+	  : float
+	  y coordinate
+	  : float
+	  z coordinate
+	  : float
+	  x velocity
+	  : float
+	  y velocity
+	  : float
+	  z velocity
+	*/
+
+	Dual t = epochMJD_TDB - tp;
+
+	/*
+	// MJH: I removed this part because I haven't
+	// implemented the fmod function for dual numbers
+	// because it's discontinuous.
+	//
+	Dual a, per;
+	if(e < 1){
+	// Remove extra full orbits
+	a = q / (1.0 - e);
+        per = TWOPI / sqrt(mu / (a * a * a));
+	t = std::fmod(t, per);
+	}
+	*/
+
+	// Establish constants for Kepler's equation,
+	// starting at pericenter.
+	Dual r0 = q;
+	Dual r0dot = 0.0;
+	Dual v2 = mu * (1.0 + e) / q;
+	Dual alpha = 2.0 * mu / r0 - v2;
+
+	// bracket the root
+	Dual ds = (t - 0.0) / 10.0;
+	Dual s_prev = 0.0;
+	DRootResult rr = droot_function(s_prev, mu, alpha, r0, r0dot, t);
+
+	Dual f_prev = rr.f;
+
+	Dual s = s_prev + ds;
+
+	rr = droot_function(s, mu, alpha, r0, r0dot, t);
+	Dual f = rr.f;
+
+	while(f * f_prev > 0.0){
+	    s_prev = s;
+	    f_prev = f;
+	    s = s_prev + ds;
+	    //printf("while s: %lf %lf\n", s.real, s.dual);	
+	    rr = droot_function(s, mu, alpha, r0, r0dot, t);
+	    f = rr.f;
+	}
+
+	DCartesianResult cr;
+	int flag;
+
+	DHalleyResult hr;
+    
+	if(sg.real != -1000.0){
+	    sg.dual = 0.0;
+	    hr = halley_safe(s_prev, s, mu, alpha, r0, r0dot, t, sg);
+	}else{
+	    hr = halley_safe(s_prev, s, mu, alpha, r0, r0dot, t);
+	}
+	flag = hr.flag;
+	Dual ss = hr.x;
+	Dual fp = hr.fp;
+
+	if(flag != 0){
+	    printf("flag: %d\n", flag);
+	}
+	size_t count = 0;
+	while(flag != 0){
+	    rr = droot_function(s, mu, alpha, r0, r0dot, t);
+	    f = rr.f;
+	    fp = rr.fp;
+	    s_prev = s;
+	    s = s - f / fp;
+	    hr = halley_safe(s_prev, s, mu, alpha, r0, r0dot, t);
+	    flag = hr.flag;
+	    ss = hr.x;
+	    fp = hr.fp;
+	    count += 1;
+	    if(count > maxit){
+		cr.flag = 1;
+		return cr;
+	    }
+	}
+
+	DStumpff cs = dstumpff(alpha * ss * ss);
+	Dual c0 = cs.c0;
+	Dual c1 = cs.c1;
+	Dual c2 = cs.c2;
+	Dual c3 = cs.c3;
+
+	Dual r = r0 * c0 + r0 * r0dot * ss * c1 + mu * ss * ss * c2; // This is equivalent to fp.
+
+	//Dual g0 = c0;
+	Dual g1 = c1 * ss;
+	Dual g2 = c2 * ss * ss;
+	Dual g3 = c3 * ss * ss * ss;
+
+	f = 1.0 - (mu / r0) * g2;
+	Dual g = t - mu * g3;
+	Dual fdot = -(mu / (r * r0)) * g1;
+	Dual gdot = 1.0 - (mu / r) * g2;
+
+	// define position and velocity at pericenter
+	Dual x0 = q;
+	Dual y0 = 0.0;
+	Dual z0 = 0.0;
+	Dual xd0 = 0.0;
+	Dual yd0 = sqrt(v2);
+	Dual zd0 = 0;
+
+	// compute position and velocity at time t (from pericenter)
+	Dual xt = f * x0 + g * xd0;
+	Dual yt = f * y0 + g * yd0;
+	Dual zt = f * z0 + g * zd0;    
+	Dual xdt = fdot * x0 + gdot * xd0;
+	Dual ydt = fdot * y0 + gdot * yd0;
+	Dual zdt = fdot * z0 + gdot * zd0;    
+
+	// rotate by argument of perihelion in orbit plane
+	Dual cosw = cos(argperi);
+	Dual sinw = sin(argperi);
+	Dual xp = xt * cosw - yt * sinw;
+	Dual yp = xt * sinw + yt * cosw;
+	Dual zp = zt;
+	Dual xdp = xdt * cosw - ydt * sinw;
+	Dual ydp = xdt * sinw + ydt * cosw;
+	Dual zdp = zdt;
+
+	// rotate by inclination about x axis 
+	Dual cosi = cos(incl);
+	Dual sini = sin(incl);
+	Dual x = xp;
+	Dual y = yp * cosi - zp * sini;
+	Dual z = yp * sini + zp * cosi;
+	Dual xd = xdp;
+	Dual yd = ydp * cosi - zdp * sini;
+	Dual zd = ydp * sini + zdp * cosi;
+
+	// rotate by longitude of node about z axis 
+	Dual cosnode = cos(longnode);
+	Dual sinnode = sin(longnode);
+	xp = x * cosnode - y * sinnode;
+	yp = x * sinnode + y * cosnode;
+	zp = z;
+	xdp = xd * cosnode - yd * sinnode;
+	ydp = xd * sinnode + yd * cosnode;
+	zdp = zd;
+
+	cr.flag = 0;
+	cr.state = {xp, yp, zp, xdp, ydp, zdp};
+
+	cr.s = ss;
+
+	return cr;  
+    }
+
+    typedef Eigen::Matrix<double, 6, 6> Matrix6d;    
+    
+    Matrix6d universal_cartesian_jacobian(double mu,
+					  double q, double e, double incl,
+					  double longnode, double argperi, double tp,
+					  double epoch){
+	Dual qd = {q, 0.0};
+	Dual ed = {e, 0.0};
+	Dual longnoded = {longnode, 0.0};
+	Dual argperid = {argperi, 0.0};
+	Dual incld = {incl, 0.0};
+	Dual tpd = {tp, 0.0};    
+
+	qd.dual = 1.0;
+	DCartesianResult dcr = universal_cartesian(mu, qd, ed, incld, longnoded, argperid, tpd, epoch);
+	Dual s = dcr.s;
+	qd.dual = 0.0;
+
+	Matrix6d jac;
+	jac(0, 0) = dcr.state.x.dual;
+	jac(0, 1) = dcr.state.y.dual;
+	jac(0, 2) = dcr.state.z.dual;
+	jac(0, 3) = dcr.state.xd.dual;
+	jac(0, 4) = dcr.state.yd.dual;
+	jac(0, 5) = dcr.state.zd.dual;	
+
+	ed.dual = 1.0;
+	dcr = universal_cartesian(mu, qd, ed, incld, longnoded, argperid, tpd, epoch, s);
+	ed.dual = 0.0;
+
+	jac(1, 0) = dcr.state.x.dual;
+	jac(1, 1) = dcr.state.y.dual;
+	jac(1, 2) = dcr.state.z.dual;
+	jac(1, 3) = dcr.state.xd.dual;
+	jac(1, 4) = dcr.state.yd.dual;
+	jac(1, 5) = dcr.state.zd.dual;		
+
+	incld.dual = 1.0;
+	dcr = universal_cartesian(mu, qd, ed, incld, longnoded, argperid, tpd, epoch, s);
+	incld.dual = 0.0;
+
+	jac(2, 0) = dcr.state.x.dual;
+	jac(2, 1) = dcr.state.y.dual;
+	jac(2, 2) = dcr.state.z.dual;
+	jac(2, 3) = dcr.state.xd.dual;
+	jac(2, 4) = dcr.state.yd.dual;
+	jac(2, 5) = dcr.state.zd.dual;	
+
+	longnoded.dual = 1.0;
+	dcr = universal_cartesian(mu, qd, ed, incld, longnoded, argperid, tpd, epoch, s);
+	longnoded.dual = 0.0;
+
+	jac(3, 0) = dcr.state.x.dual;
+	jac(3, 1) = dcr.state.y.dual;
+	jac(3, 2) = dcr.state.z.dual;
+	jac(3, 3) = dcr.state.xd.dual;
+	jac(3, 4) = dcr.state.yd.dual;
+	jac(3, 5) = dcr.state.zd.dual;	
+
+	argperid.dual = 1.0;
+	dcr = universal_cartesian(mu, qd, ed, incld, longnoded, argperid, tpd, epoch, s);
+	argperid.dual = 0.0;
+
+	jac(4, 0) = dcr.state.x.dual;
+	jac(4, 1) = dcr.state.y.dual;
+	jac(4, 2) = dcr.state.z.dual;
+	jac(4, 3) = dcr.state.xd.dual;
+	jac(4, 4) = dcr.state.yd.dual;
+	jac(4, 5) = dcr.state.zd.dual;	
+
+	tpd.dual = 1.0;
+	dcr = universal_cartesian(mu, qd, ed, incld, longnoded, argperid, tpd, epoch, s);
+	tpd.dual = 0.0;
+
+	jac(5, 0) = dcr.state.x.dual;
+	jac(5, 1) = dcr.state.y.dual;
+	jac(5, 2) = dcr.state.z.dual;
+	jac(5, 3) = dcr.state.xd.dual;
+	jac(5, 4) = dcr.state.yd.dual;
+	jac(5, 5) = dcr.state.zd.dual;
+
+	return jac;
+    }
+
+    double principal_value(double theta)
+    {
+	theta -= 2.0*PI*floor(theta/(2.0*PI));
+	return(theta);
+    }
+
+    Dual principal_value(Dual theta)
+    {
+	theta = theta - 2.0*PI*floor(theta.real/(2.0*PI));
+	return(theta);
+    }
+
+    int universal_cometary(double mu, CartesianState state,
+			   double& q, double& e, double& incl, double& longnode,
+			   double& argperi, double& tp, double epochMJD_TDB=0.0){
+	/*
+	  Converts from a state vectors into cometary orbital elements
+	  using the universal variable formulation
+
+	  The input vector will determine the orientation
+	  of the positional angles (i, Omega, omega)
+
+
+	  Note that mu and the state vectors must have compatible units
+	  As an example, if x is in au and vx are in au/days, mu must
+	  be in (au^3)/days^2
+
+
+	  Parameters
+	  -----------
+	  mu : float
+	  Standard gravitational parameter GM (see note above about units)
+	  x : float
+	  x coordinate
+	  y : float
+	  y coordinate
+	  z : float
+	  z coordinate
+	  vx : float
+	  x velocity
+	  vy : float
+	  y velocity
+	  vz : float
+	  z velocity
+	  epochMJD_TDB (float):
+	  Epoch (in TDB) when the elements are defined (see note above about units)
+
+	  Returns
+	  ----------
+	  float
+	  Perihelion (see note above about units)
+	  float
+	  Eccentricity
+	  float
+	  Inclination (radians)
+	  float
+	  Longitude of ascending node (radians)
+	  float
+	  Argument of perihelion (radians)
+	  float
+	  Time of perihelion passage in TDB scale (see note above about units)
+	*/
+
+	/* find direction of angular momentum vector */
+	double rxv_x = state.y * state.zd - state.z * state.yd;
+	double rxv_y = state.z * state.xd - state.x * state.zd;
+	double rxv_z = state.x * state.yd - state.y * state.xd;
+	double hs = rxv_x * rxv_x + rxv_y * rxv_y + rxv_z * rxv_z;
+	double h = sqrt(hs);
+
+	double r = sqrt(state.x * state.x + state.y * state.y + state.z * state.z);
+	double vs = state.xd * state.xd + state.yd * state.yd + state.zd * state.zd;
+	double rdotv = state.x * state.xd + state.y * state.yd + state.z * state.zd;
+	double rdot = rdotv / r;
+	double p = hs / mu;
+
+	incl = acos(rxv_z / h);
+
+	if(rxv_x!=0.0 || rxv_y!=0.0) {
+	    longnode = atan2(rxv_x, -rxv_y);
+	} else {
+	    longnode = 0.0;
+	}
+
+	double alpha = 2.0 * mu / r - vs;
+	q = p / (1 + e);
+
+	double ecostrueanom = p / r - 1.0;
+	double esintrueanom = rdot * h / mu;
+	e = sqrt(ecostrueanom * ecostrueanom + esintrueanom * esintrueanom);
+
+	double trueanom; 
+	if(esintrueanom!=0.0 || ecostrueanom!=0.0) {
+	    trueanom = atan2(esintrueanom, ecostrueanom);
+	} else {
+	    trueanom = 0.0;
+	}
+
+	double cosnode = cos(longnode);
+	double sinnode = sin(longnode);
+
+	/* u is the argument of latitude */
+	double rcosu = state.x * cosnode + state.y * sinnode;
+	double rsinu = (state.y * cosnode - state.x * sinnode)/cos(incl);
+
+	double u;
+	if(rsinu!=0.0 || rcosu!=0.0) {
+	    u = atan2(rsinu, rcosu);
+	} else {
+	    u = 0.0;
+	}
+
+	argperi = u - trueanom;
+	argperi = principal_value(argperi);
+
+	longnode = principal_value(longnode);    
+
+	//eccanom = 2.0 * atan(sqrt((1.0 - e)/(1.0 + e)) * tan(trueanom/2.0));
+	//meananom = eccanom - e * sin(eccanom);
+
+	// There should a better way to handle this.
+	// Branch on e at this point, until there's a better solution
+	// Be careful with the e=1 transition.
+	if(fabs(e - 1.0) < 1e-15){
+	    e = 1.0;
+	}
+
+	// Try to do this in terms of gauss f and g functions and
+	// Stumpff functions.  If that works, incorporate the result
+	// back into the python version.
+	//
+	// r0 = q, r0dot = 0
+    
+	// f = r/p * (cosf - 1) + 1
+	// f = 1 - (mu/r0) * s*s*c2;
+    
+	// g = r*rdot*sinf/sqrt(mu*p)
+	// g = r0 * s*c1 + r0*r0dot * s*s*c2 = t - t0 - mu * s*s*s*c3
+	// g = r0 * s*c1 = t - t0 - mu * s*s*s*c3
+    
+	// fdot = -sqrt(mu/(p*p*p))*(sinf+ e*sinf)
+	// fdot = - (mu/(r*r0)) * s*c1
+    
+	// gdot = r0/p * (cosf - 1) + 1
+	// gdot = 1 - (mu/r) * s*s*c2;
+
+	// t - t0 = r0 * s*c1 + r0*r0dot * s*s*c2 + mu * s*s*s*c3
+	// t - t0 = r0 * s*c1 + mu * s*s*s*c3
+	// t - t0 = g + mu * s*s*s*c3
+
+	// 1. Use these expressions to get s*s*c2 and s*c1
+	// 2. Use s*s*c2 to get c0
+
+	// alpha * s*s*c3(alpa*s*s) = 1/1! - c1(alpha*s*s)
+	// -->
+	// alpha * s*s*s*c3(alpha*s*s) = s - s*c1(alpha*s*s)
+	// s = alpha * s*s*s*c3(alpha*s*s) + s*c1(alpha*s*s)
+	// s = 
+
+	int branch;
+	if(e < 1){
+	    // elliptical
+	    branch = -1;
+	    double eccanom = 2.0 * atan(sqrt((1.0 - e) / (1.0 + e)) * tan(trueanom / 2.0));
+	    double meananom = eccanom - e * sin(eccanom);
+	    meananom = principal_value(meananom);
+	    double a = mu / alpha;
+	    double mm = sqrt(mu / (a * a * a));
+	    double per = TWOPI/mm;
+	    // Pick the next pericenter passage
+	    tp = per + epochMJD_TDB - meananom / mm;
+	}else if(e == 1){
+	    // parabolic
+	    branch = 0;
+	    double tf = tan(0.5 * trueanom);
+	    double B = 0.5 * (tf * tf * tf + 3 * tf);
+	    double mm = sqrt(mu / (p * p * p));
+	    tp = epochMJD_TDB - B / (3 * mm);
+	}else{
+	    // hyperbolic
+	    branch = 1;
+	    double heccanom = 2.0 * atanh(sqrt((e - 1.0) / (e + 1.0)) * tan(trueanom / 2.0));
+	    double N = e * sinh(heccanom) - heccanom;
+	    double a = mu / alpha;
+	    double mm = sqrt(-mu / (a * a * a));
+	    tp = epochMJD_TDB - N / mm;
+	}
+
+	return branch;
+
+    }
+
+    int universal_cometary(double mu, DCartesianState state,
+			   Dual& q, Dual& e, Dual& incl, Dual& longnode,
+			   Dual& argperi, Dual& tp, Dual epochMJD_TDB=0.0){
+	/*
+	  Converts from a state vectors into cometary orbital elements
+	  using the universal variable formulation
+
+	  The input vector will determine the orientation
+	  of the positional angles (i, Omega, omega)
+
+
+	  Note that mu and the state vectors must have compatible units
+	  As an example, if x is in au and vx are in au/days, mu must
+	  be in (au^3)/days^2
+
+
+	  Parameters
+	  -----------
+	  mu : float
+	  Standard gravitational parameter GM (see note above about units)
+	  x : float
+	  x coordinate
+	  y : float
+	  y coordinate
+	  z : float
+	  z coordinate
+	  vx : float
+	  x velocity
+	  vy : float
+	  y velocity
+	  vz : float
+	  z velocity
+	  epochMJD_TDB (float):
+	  Epoch (in TDB) when the elements are defined (see note above about units)
+
+	  Returns
+	  ----------
+	  float
+	  Perihelion (see note above about units)
+	  float
+	  Eccentricity
+	  float
+	  Inclination (radians)
+	  float
+	  Longitude of ascending node (radians)
+	  float
+	  Argument of perihelion (radians)
+	  float
+	  Time of perihelion passage in TDB scale (see note above about units)
+	*/
+
+	/* find direction of angular momentum vector */
+	Dual rxv_x = state.y * state.zd - state.z * state.yd;
+	Dual rxv_y = state.z * state.xd - state.x * state.zd;
+	Dual rxv_z = state.x * state.yd - state.y * state.xd;
+	Dual hs = rxv_x * rxv_x + rxv_y * rxv_y + rxv_z * rxv_z;
+	Dual h = sqrt(hs);
+
+	Dual r = sqrt(state.x * state.x + state.y * state.y + state.z * state.z);
+	Dual vs = state.xd * state.xd + state.yd * state.yd + state.zd * state.zd;
+	Dual rdotv = state.x * state.xd + state.y * state.yd + state.z * state.zd;
+	Dual rdot = rdotv / r;
+	Dual p = hs / mu;
+
+	incl = acos(rxv_z / h);
+
+	if(rxv_x!=0.0 || rxv_y!=0.0) {
+	    longnode = atan2(rxv_x, -rxv_y);
+	} else {
+	    longnode = 0.0;
+	}
+
+	Dual alpha = 2.0 * mu / r - vs;
+
+	Dual ecostrueanom = p / r - 1.0;
+	Dual esintrueanom = rdot * h / mu;
+	e = sqrt(ecostrueanom * ecostrueanom + esintrueanom * esintrueanom);
+
+	q = p / (1 + e);
+
+	Dual trueanom; 
+	if(esintrueanom!=0.0 || ecostrueanom!=0.0) {
+	    trueanom = atan2(esintrueanom, ecostrueanom);
+	} else {
+	    trueanom = 0.0;
+	}
+
+	Dual cosnode = cos(longnode);
+	Dual sinnode = sin(longnode);
+
+	/* u is the argument of latitude */
+	Dual rcosu = state.x * cosnode + state.y * sinnode;
+	Dual rsinu = (state.y * cosnode - state.x * sinnode)/cos(incl);
+
+	Dual u;
+	if(rsinu!=0.0 || rcosu!=0.0) {
+	    u = atan2(rsinu, rcosu);
+	} else {
+	    u = 0.0;
+	}
+
+	argperi = u - trueanom;
+	argperi = principal_value(argperi);
+
+	longnode = principal_value(longnode);    
+
+	//eccanom = 2.0 * atan(sqrt((1.0 - e)/(1.0 + e)) * tan(trueanom/2.0));
+	//meananom = eccanom - e * sin(eccanom);
+
+	// There should a better way to handle this.
+	// Branch on e at this point, until there's a better solution
+	// Be careful with the e=1 transition.
+	if(fabs(e.real - 1.0) < 1e-15){
+	    e.real = 1.0;
+	}
+
+	// Try to do this in terms of gauss f and g functions and
+	// Stumpff functions.  If that works, incorporate the result
+	// back into the python version.
+	//
+	// r0 = q, r0dot = 0
+    
+	// f = r/p * (cosf - 1) + 1
+	// f = 1 - (mu/r0) * s*s*c2;
+    
+	// g = r*rdot*sinf/sqrt(mu*p)
+	// g = r0 * s*c1 + r0*r0dot * s*s*c2 = t - t0 - mu * s*s*s*c3
+	// g = r0 * s*c1 = t - t0 - mu * s*s*s*c3
+    
+	// fdot = -sqrt(mu/(p*p*p))*(sinf+ e*sinf)
+	// fdot = - (mu/(r*r0)) * s*c1
+    
+	// gdot = r0/p * (cosf - 1) + 1
+	// gdot = 1 - (mu/r) * s*s*c2;
+
+	// t - t0 = r0 * s*c1 + r0*r0dot * s*s*c2 + mu * s*s*s*c3
+	// t - t0 = r0 * s*c1 + mu * s*s*s*c3
+	// t - t0 = g + mu * s*s*s*c3
+
+	// 1. Use these expressions to get s*s*c2 and s*c1
+	// 2. Use s*s*c2 to get c0
+
+	// alpha * s*s*c3(alpa*s*s) = 1/1! - c1(alpha*s*s)
+	// -->
+	// alpha * s*s*s*c3(alpha*s*s) = s - s*c1(alpha*s*s)
+	// s = alpha * s*s*s*c3(alpha*s*s) + s*c1(alpha*s*s)
+	// s = 
+
+	int branch;
+	if(e < 1){
+	    // elliptical
+	    branch = -1;
+	    Dual eccanom = 2.0 * atan(sqrt((1.0 - e) / (1.0 + e)) * tan(trueanom / 2.0));
+	    Dual meananom = eccanom - e * sin(eccanom);
+	    meananom = principal_value(meananom);
+	    Dual a = mu / alpha;
+	    Dual mm = sqrt(mu / (a * a * a));
+	    Dual per = TWOPI/mm;
+	    // Pick the next pericenter passage
+	    tp = per + epochMJD_TDB - meananom / mm;
+	}else if(e == 1){
+	    // parabolic
+	    branch = 0;
+	    Dual tf = tan(0.5 * trueanom);
+	    Dual B = 0.5 * (tf * tf * tf + 3 * tf);
+	    Dual mm = sqrt(mu / (p * p * p));
+	    tp = epochMJD_TDB - B / (3 * mm);
+	}else{
+	    // hyperbolic
+	    branch = 1;
+	    Dual heccanom = 2.0 * atanh(sqrt((e - 1.0) / (e + 1.0)) * tan(trueanom / 2.0));
+	    Dual N = e * sinh(heccanom) - heccanom;
+	    Dual a = mu / alpha;
+	    Dual mm = sqrt(-mu / (a * a * a));
+	    tp = epochMJD_TDB - N / mm;
+	}
+
+	return branch;
+
+    }
+
+    Matrix6d universal_cometary_jacobian(double mu, DCartesianState dstate,
+					 Dual& qd, Dual& ed, Dual& incld, Dual& longnoded,
+					 Dual& argperid, Dual& tpd, Dual epoch=0.0){
+
+	Matrix6d cjac;
+
+	dstate.x.dual = 1.0;
+	universal_cometary(mu, dstate, qd, ed, incld, longnoded, argperid, tpd, epoch);
+	dstate.x.dual = 0.0;
+
+	cjac(0, 0) = qd.dual;
+	cjac(0, 1) = ed.dual;
+	cjac(0, 2) = incld.dual;
+	cjac(0, 3) = longnoded.dual;
+	cjac(0, 4) = argperid.dual;
+	cjac(0, 5) = tpd.dual;
+
+	dstate.y.dual = 1.0;
+	universal_cometary(mu, dstate, qd, ed, incld, longnoded, argperid, tpd, epoch);
+	dstate.y.dual = 0.0;
+
+	cjac(1, 0) = qd.dual;
+	cjac(1, 1) = ed.dual;
+	cjac(1, 2) = incld.dual;
+	cjac(1, 3) = longnoded.dual;
+	cjac(1, 4) = argperid.dual;
+	cjac(1, 5) = tpd.dual;
+
+	dstate.z.dual = 1.0;
+	universal_cometary(mu, dstate, qd, ed, incld, longnoded, argperid, tpd, epoch);
+	dstate.z.dual = 0.0;
+
+	cjac(2, 0) = qd.dual;
+	cjac(2, 1) = ed.dual;
+	cjac(2, 2) = incld.dual;
+	cjac(2, 3) = longnoded.dual;
+	cjac(2, 4) = argperid.dual;
+	cjac(2, 5) = tpd.dual;
+
+	dstate.xd.dual = 1.0;
+	universal_cometary(mu, dstate, qd, ed, incld, longnoded, argperid, tpd, epoch);
+	dstate.xd.dual = 0.0;
+
+	cjac(3, 0) = qd.dual;
+	cjac(3, 1) = ed.dual;
+	cjac(3, 2) = incld.dual;
+	cjac(3, 3) = longnoded.dual;
+	cjac(3, 4) = argperid.dual;
+	cjac(3, 5) = tpd.dual;
+
+	dstate.yd.dual = 1.0;
+	universal_cometary(mu, dstate, qd, ed, incld, longnoded, argperid, tpd, epoch);
+	dstate.yd.dual = 0.0;
+
+	cjac(4, 0) = qd.dual;
+	cjac(4, 1) = ed.dual;
+	cjac(4, 2) = incld.dual;
+	cjac(4, 3) = longnoded.dual;
+	cjac(4, 4) = argperid.dual;
+	cjac(4, 5) = tpd.dual;
+
+	dstate.zd.dual = 1.0;
+	universal_cometary(mu, dstate, qd, ed, incld, longnoded, argperid, tpd, epoch);
+	dstate.zd.dual = 0.0;
+
+	cjac(5, 0) = qd.dual;
+	cjac(5, 1) = ed.dual;
+	cjac(5, 2) = incld.dual;
+	cjac(5, 3) = longnoded.dual;
+	cjac(5, 4) = argperid.dual;
+	cjac(5, 5) = tpd.dual;
+
+	return cjac;
+
+    }
+    
     struct reb_particle read_initial_conditions(const char *ic_file_name, double *epoch)
     {
 
@@ -734,6 +2111,12 @@ namespace orbit_fit
         p1.vy = initial_guess.state[4];
         p1.vz = initial_guess.state[5];
         double epoch = initial_guess.epoch;
+
+	double GMtotal = 0.0002963092748799319;
+	double q, e, incl, longnode, argperi, tp;
+	CartesianState state = {p1.x, p1.y, p1.z, p1.vx, p1.vy, p1.vz};
+	universal_cometary(GMtotal, state, q, e, incl, longnode, argperi, tp, epoch);
+	printf("%lf %lf %lf %lf %lf %lf\n", q, e, incl, longnode, argperi, tp);
 
         flag = orbit_fit(
             ephem,

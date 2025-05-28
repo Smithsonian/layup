@@ -1,3 +1,5 @@
+#ifndef ORBIT_FIT_H
+#define ORBIT_FIT_H
 
 struct detection
 {
@@ -55,3 +57,4 @@ struct partials
     std::vector<double> x_partials;
     std::vector<double> y_partials;
 };
+#endif
