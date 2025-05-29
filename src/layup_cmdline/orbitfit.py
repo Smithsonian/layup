@@ -2,14 +2,11 @@
 # The `layup orbitfit` subcommand implementation
 #
 import argparse
-import logging
 import sys
 
 from layup.utilities.cli_utilities import warn_or_remove_file
 from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup_cmdline.layupargumentparser import LayupArgumentParser
-
-logger = logging.getLogger(__name__)
 
 
 def main():
@@ -154,31 +151,40 @@ def main():
 def execute(args):
     from layup.orbitfit import orbitfit_cli
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
+    from layup.utilities.layup_logging import LayupLogger
 
-    print("Starting orbitfit...")
+    layup_logger = LayupLogger()
+    logger = layup_logger.get_logger("layup.orbitfit_cmdline")
+
+    logger.info("Starting orbitfit...")
 
     if args.g and args.i == "gauss":
         args.i = None
     elif args.g and args.i != None:
+        logger.error("Cannot provide both an IOD and initial guess file.")
         sys.exit("ERROR: IOD and initial guess file cannot be called together")
 
+    supported_file_formats = ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]
     find_file_or_exit(arg_fn=args.input, argname="positional input")
     if args.ar_data_file_path:
         find_directory_or_exit(args.ar_data_file_path, argname="--a --ar-data-path")
-    if (args.type.lower()) not in ["mpc80col", "ades_csv", "ades_psv", "ades_xml", "ades_hdf5"]:
-        sys.exit("Not a supported file type [MPC80col, ADES_csv, ADES_psv, ADES_xml, ADES_hdf5]")
+    if (args.type.lower()) not in supported_file_formats:
+        logger.error(
+            f"Unsupported file type provided, {args.type}. Valid types are: {supported_file_formats}"
+        )
+        sys.exit(f"Unsupported file type provided, {args.type}. Valid types are: {supported_file_formats}")
 
     # check orbit format
-    if args.output_orbit_format not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        logger.error(
-            "ERROR: output orbit format must be 'BCART', 'BCART_EQ', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'"
-        )
+    supported_orbit_formats = ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]
+    if args.output_orbit_format not in supported_orbit_formats:
+        logger.error(f"Output orbit format must be one of {supported_orbit_formats}")
     # check format of input file
     if args.output_format.lower() == "csv":
         output_file = args.o + ".csv"
     elif args.output_format.lower() == "hdf5":
         output_file = args.o + ".h5"
     else:
+        logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
     # check for overwriting output file

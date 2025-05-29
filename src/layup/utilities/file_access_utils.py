@@ -1,6 +1,10 @@
+import logging
 import os
 import sys
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 def find_file_or_exit(arg_fn, argname):
@@ -25,7 +29,8 @@ def find_file_or_exit(arg_fn, argname):
     if os.path.exists(arg_fn):
         return arg_fn
     else:
-        sys.exit("ERROR: filename {} supplied for {} argument does not exist.".format(arg_fn, argname))
+        logger.error(f"Filename {arg_fn} supplied for {argname} argument does not exist.")
+        sys.exit(f"ERROR: filename {arg_fn} supplied for {argname} argument does not exist.")
 
 
 def find_directory_or_exit(arg_fn, argname):
@@ -50,4 +55,5 @@ def find_directory_or_exit(arg_fn, argname):
     file_path = file_path.parent.resolve()
 
     if not file_path.is_dir():
-        sys.exit("ERROR: filepath {} supplied for {} argument does not exist.".format(arg_fn, argname))
+        logger.error(f"Filepath {arg_fn} supplied for {argname} argument does not exist.")
+        sys.exit(f"ERROR: filepath {arg_fn} supplied for {argname} argument does not exist.")
