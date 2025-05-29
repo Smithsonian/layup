@@ -6,6 +6,43 @@ from pathlib import Path
 
 
 class LayupLogger:
+    """This logger configures the root-level logger for Layup to emit messages
+    to potentially three locations 1) STDERR 2) layup-<datetime>.log and
+    3) layup-<datetime>.err depending on the log level. See the `_prepare_logger`
+    method for details about which levels are sent to which handlers.
+
+    LayupLogger is intended to be used in one of two ways in general. Either
+    instantiated within the `execute()` function in one of the layup_cmdline verbs
+    or as a context manager when calling the API directly.
+
+    Example 1 - LayupLogger in a command line verb
+    (See layup_cmdline/log.py for a working example)
+    ```
+    def execute():
+        from layup.utilities.layup_logging import LayupLogger
+
+        layup_logger = LayupLogger()
+
+        # Create a child logger. NOTE - that the name starts with "layup.<blah>"
+        # Failure to specify a name with that form could result in lost logs.
+        logger = layup_logger.get_logger("layup.log_cmdline")
+
+        logger.info("Sending a log message.")  # Use the logger
+    ```
+
+    Example 2 - LayupLogger in a context manager
+    This would likely be the usage within a Jupyter notebook
+    ```
+    from layup.utilities.layup_logging import LayupLogger
+
+    with LayupLogger() as layup_logger:
+        # Create a child logger. NOTE - that the name starts with "layup.<blah>"
+        # Failure to specify a name with that form could result in lost logs.
+        logger = layup_logger.get_logger("layup.interactive")
+
+        logger.info("Sending a log message from a notebook.")
+    ```
+    """
 
     def __init__(self, log_directory="."):
         self._prepare_logger(log_directory)
@@ -81,7 +118,7 @@ class LayupLogger:
         file_handler_info.setFormatter(formatter)
         file_handler_info.setLevel(logging.DEBUG)
 
-        # File handler that will record all messaged >- ERROR
+        # File handler that will record all messaged >= ERROR
         file_handler_error = logging.FileHandler(log_file_error)
         file_handler_error.setFormatter(formatter)
         file_handler_error.setLevel(logging.ERROR)
