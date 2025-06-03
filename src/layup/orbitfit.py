@@ -879,7 +879,7 @@ def orbitfit_cli(
             else:
                 write_csv(fit_orbits, output_file)
 
-    print(f"Data has been written to {output_file}")
+    logger.info(f"Data has been written to {output_file}")
 
 
 def _is_valid_data(data):

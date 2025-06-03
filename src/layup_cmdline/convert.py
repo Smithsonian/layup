@@ -112,6 +112,10 @@ def execute(args):
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
     from layup.utilities.layup_configs import LayupConfigs
+    from layup.utilities.layup_logging import LayupLogger
+
+    layup_logger = LayupLogger()
+    logger = layup_logger.get_logger("layup.convert_cmdline")
 
     # check ar directory exists if specified
     if args.ar_data_file_path:
@@ -128,20 +132,20 @@ def execute(args):
     elif args.i.lower() == "hdf5":
         output_file = args.o + ".h5"
     else:
+        logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
     # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
 
     # Check that the conversion type is valid
-    if args.orbit_type not in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-        logger.error(
-            "ERROR: Conversion type must be 'BCART', 'BCART_EQ', 'BCOM', 'BKEP', 'CART', 'COM', or 'KEP'"
-        )
+    supported_orbit_types = ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]
+    if args.orbit_type not in supported_orbit_types:
+        logger.error(f"Conversion type must be one of : {supported_orbit_types}")
 
     # Check that chunk size is a positive integer
     if not isinstance(args.chunk, int) or args.chunk <= 0:
-        logger.error("ERROR: Chunk size must be a positive integer")
+        logger.error("Chunk size must be a positive integer.")
 
     configs = LayupConfigs()
     if args.config:

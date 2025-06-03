@@ -58,6 +58,10 @@ def execute(args):
         _check_for_existing_files,
         _decompress,
     )
+    from layup.utilities.layup_logging import LayupLogger
+
+    layup_logger = LayupLogger()
+    logger = layup_logger.get_logger("layup.bootstrap_cmdline")
 
     # Bootstrap will always take the default filenames and urls (stored in
     # layup.AuxiliaryConfigs) for the current version of layup. A user can
@@ -79,7 +83,7 @@ def execute(args):
     if args.force:
         _remove_files(aux_config, retriever)
     else:
-        print("Checking cache for existing files.")
+        logger.info("Checking cache for existing files.")
         found_all_files = _check_for_existing_files(aux_config, retriever)
 
     if not found_all_files:
@@ -93,7 +97,7 @@ def execute(args):
         # build the meta_kernel.txt file
         build_meta_kernel_file(aux_config, retriever)
 
-        print("Checking cache after attempting to download and create files.")
+        logger.info("Checking cache after attempting to download and create files.")
         _check_for_existing_files(aux_config, retriever)
 
 

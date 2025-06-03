@@ -1,3 +1,4 @@
+import logging
 import os
 from argparse import Namespace
 from pathlib import Path
@@ -20,6 +21,8 @@ from layup.utilities.data_processing_utilities import (
 )
 from layup.utilities.file_io import CSVDataReader
 from layup.utilities.file_io.file_output import write_csv
+
+logger = logging.getLogger(__name__)
 
 # The list of required input column names. Note: This should not include the
 # primary id column name.
@@ -242,4 +245,3 @@ def predict_cli(
 
         if len(predictions) > 0:
             write_csv(predictions, output_file)
-    pass

@@ -181,4 +181,4 @@ def comet_cli(
         else:
             write_csv(comet_data, output_file)
 
-    print(f"Data has been written to {output_file}")
+    logger.info(f"Data has been written to {output_file}")

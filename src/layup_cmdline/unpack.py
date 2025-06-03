@@ -77,6 +77,10 @@ def main():
 def execute(args):
     from layup.utilities.cli_utilities import warn_or_remove_file
     from layup.utilities.file_access_utils import find_file_or_exit, find_directory_or_exit
+    from layup.utilities.layup_logging import LayupLogger
+
+    layup_logger = LayupLogger()
+    logger = layup_logger.get_logger("layup.unpack_cmdline")
 
     # check input exists
     find_file_or_exit(args.input, "input")
@@ -89,6 +93,7 @@ def execute(args):
     elif args.i.lower() == "hdf5":
         output_file = args.o + ".h5"
     else:
+        logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
     # check for overwriting output file

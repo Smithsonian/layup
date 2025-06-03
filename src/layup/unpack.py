@@ -275,4 +275,4 @@ def unpack_cli(
             else:
                 write_csv(res_unpacked, output_file)
 
-    print(f"Data has been written to {output_file}")
+    logger.info(f"Data has been written to {output_file}")
