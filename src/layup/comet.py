@@ -2,6 +2,12 @@ import logging
 import os
 from pathlib import Path
 from typing import Literal
+import numpy as np
+
+from layup.utilities.layup_configs import LayupConfigs
+from layup.utilities.bootstrap_utilties.download_utilities import make_retriever
+import assist
+import rebound
 
 from layup.convert import get_output_column_names_and_types, convert
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
@@ -17,6 +23,42 @@ INPUT_READERS = {
     "csv": CSVDataReader,
     "hdf5": HDF5DataReader,
 }
+
+def create_assist_ephemeris(auxconfigs, cache_dir=None):
+    """
+    Create an ASSIST ephemeris object and compute GM values. Modified from sorcha.
+    """
+    retriever = make_retriever(auxconfigs, cache_dir)
+
+    planet_path = retriever.fetch(auxconfigs.jpl_planets)
+    small_bodies_path = retriever.fetch(auxconfigs.jpl_small_bodies)
+
+    ephem = assist.Ephem(planets_path=planet_path, asteroids_path=small_bodies_path)
+    gm_sun = ephem.get_particle("Sun", 0).m
+    gm_total = sum(ephem.get_particle(i, 0).m for i in range(27))
+
+    return ephem, gm_sun, gm_total
+
+def generate_assist_simulation_from_cartesian(row, epoch, ephem, gm_total):
+    """
+    Given a row with x, y, z, vx, vy, vz, create a REBOUND+ASSIST simulation. Modified from sorcha.
+    """
+    x, y, z = row["x"], row["y"], row["z"]
+    vx, vy, vz = row["xdot"], row["ydot"], row["zdot"]
+
+    if np.any(np.isnan([x, y, z, vx, vy, vz])):
+        return None
+
+    sim = rebound.Simulation()
+    sim.t = epoch - ephem.jd_ref
+    sim.dt = 10.0
+    sim.ri_ias15.adaptive_mode = 1
+    sim.add(x=x, y=y, z=z, vx=vx, vy=vy, vz=vz)
+
+    ex = assist.Extras(sim, ephem)
+    ex.forces = [f for f in ex.forces if f != "GR_EIH"] + ["GR_SIMPLE"]
+
+    return sim
 
 
 def _apply_comet(data, cache_dir=None, primary_id_column_name=None):
@@ -37,7 +79,78 @@ def _apply_comet(data, cache_dir=None, primary_id_column_name=None):
     data : numpy structured array
         The comet data output
     """
-    return data
+    layup_config = LayupConfigs()
+    auxconfigs = layup_config.auxiliary
+
+    ephem, gm_sun, gm_total = create_assist_ephemeris(auxconfigs, cache_dir=cache_dir)
+
+    output_dtype = data.dtype.descr + [('inv_a0', 'f8')]
+    out = np.empty(data.shape, dtype=output_dtype)
+    for name in data.dtype.names:
+        out[name] = data[name]
+
+    for i, row in enumerate(data):
+        try:
+            epoch = row["epochMJD_TDB"] + 2400000.5
+
+            sim = generate_assist_simulation_from_cartesian(row, epoch, ephem, gm_total)
+            if sim is None:
+                obj_id = row[primary_id_column_name] if primary_id_column_name in row.dtype.names else i
+                logger.warning(f"Row {i} ({obj_id}): invalid Cartesian state. Skipping.")
+                out[i]["inv_a0"] = np.nan
+                continue
+
+            primary = rebound.Particle(m=gm_total)
+
+            max_steps = 10_000_000
+            step = 0
+            deltaT = 10.0  # days
+            threshold_distance = 250.0  # AU
+
+            # Get initial orbit at t0
+            oi = sim.particles[0].orbit(primary=primary)
+
+            # Take one backward step to get a initial distance
+            sim.integrate(sim.t - deltaT)
+            of = sim.particles[0].orbit(primary=primary)
+            initial_outward = of.d > oi.d  # True if the particle is moving outward initially when integrating backward
+
+
+            while step < max_steps:
+                # Integrate backward
+                sim.integrate(sim.t - deltaT)
+                step += 1
+
+                of = sim.particles[0].orbit(primary=primary)
+
+                # If we've reached the large heliocentric distance, use this orbit
+                if of.d > threshold_distance:
+                    out[i]["inv_a0"] = 1.0 / of.a
+                    break
+
+                # Flip direction tracker if needed (to allow crossing perihelion)
+                if initial_outward and of.d < oi.d:
+                    initial_outward = False
+
+                # If particle starts returning inward after outbound phase, we missed aphelion so calculate a and break 
+                if not initial_outward and of.d > oi.d:
+                    logger.warning(f"Row {i} appears to be turning inward again. Breaking.")
+                    out[i]["inv_a0"] = 1.0 / of.a  
+                    break
+
+                oi = of  # update previous orbit for next step
+
+            else:
+                logger.warning(f"{obj_id} exceeded max steps before reaching 250 AU.")
+                out[i]["inv_a0"] = np.nan
+
+
+        except Exception as e:
+            obj_id = row[primary_id_column_name] if primary_id_column_name in row.dtype.names else i
+            logger.warning(f"{obj_id}: integration error — {e}")
+            out[i]["inv_a0"] = np.nan
+
+    return out
 
 
 def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID"):
