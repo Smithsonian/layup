@@ -54,6 +54,25 @@ def _get_result_dtypes(primary_id_column_name: str):
         ]
     )
 
+def _convert_to_sg(data):
+    """This function adds two columns of the RA and Dec in sexagesimal to the output, called ra_hms and Dec_dms."""
+    ra_deg = data["ra_deg"]/15
+    dec_deg = data["dec_deg"]
+    ra_decimal = ra_deg%1
+    dec_decimal = np.abs(dec_deg)%1
+    ra_m = ra_decimal*60
+    dec_m = dec_decimal*60
+    ra_decimal = ra_m%1
+    dec_decimal = dec_m%1
+    ra = []
+    dec = []
+    for i in range(len(ra_deg)):
+
+        ra.append(f"{int(ra_deg[i])} {int(ra_m[i])} {np.round(ra_decimal[i]*60, decimals=2)}") 
+        dec.append(f"{int(dec_deg[i])} {int(dec_m[i])} {np.round(dec_decimal[i]*60, decimals=2)}")
+
+    return np.lib.recfunctions.append_fields(data, ["ra_hms","dec_dms"], [ra,dec], usemask=False)
+
 
 def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     """This function is called by the parallelization function to call the C++ code.
@@ -242,6 +261,9 @@ def predict_cli(
             cache_dir=cache_dir,
             primary_id_column_name=cli_args.primary_id_column_name,
         )
+
+        if cli_args.units==True:
+            predictions=_convert_to_sg(predictions)
 
         if len(predictions) > 0:
             write_csv(predictions, output_file)
