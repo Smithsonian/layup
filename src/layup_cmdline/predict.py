@@ -182,9 +182,9 @@ def main():
         dest="units",
         type=bool,
         default=False,
-        required=False
+        required=False,
     )
-    
+
     args = parser.parse_args()
 
     return execute(args)

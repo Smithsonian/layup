@@ -55,23 +55,23 @@ def _get_result_dtypes(primary_id_column_name: str):
     )
 
 def _convert_to_sg(data):
-    """This function adds two columns of the RA and Dec in sexagesimal to the output, called ra_hms and Dec_dms."""
-    ra_deg = data["ra_deg"]/15
+    """This function adds two columns of the RA and Dec in sexagesimal to the output, called ra_str_hms and dec_str_dms."""
+    ra_deg = data["ra_deg"] / 15
     dec_deg = data["dec_deg"]
-    ra_decimal = ra_deg%1
-    dec_decimal = np.abs(dec_deg)%1
-    ra_m = ra_decimal*60
-    dec_m = dec_decimal*60
-    ra_decimal = ra_m%1
-    dec_decimal = dec_m%1
-    ra = []
-    dec = []
+    ra_decimal = ra_deg % 1
+    dec_decimal = np.abs(dec_deg) % 1
+    ra_m = ra_decimal * 60
+    dec_m = dec_decimal * 60
+    ra_decimal = ra_m % 1
+    dec_decimal = dec_m % 1
+    ra = np.empty(len(ra_deg), dtype = '<U16')
+    dec = np.empty(len(ra_deg), dtype = '<U16')
     for i in range(len(ra_deg)):
 
-        ra.append(f"{int(ra_deg[i])} {int(ra_m[i])} {np.round(ra_decimal[i]*60, decimals=2)}") 
-        dec.append(f"{int(dec_deg[i])} {int(dec_m[i])} {np.round(dec_decimal[i]*60, decimals=2)}")
+        ra[i] = f"{int(ra_deg[i])} {int(ra_m[i])} {np.round(ra_decimal[i]*60, decimals=2)}"        # Same format as
+        dec[i] = f"{int(dec_deg[i])} {int(dec_m[i])} {np.round(dec_decimal[i]*60, decimals=1)}"    # JPL Horizons
 
-    return np.lib.recfunctions.append_fields(data, ["ra_hms","dec_dms"], [ra,dec], usemask=False)
+    return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
 
 
 def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
@@ -262,8 +262,8 @@ def predict_cli(
             primary_id_column_name=cli_args.primary_id_column_name,
         )
 
-        if cli_args.units==True:
-            predictions=_convert_to_sg(predictions)
+        if cli_args.units == True:
+            predictions = _convert_to_sg(predictions)
 
         if len(predictions) > 0:
             write_csv(predictions, output_file)

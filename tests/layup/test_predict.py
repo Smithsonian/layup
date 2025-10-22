@@ -39,6 +39,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
             self.n = 1
             self.chunk = chunk_size
             self.station = "X05"
+            self.units = False
 
     # The naming scheme for the test files indicates its orbit format
     test_filename = f"predict_chunk_{input_format}.csv"
@@ -119,9 +120,10 @@ def test_predict_output(tmpdir):
     test_filename = "holman.csv"
     input_file = Path(get_test_filepath(test_filename))
     temp_out_file = f"test_output_{input_file.stem}"
+    sexagesimal_units = "True"
 
     result = subprocess.run(
-        ["layup", "predict", str(input_file), "-f", "-o", str(temp_out_file), "-s", start]
+        ["layup", "predict", str(input_file), "-f", "-o", str(temp_out_file), "-s", start, "-us", sexagesimal_units]
     )
 
     assert result.returncode == 0
@@ -134,7 +136,7 @@ def test_predict_output(tmpdir):
     output_data = output_csv_reader.read_rows()
 
     # Read in the known output
-    known_output_file = get_test_filepath("holman_expected_predict.csv")
+    known_output_file = get_test_filepath("holman_expected_predict_sg.csv")
     known_output_csv_reader = CSVDataReader(known_output_file, "csv", primary_id_column_name="provID")
     known_data = known_output_csv_reader.read_rows()
 
@@ -145,6 +147,8 @@ def test_predict_output(tmpdir):
     assert np.allclose(output_data["rho_x"], known_data["rho_x"])
     assert np.allclose(output_data["rho_y"], known_data["rho_y"])
     assert np.allclose(output_data["rho_z"], known_data["rho_z"])
+    assert np.all(output_data["ra_str_hms"]) == np.all(known_data["ra_str_hms"])
+    assert np.all(output_data["dec_str_dms"]) == np.all(known_data["dec_str_dms"])
 
     # ~ Leaving these commented out until the covariance calculation is solidified
     # assert np.allclose(output_data["obs_cov0"], known_data["obs_cov0"])
