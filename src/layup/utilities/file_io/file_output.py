@@ -16,6 +16,15 @@ def write_csv(data, filepath):
         The path to the file to write.
     """
     df = pd.DataFrame(data)
+
+    # if the list contains sexagesimal coordinates, move these forward
+    column_names = list(df.columns.values)
+    if "ra_str_hms" in column_names:
+        column_names.insert(3, column_names[-1])
+        column_names.pop()
+        column_names.insert(3, column_names[-1])
+        column_names.pop()
+        df = df[column_names]
     if os.path.exists(filepath):
         df.to_csv(filepath, mode="a", header=False, index=False)
     else:
