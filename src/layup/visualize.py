@@ -44,13 +44,11 @@ DEFAULT_PLOT_RC = {
 }
 
 
-def get_default_fig(
-        kind: Literal["2D", "3D"] = "2D"
-):
+def get_default_fig(kind: Literal["2D", "3D"] = "2D"):
     import matplotlib.pyplot as plt
 
     if kind == "2D":
-        fig, axs = plt.subplots(1,2, layout="constrained", figsize=(20,9))
+        fig, axs = plt.subplots(1, 2, layout="constrained", figsize=(20, 9))
         fig.patch.set_facecolor("k")
 
         for ax in axs:
@@ -70,9 +68,9 @@ def get_default_fig(
         axs[1].set_title("Edge-on", fontdict={"color": "white"})
 
         return fig, axs
-    
+
     elif kind == "3D":
-        fig = plt.figure(figsize=(15,9))
+        fig = plt.figure(figsize=(15, 9))
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
         ax = fig.add_subplot(111, projection="3d")
 
@@ -92,8 +90,7 @@ def get_default_fig(
             axis._axinfo["grid"]["color"] = (0.1, 0.1, 0.1, 1.0)
             axis.label.set_color("white")
             axis._axinfo["tick"]["inward_factor"] = 0
-            axis._axinfo["tick"]["outward_factor" \
-            ""] = 0
+            axis._axinfo["tick"]["outward_factor" ""] = 0
             axis._axinfo["tick"]["size"] = 0
         return fig, ax
 
@@ -141,7 +138,7 @@ def construct_ellipse(
     # mean anomaly via fixed point iteration and then wrap the linspace
     # around this value from 0 to 2pi
     E_init = M  # initial guesses using mean anomaly (shouldn't be too far off)
-    assert np.all(e < 1.), "e must be < 1 (bound elliptical orbits)"
+    assert np.all(e < 1.0), "e must be < 1 (bound elliptical orbits)"
 
     for tries in range(100):
         E_new = M + e * np.sin(E_init)
@@ -162,13 +159,13 @@ def construct_ellipse(
 
     # define position vectors in orthogonal reference frame with origin
     # at ellipse main focus with q1 oriented towards periapsis (see chapter
-    # 1.2 of Morbidelli 2011, "Modern Celestial Mechanics" for details, or 
+    # 1.2 of Morbidelli 2011, "Modern Celestial Mechanics" for details, or
     # §15 p38 eq. 15.12 of Landau and Lifshitz, "Mechanics" for the case
     # of a hyperbolic orbit)
-    if e < 1.:
+    if e < 1.0:
         q1 = a * (np.cos(E) - e)
         q2 = a * np.sqrt(1.0 - e**2) * np.sin(E)
-    elif e >= 1.:
+    elif e >= 1.0:
         q1 = a * (e - np.cosh(E))
         q2 = a * np.sqrt(e**2 - 1.0) * np.sinh(E)
 
@@ -298,15 +295,17 @@ def matplot_2D(orb_array, planets, plot_planets, plot_sun, output, fade, fig=Non
 
         planets_dic = dictfilt(planets_dic, planets)
         for _, (k, v) in enumerate(planets_dic.items()):
-            axs[0].add_patch(plt.Circle((0, 0), v[0], color=v[2], fill=False, alpha=0.9, linestyle="dotted", zorder=100))
-            axs[0].text(v[0]+1, 0, k[0], color=v[2])
+            axs[0].add_patch(
+                plt.Circle((0, 0), v[0], color=v[2], fill=False, alpha=0.9, linestyle="dotted", zorder=100)
+            )
+            axs[0].text(v[0] + 1, 0, k[0], color=v[2])
 
             axs[1].plot(
                 v[0] * np.cos(theta),
                 v[0] * np.cos(theta) * np.sin(np.radians(v[1])),
                 color=v[2],
                 linestyle="dotted",
-                zorder=100
+                zorder=100,
             )
 
     if created_fig:
@@ -399,7 +398,7 @@ def matplot_3D(orb_array, planets, plot_planets, plot_sun, output, fade, fig=Non
                 color=v[2],
                 alpha=0.9,
                 linestyle="dotted",
-                zorder=10000
+                zorder=10000,
             )
             axs.text(v[0], 0, 0, k[0], color=v[2])
 
@@ -409,6 +408,7 @@ def matplot_3D(orb_array, planets, plot_planets, plot_sun, output, fade, fig=Non
         plt.close(fig)
     else:
         return fig, axs
+
 
 # TODO: develop plotly plotting functionality better
 # def plotly_3D(orb_array, planets, no_planets, sun, output, fade):
@@ -579,7 +579,9 @@ def visualize_cli(
 
     random_orbs = reader.read_rows(block_start=0, block_size=1000)
     if num_orbs > random_orbs.size:
-        logger.warning(f"Requested {num_orbs} orbits, but only {random_orbs.size} available from input. Capping at {random_orbs.size} instead.")
+        logger.warning(
+            f"Requested {num_orbs} orbits, but only {random_orbs.size} available from input. Capping at {random_orbs.size} instead."
+        )
         num_orbs = random_orbs.size
     random_orbs = random_orbs[np.random.choice(random_orbs.size, size=num_orbs, replace=False)]
 

@@ -87,7 +87,10 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "--plot_planets", help="overplot the planets. default is True", dest="plot_planets", action="store_true"
+        "--plot_planets",
+        help="overplot the planets. default is True",
+        dest="plot_planets",
+        action="store_true",
     )
     optional.add_argument(
         "--plot_sun", help="overplot the sun. default is True", dest="plot_sun", action="store_true"
