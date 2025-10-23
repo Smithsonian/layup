@@ -87,10 +87,10 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "--no_planets", help="overplot the planets. default is True", dest="no_planets", action="store_true"
+        "--plot_planets", help="overplot the planets. default is True", dest="plot_planets", action="store_true"
     )
     optional.add_argument(
-        "--no_sun", help="overplot the sun. default is True", dest="no_sun", action="store_true"
+        "--plot_sun", help="overplot the sun. default is True", dest="plot_sun", action="store_true"
     )
     optional.add_argument(
         "-f",
@@ -134,6 +134,10 @@ def execute(args):
     if args.b not in ["matplot", "plotly"]:
         sys.exit("ERROR: -b --backend must be 'matplot' or 'plotly'")
 
+    if args.plot_planets and not args.planets:
+        logger.warning("WARNING: --plot-planets given without --planets <list>. defaulting to all planets")
+        args.planets = ["Me", "V", "E", "Ma", "J", "S", "U", "N"]
+
     visualize_cli(
         input=args.input,
         output_file_stem=args.o,
@@ -142,8 +146,8 @@ def execute(args):
         backend=args.b,
         dimensions=args.d,
         num_orbs=args.n,
-        no_planets=args.no_planets,
-        no_sun=args.no_sun,
+        plot_planets=args.plot_planets,
+        plot_sun=args.plot_sun,
         fade=args.fade,
     )
 

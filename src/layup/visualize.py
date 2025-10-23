@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +19,83 @@ REQUIRED_COLUMN_NAMES = {
     "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
     "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
 }
+
+DEFAULT_PLOT_RC = {
+    "axes.linewidth": 1.875,
+    "grid.linewidth": 1.5,
+    "lines.linewidth": 2.25,
+    "lines.markersize": 9.0,
+    "patch.linewidth": 1.5,
+    "xtick.major.width": 1.875,
+    "ytick.major.width": 1.875,
+    "xtick.minor.width": 1.5,
+    "ytick.minor.width": 1.5,
+    "xtick.major.size": 9.0,
+    "ytick.major.size": 9.0,
+    "xtick.minor.size": 6.0,
+    "ytick.minor.size": 6.0,
+    "font.size": 18.0,
+    "axes.labelsize": 18.0,
+    "xtick.labelsize": 16.5,
+    "ytick.labelsize": 16.5,
+    "legend.fontsize": 16.5,
+    "legend.title_fontsize": 18.0,
+    "axes.titlesize": 32,
+}
+
+
+def get_default_fig(
+        kind: Literal["2D", "3D"] = "2D"
+):
+    import matplotlib.pyplot as plt
+
+    if kind == "2D":
+        fig, axs = plt.subplots(1,2, layout="constrained", figsize=(20,9))
+        fig.patch.set_facecolor("k")
+
+        for ax in axs:
+            ax.tick_params(labelbottom=True, labeltop=True, labelleft=True, labelright=True, colors="white")
+            ax.set_facecolor("k")
+            for spine in ax.spines.values():
+                spine.set_color("white")
+            ax.xaxis.label.set_color("white")
+            ax.yaxis.label.set_color("white")
+
+        axs[0].set_xlabel("x [AU]")
+        axs[0].set_ylabel("y [AU]")
+        axs[1].set_xlabel("x [AU]")
+        axs[1].set_ylabel("z [AU]")
+
+        axs[0].set_title("Bird's Eye", fontdict={"color": "white"})
+        axs[1].set_title("Edge-on", fontdict={"color": "white"})
+
+        return fig, axs
+    
+    elif kind == "3D":
+        fig = plt.figure(figsize=(15,9))
+        fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+        ax = fig.add_subplot(111, projection="3d")
+
+        fig.patch.set_facecolor("black")
+        ax.set_facecolor("black")
+
+        ax.tick_params(axis="x", colors="white", length=0)
+        ax.tick_params(axis="y", colors="white", length=0)
+        ax.tick_params(axis="z", colors="white", length=0)
+
+        ax.set_xlabel("x [au]")
+        ax.set_ylabel("y [au]")
+        ax.set_xlabel("z [au]")
+
+        for axis in [ax.xaxis, ax.yaxis, ax.zaxis]:
+            axis.set_pane_color((0.0, 0.0, 0.0, 1.0))
+            axis._axinfo["grid"]["color"] = (0.1, 0.1, 0.1, 1.0)
+            axis.label.set_color("white")
+            axis._axinfo["tick"]["inward_factor"] = 0
+            axis._axinfo["tick"]["outward_factor" \
+            ""] = 0
+            axis._axinfo["tick"]["size"] = 0
+        return fig, ax
 
 
 def construct_ellipse(
@@ -65,6 +141,7 @@ def construct_ellipse(
     # mean anomaly via fixed point iteration and then wrap the linspace
     # around this value from 0 to 2pi
     E_init = M  # initial guesses using mean anomaly (shouldn't be too far off)
+    assert np.all(e < 1.), "e must be < 1 (bound elliptical orbits)"
 
     for tries in range(100):
         E_new = M + e * np.sin(E_init)
@@ -85,9 +162,15 @@ def construct_ellipse(
 
     # define position vectors in orthogonal reference frame with origin
     # at ellipse main focus with q1 oriented towards periapsis (see chapter
-    # 1.2 of Morbidelli 2011, "Modern Celestial Mechanics" for details)
-    q1 = a * (np.cos(E) - e)
-    q2 = a * np.sqrt(1.0 - e**2) * np.sin(E)
+    # 1.2 of Morbidelli 2011, "Modern Celestial Mechanics" for details, or 
+    # §15 p38 eq. 15.12 of Landau and Lifshitz, "Mechanics" for the case
+    # of a hyperbolic orbit)
+    if e < 1.:
+        q1 = a * (np.cos(E) - e)
+        q2 = a * np.sqrt(1.0 - e**2) * np.sin(E)
+    elif e >= 1.:
+        q1 = a * (e - np.cosh(E))
+        q2 = a * np.sqrt(e**2 - 1.0) * np.sinh(E)
 
     if type(q1) == float:
         q = np.array([q1, q2, 0.0])
@@ -117,31 +200,7 @@ def construct_ellipse(
     return r
 
 
-@mpl.rc_context(
-    {
-        "axes.linewidth": 1.875,
-        "grid.linewidth": 1.5,
-        "lines.linewidth": 2.25,
-        "lines.markersize": 9.0,
-        "patch.linewidth": 1.5,
-        "xtick.major.width": 1.875,
-        "ytick.major.width": 1.875,
-        "xtick.minor.width": 1.5,
-        "ytick.minor.width": 1.5,
-        "xtick.major.size": 9.0,
-        "ytick.major.size": 9.0,
-        "xtick.minor.size": 6.0,
-        "ytick.minor.size": 6.0,
-        "font.size": 18.0,
-        "axes.labelsize": 18.0,
-        "xtick.labelsize": 16.5,
-        "ytick.labelsize": 16.5,
-        "legend.fontsize": 16.5,
-        "legend.title_fontsize": 18.0,
-        "axes.titlesize": 32,
-    }
-)
-def matplot_2D(orb_array, planets, no_planets, no_sun, output, fade):
+def matplot_2D(orb_array, planets, plot_planets, plot_sun, output, fade, fig=None, axs=None):
     """
     Create a 2D orbit distribution plot using matplot as a backend.
 
@@ -153,35 +212,33 @@ def matplot_2D(orb_array, planets, no_planets, no_sun, output, fade):
     planets : list
         List of desired planet orbits to be plotted
 
-    no_planets : bool
-        Flag to turn off planet orbits
+    plot_planets : bool
+        Flag to turn on planet orbits
 
-    no_sun : bool
-        Flag to turn of sun plotting
+    plot_sun : bool
+        Flag to turn on sun plotting
 
     output : str
         Output file stem
 
     fade : bool
         Flag to turn on object orbit fading
+
+    fig : matplot figure object (optional, default=None)
+        User created matplot figure object for custom plotting
+
+    axs : matplot axis object (optional, default=None)
+        User created corresponding matplot axis object for custom plotting
     """
     import matplotlib.pyplot as plt
     from matplotlib.collections import LineCollection
 
-    fig, axs = plt.subplots(1, 2, layout="constrained", figsize=(20, 9))
-    fig.patch.set_facecolor("k")
+    created_fig = False
+    if fig is None or axs is None:
+        fig, axs = get_default_fig("2D")
+        created_fig = True
 
     for ax in axs:
-        ax.tick_params(labelbottom=True, labeltop=True, labelleft=True, labelright=True, colors="white")
-
-        ax.set_facecolor("k")
-
-        for spine in ax.spines.values():
-            spine.set_color("white")
-
-        ax.xaxis.label.set_color("white")
-        ax.yaxis.label.set_color("white")
-
         if np.max(orb_array["a"] < 2):
             maxQ = np.max(orb_array["a"] * (1 + orb_array["e"])) + 0.2
             ax.set(xlim=(-maxQ, maxQ), ylim=(-maxQ, maxQ), aspect="equal")
@@ -220,11 +277,11 @@ def matplot_2D(orb_array, planets, no_planets, no_sun, output, fade):
         axs[1].add_collection(lc)
 
     # add the sun
-    if not no_sun:
+    if plot_sun:
         axs[0].scatter(0, 0, s=100, color="xkcd:sunflower yellow")
 
     # add planets
-    if not no_planets:
+    if plot_planets and planets:
         planets_dic = {
             "Me": [0.387, 7.0, "#E7E8EC"],
             "V": [0.723, 3.4, "#E39E1C"],
@@ -241,30 +298,26 @@ def matplot_2D(orb_array, planets, no_planets, no_sun, output, fade):
 
         planets_dic = dictfilt(planets_dic, planets)
         for _, (k, v) in enumerate(planets_dic.items()):
-            axs[0].add_patch(plt.Circle((0, 0), v[0], color=v[2], fill=False, alpha=0.9, linestyle="dotted"))
-            # axs[0].text(v[0]+1, 0, k[0], color=v[2])
+            axs[0].add_patch(plt.Circle((0, 0), v[0], color=v[2], fill=False, alpha=0.9, linestyle="dotted", zorder=100))
+            axs[0].text(v[0]+1, 0, k[0], color=v[2])
 
             axs[1].plot(
                 v[0] * np.cos(theta),
                 v[0] * np.cos(theta) * np.sin(np.radians(v[1])),
                 color=v[2],
                 linestyle="dotted",
+                zorder=100
             )
 
-    axs[0].set_xlabel("x [AU]")
-    axs[0].set_ylabel("y [AU]")
-    axs[1].set_xlabel("x [AU]")
-    axs[1].set_ylabel("z [AU]")
-
-    axs[0].set_title("Bird's Eye", fontdict={"color": "white"})
-    axs[1].set_title("Edge-on", fontdict={"color": "white"})
-
-    plt.savefig(output, dpi=300)
-    plt.show()
-    plt.close()
+    if created_fig:
+        fig.savefig(output, dpi=300)
+        plt.show()
+        plt.close(fig)
+    else:
+        return fig, axs
 
 
-def matplot_3D(orb_array, planets, no_planets, no_sun, output, fade):
+def matplot_3D(orb_array, planets, plot_planets, plot_sun, output, fade, fig=None, axs=None):
     """
     Create a 3D orbit distribution plot using matplot as a backend.
 
@@ -276,51 +329,31 @@ def matplot_3D(orb_array, planets, no_planets, no_sun, output, fade):
     planets : list
         List of desired planet orbits to be plotted
 
-    no_planets : bool
-        Flag to turn off planet orbits
+    plot_planets : bool
+        Flag to turn on planet orbits
 
-    no_sun : bool
-        Flag to turn of sun plotting
+    plot_sun : bool
+        Flag to turn on sun plotting
 
     output : str
         Output file stem
 
     fade : bool
         Flag to turn on object orbit fading
+
+    fig : matplot figure object (optional, default=None)
+        User created matplot figure object for custom plotting
+
+    axs : matplot axis object (optional, default=None)
+        User created corresponding matplot axis object for custom plotting
     """
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
-    fig = plt.figure(figsize=(15, 9))
-    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    axs = fig.add_subplot(111, projection="3d")
-
-    fig.patch.set_facecolor("black")
-    axs.set_facecolor("black")
-    axs.xaxis.set_pane_color((0.0, 0.0, 0.0, 1.0))  # RGBA: white
-    axs.yaxis.set_pane_color((0.0, 0.0, 0.0, 1.0))
-    axs.zaxis.set_pane_color((0.0, 0.0, 0.0, 1.0))
-
-    axs.xaxis._axinfo["grid"]["color"] = (0.1, 0.1, 0.1, 1)  # grey
-    axs.yaxis._axinfo["grid"]["color"] = (0.1, 0.1, 0.1, 1)  # grey
-    axs.zaxis._axinfo["grid"]["color"] = (0.1, 0.1, 0.1, 1)  # grey
-
-    axs.xaxis.label.set_color("white")
-    axs.yaxis.label.set_color("white")
-    axs.zaxis.label.set_color("white")
-
-    axs.tick_params(axis="x", colors="white", length=0)
-    axs.tick_params(axis="y", colors="white", length=0)
-    axs.tick_params(axis="z", colors="white", length=0)
-
-    for axis in [axs.xaxis, axs.yaxis, axs.zaxis]:
-        axis._axinfo["tick"]["inward_factor"] = 0
-        axis._axinfo["tick"]["outward_factor"] = 0
-        axis._axinfo["tick"]["size"] = 0
-
-    axs.set_xlabel("x [au]")
-    axs.set_ylabel("y [au]")
-    axs.set_zlabel("z [au]")
+    created_fig = False
+    if fig is None or axs is None:
+        fig, axs = get_default_fig("3D")
+        created_fig = True
 
     for obj in orb_array:
         posvec = construct_ellipse(obj[2], obj[3], obj[4], obj[6], obj[5], obj[7])
@@ -338,11 +371,11 @@ def matplot_3D(orb_array, planets, no_planets, no_sun, output, fade):
         axs.add_collection3d(lc)
 
     # add sun
-    if not no_sun:
+    if plot_sun:
         axs.scatter(0, 0, s=100, color="xkcd:sunflower yellow")
 
     # add planets
-    if not no_planets:
+    if plot_planets and planets:
         planets_dic = {
             "Me": [0.387, 7.0, "#E7E8EC"],
             "V": [0.723, 3.4, "#E39E1C"],
@@ -366,102 +399,107 @@ def matplot_3D(orb_array, planets, no_planets, no_sun, output, fade):
                 color=v[2],
                 alpha=0.9,
                 linestyle="dotted",
+                zorder=10000
             )
             axs.text(v[0], 0, 0, k[0], color=v[2])
 
-    plt.savefig(output, dpi=300, bbox_inches="tight")
-    plt.show()
+    if created_fig:
+        fig.savefig(output, dpi=300, bbox_inches="tight")
+        plt.show()
+        plt.close(fig)
+    else:
+        return fig, axs
 
+# TODO: develop plotly plotting functionality better
+# def plotly_3D(orb_array, planets, no_planets, sun, output, fade):
+#     """
+#     Create a 3D orbit distribution plot using plotly as a backend.
 
-def plotly_3D(orb_array, planets, no_planets, no_sun, output, fade):
-    """
-    Create a 3D orbit distribution plot using plotly as a backend.
+#     Parameters
+#     -------
+#     orb_array : structured numpy array
+#         Numpy array containing orbital element information
 
-    Parameters
-    -------
-    orb_array : structured numpy array
-        Numpy array containing orbital element information
+#     planets : list
+#         List of desired planet orbits to be plotted
 
-    planets : list
-        List of desired planet orbits to be plotted
+#     no_planets : bool
+#         Flag to turn off planet orbits
 
-    no_planets : bool
-        Flag to turn off planet orbits
+#     sun : bool
+#         Flag to turn on sun plotting
 
-    no_sun : bool
-        Flag to turn of sun plotting
+#     output : str
+#         Output file stem
 
-    output : str
-        Output file stem
+#     fade : bool
+#         Flag to turn on object orbit fading
+#     """
+#     import plotly.graph_objects as go
 
-    fade : bool
-        Flag to turn on object orbit fading
-    """
-    import plotly.graph_objects as go
+#     fig = go.Figure()
 
-    fig = go.Figure()
+#     fig.update_layout(
+#         plot_bgcolor="rgb(0,0,0)",
+#         paper_bgcolor="rgb(0,0,0)",
+#         scene=dict(
+#             xaxis=dict(
+#                 backgroundcolor="rgba(0, 0, 0,0)",
+#                 gridcolor="rgb(106, 110, 117)",
+#                 title_font=dict(color="rgb(255,255,255)"),
+#                 tickfont=dict(color="rgb(255,255,255)"),
+#                 showbackground=True,
+#                 zerolinecolor="white",
+#             ),
+#             yaxis=dict(
+#                 backgroundcolor="rgba(0, 0, 0,0)",
+#                 gridcolor="rgb(106, 110, 117)",
+#                 title_font=dict(color="rgb(255,255,255)"),
+#                 tickfont=dict(color="rgb(255,255,255)"),
+#                 showbackground=True,
+#                 zerolinecolor="white",
+#             ),
+#             zaxis=dict(
+#                 backgroundcolor="rgba(0, 0, 0,0)",
+#                 gridcolor="rgb(106, 110, 117)",
+#                 title_font=dict(color="rgb(255,255,255)"),
+#                 tickfont=dict(color="rgb(255,255,255)"),
+#                 showbackground=True,
+#                 zerolinecolor="white",
+#             ),
+#         ),
+#     )
 
-    fig.update_layout(
-        plot_bgcolor="rgb(0,0,0)",
-        paper_bgcolor="rgb(0,0,0)",
-        scene=dict(
-            xaxis=dict(
-                backgroundcolor="rgba(0, 0, 0,0)",
-                gridcolor="rgb(106, 110, 117)",
-                title_font=dict(color="rgb(255,255,255)"),
-                tickfont=dict(color="rgb(255,255,255)"),
-                showbackground=True,
-                zerolinecolor="white",
-            ),
-            yaxis=dict(
-                backgroundcolor="rgba(0, 0, 0,0)",
-                gridcolor="rgb(106, 110, 117)",
-                title_font=dict(color="rgb(255,255,255)"),
-                tickfont=dict(color="rgb(255,255,255)"),
-                showbackground=True,
-                zerolinecolor="white",
-            ),
-            zaxis=dict(
-                backgroundcolor="rgba(0, 0, 0,0)",
-                gridcolor="rgb(106, 110, 117)",
-                title_font=dict(color="rgb(255,255,255)"),
-                tickfont=dict(color="rgb(255,255,255)"),
-                showbackground=True,
-                zerolinecolor="white",
-            ),
-        ),
-    )
+#     fig.update_yaxes(title_font_color="white", color="white")
+#     fig.update_xaxes(title_font_color="white", color="white")
 
-    fig.update_yaxes(title_font_color="white", color="white")
-    fig.update_xaxes(title_font_color="white", color="white")
+#     if sun:
+#         fig.add_trace(go.scatter(x=0, y=0, s=100, color="xkcd:sunflower yellow"))
 
-    if not no_sun:
-        fig.add_trace(go.scatter(x=0, y=0, s=100, color="xkcd:sunflower yellow"))
+#     for obj in orb_array:
+#         posvec = construct_ellipse(obj[2], obj[3], obj[4], obj[6], obj[5], obj[7])
 
-    for obj in orb_array:
-        posvec = construct_ellipse(obj[2], obj[3], obj[4], obj[6], obj[5], obj[7])
+#         normx = (posvec[:, 0] - posvec[:, 0].min()) / (posvec[:, 0].max() - posvec[:, 0].min())
+#         opacity = np.log1p(normx * 9) / np.log1p(9)
 
-        normx = (posvec[:, 0] - posvec[:, 0].min()) / (posvec[:, 0].max() - posvec[:, 0].min())
-        opacity = np.log1p(normx * 9) / np.log1p(9)
+#         fig.add_trace(
+#             go.Scatter(
+#                 x=posvec[:, 0],
+#                 y=posvec[:, 1],
+#                 mode="lines",
+#                 line=dict(
+#                     color=opacity,
+#                     colorscale="gray",
+#                     cmin=0,
+#                     cmax=1,
+#                 ),
+#                 customdata=[obj[0]],
+#                 hovertemplate="<b>%{customdata[0]}</b><br>(x: %{x:.2f}, y: %{y:.2f}, z: %{z:.2f})<extra></extra>",
+#             )
+#         )
 
-        fig.add_trace(
-            go.Scatter(
-                x=posvec[:, 0],
-                y=posvec[:, 1],
-                mode="lines",
-                line=dict(
-                    color=opacity,
-                    colorscale="gray",
-                    cmin=0,
-                    cmax=1,
-                ),
-                customdata=[obj[0]],
-                hovertemplate="<b>%{customdata[0]}</b><br>(x: %{x:.2f}, y: %{y:.2f}, z: %{z:.2f})<extra></extra>",
-            )
-        )
-
-    fig.update_layout(showlegend=False)
-    fig.show()
+#     fig.update_layout(showlegend=False)
+#     fig.show()
 
 
 def visualize_cli(
@@ -473,8 +511,8 @@ def visualize_cli(
     backend: Literal["matplot", "plotly"] = "matplot",
     dimensions: Literal["2D", "3D"] = "2D",
     num_orbs: int = 1_000,
-    no_planets: bool = False,
-    no_sun: bool = False,
+    plot_planets: bool = True,
+    plot_sun: bool = True,
     fade: bool = False,
 ):
     """
@@ -506,11 +544,11 @@ def visualize_cli(
     num_orbs : int (default=1_000)
         The number of random orbits to plot
 
-    no_planets : bool (default=False)
-        Flag to turn off the planet orbits
+    plot_planets : bool (default=True)
+        Flag to turn on the planet orbits
 
-    no_sun : bool (default=False)
-        Flag to turn off the Sun
+    plot_sun : bool (default=True)
+        Flag to turn on the Sun
 
     fade : bool (default=False)
         Flag to turn off object orbit fading
@@ -540,13 +578,16 @@ def visualize_cli(
         )
 
     random_orbs = reader.read_rows(block_start=0, block_size=1000)
+    if num_orbs > random_orbs.size:
+        logger.warning(f"Requested {num_orbs} orbits, but only {random_orbs.size} available from input. Capping at {random_orbs.size} instead.")
+        num_orbs = random_orbs.size
     random_orbs = random_orbs[np.random.choice(random_orbs.size, size=num_orbs, replace=False)]
 
     if backend == "matplot":
         if dimensions == "2D":
-            matplot_2D(random_orbs, planets, no_planets, no_sun, output_file_stem, fade)
+            matplot_2D(random_orbs, planets, plot_planets, plot_sun, output_file_stem, fade)
         else:
-            matplot_3D(random_orbs, planets, no_planets, no_sun, output_file_stem, fade)
-    elif backend == "plotly":
-        if dimensions == "3D":
-            plotly_3D(random_orbs)
+            matplot_3D(random_orbs, planets, plot_planets, plot_sun, output_file_stem, fade)
+    # elif backend == "plotly":
+    #     if dimensions == "3D":
+    #         plotly_3D(random_orbs)
