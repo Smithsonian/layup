@@ -45,7 +45,7 @@ layup-log = "layup_cmdline.log:main"
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
 dev = [
-    "black==25.1.0", # Used for static linting of files
+    "black==25.9.0", # Used for static linting of files
     "jupyter", # Clears output from Jupyter notebooks
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
