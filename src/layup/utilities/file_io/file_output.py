@@ -20,7 +20,7 @@ def write_csv(data, filepath):
     # if the list contains sexagesimal coordinates, move these forward
     column_names = list(df.columns.values)
     if "ra_str_hms" in column_names:
-        column_names.insert(3, column_names[-1])
+        column_names.insert(3, column_names[-1]) # assumes the sexagesimal coords are the last 2 columns 
         column_names.pop()
         column_names.insert(3, column_names[-1])
         column_names.pop()

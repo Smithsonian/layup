@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.predict import predict, predict_cli
+from layup.predict import predict, predict_cli, _convert_to_sg
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -120,6 +120,41 @@ def test_predict_output(tmpdir):
     test_filename = "holman.csv"
     input_file = Path(get_test_filepath(test_filename))
     temp_out_file = f"test_output_{input_file.stem}"
+
+    result = subprocess.run(
+        ["layup", "predict", str(input_file), "-f", "-o", str(temp_out_file), "-s", start]
+    )
+
+    assert result.returncode == 0
+
+    result_file = Path(f"{tmpdir}/{temp_out_file}.csv")
+    assert result_file.exists
+
+    # Create a new CSV reader to read in our output file
+    output_csv_reader = CSVDataReader(str(result_file), "csv", primary_id_column_name="provID")
+    output_data = output_csv_reader.read_rows()
+
+    # Read in the known output
+    known_output_file = get_test_filepath("holman_expected_predict.csv")
+    known_output_csv_reader = CSVDataReader(known_output_file, "csv", primary_id_column_name="provID")
+    known_data = known_output_csv_reader.read_rows()
+
+    assert np.all(output_data["epoch_UTC"] == known_data["epoch_UTC"])
+    assert np.allclose(output_data["epoch_JD_TDB"], known_data["epoch_JD_TDB"])
+    assert np.allclose(output_data["ra_deg"], known_data["ra_deg"])
+    assert np.allclose(output_data["dec_deg"], known_data["dec_deg"])
+    assert np.allclose(output_data["rho_x"], known_data["rho_x"])
+    assert np.allclose(output_data["rho_y"], known_data["rho_y"])
+    assert np.allclose(output_data["rho_z"], known_data["rho_z"])
+
+
+    # ~ Leaving these commented out until the covariance calculation is solidified
+    # assert np.allclose(output_data["obs_cov0"], known_data["obs_cov0"])
+    # assert np.allclose(output_data["obs_cov1"], known_data["obs_cov1"])
+    # assert np.allclose(output_data["obs_cov2"], known_data["obs_cov2"])
+    # assert np.allclose(output_data["obs_cov3"], known_data["obs_cov3"])
+
+    # Testing the output of the sexagesimal conversion separately
     sexagesimal_units = "True"
 
     result = subprocess.run(
@@ -140,18 +175,20 @@ def test_predict_output(tmpdir):
     known_output_csv_reader = CSVDataReader(known_output_file, "csv", primary_id_column_name="provID")
     known_data = known_output_csv_reader.read_rows()
 
-    assert np.all(output_data["epoch_UTC"] == known_data["epoch_UTC"])
-    assert np.allclose(output_data["epoch_JD_TDB"], known_data["epoch_JD_TDB"])
-    assert np.allclose(output_data["ra_deg"], known_data["ra_deg"])
-    assert np.allclose(output_data["dec_deg"], known_data["dec_deg"])
-    assert np.allclose(output_data["rho_x"], known_data["rho_x"])
-    assert np.allclose(output_data["rho_y"], known_data["rho_y"])
-    assert np.allclose(output_data["rho_z"], known_data["rho_z"])
-    assert np.all(output_data["ra_str_hms"]) == np.all(known_data["ra_str_hms"])
-    assert np.all(output_data["dec_str_dms"]) == np.all(known_data["dec_str_dms"])
+    assert (output_data['ra_str_hms']==known_data['ra_str_hms']).all() == True
+    assert (output_data['dec_str_dms'] == known_data['dec_str_dms']).all() == True
 
-    # ~ Leaving these commented out until the covariance calculation is solidified
-    # assert np.allclose(output_data["obs_cov0"], known_data["obs_cov0"])
-    # assert np.allclose(output_data["obs_cov1"], known_data["obs_cov1"])
-    # assert np.allclose(output_data["obs_cov2"], known_data["obs_cov2"])
-    # assert np.allclose(output_data["obs_cov3"], known_data["obs_cov3"])
+    # Check the columns have been swapped too
+    assert (known_data.dtype.names == output_data.dtype.names) == True
+
+def test_convert_to_sg(tmpdir):
+    """Compare the output given by _convert_to_sg() with an expected output, seeing how it handles edge cases."""
+
+    data = CSVDataReader(
+        get_test_filepath("known_sexagesimal.csv"), "csv", primary_id_column_name="provID"
+    ).read_rows()
+
+    data = _convert_to_sg(data)
+
+    assert (data['ra_str_hms']==data['ra_str_hms_CHECK']).all() == True
+    assert (data['dec_str_dms'] == data['dec_str_dms_CHECK']).all() == True
