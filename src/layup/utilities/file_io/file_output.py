@@ -22,8 +22,11 @@ def write_csv(data, filepath, move_columns={}):
     if move_columns != {}:
         column_names = list(df.columns.values)
         for col in move_columns.keys():
-            column_names.pop(column_names.index((col)))
-            column_names.insert(move_columns[col], col)
+            try:
+                column_names.pop(column_names.index((col)))
+                column_names.insert(move_columns[col], col)
+            except:
+                raise ValueError(f"column {col} not found in df.columns.values.")
 
         df = df[column_names]
 
