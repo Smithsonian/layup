@@ -147,7 +147,6 @@ def test_predict_output(tmpdir):
     assert np.allclose(output_data["rho_y"], known_data["rho_y"])
     assert np.allclose(output_data["rho_z"], known_data["rho_z"])
 
-
     # ~ Leaving these commented out until the covariance calculation is solidified
     # assert np.allclose(output_data["obs_cov0"], known_data["obs_cov0"])
     # assert np.allclose(output_data["obs_cov1"], known_data["obs_cov1"])
@@ -158,7 +157,18 @@ def test_predict_output(tmpdir):
     sexagesimal_units = "True"
 
     result = subprocess.run(
-        ["layup", "predict", str(input_file), "-f", "-o", str(temp_out_file), "-s", start, "-us", sexagesimal_units]
+        [
+            "layup",
+            "predict",
+            str(input_file),
+            "-f",
+            "-o",
+            str(temp_out_file),
+            "-s",
+            start,
+            "-us",
+            sexagesimal_units,
+        ]
     )
 
     assert result.returncode == 0
@@ -175,11 +185,12 @@ def test_predict_output(tmpdir):
     known_output_csv_reader = CSVDataReader(known_output_file, "csv", primary_id_column_name="provID")
     known_data = known_output_csv_reader.read_rows()
 
-    assert (output_data['ra_str_hms']==known_data['ra_str_hms']).all() == True
-    assert (output_data['dec_str_dms'] == known_data['dec_str_dms']).all() == True
+    assert (output_data["ra_str_hms"] == known_data["ra_str_hms"]).all() == True
+    assert (output_data["dec_str_dms"] == known_data["dec_str_dms"]).all() == True
 
     # Check the columns have been swapped too
     assert (known_data.dtype.names == output_data.dtype.names) == True
+
 
 def test_convert_to_sg(tmpdir):
     """Compare the output given by _convert_to_sg() with an expected output, seeing how it handles edge cases."""
@@ -190,5 +201,5 @@ def test_convert_to_sg(tmpdir):
 
     data = _convert_to_sg(data)
 
-    assert (data['ra_str_hms']==data['ra_str_hms_CHECK']).all() == True
-    assert (data['dec_str_dms'] == data['dec_str_dms_CHECK']).all() == True
+    assert (data["ra_str_hms"] == data["ra_str_hms_CHECK"]).all() == True
+    assert (data["dec_str_dms"] == data["dec_str_dms_CHECK"]).all() == True
