@@ -5,7 +5,7 @@ import os
 import pandas as pd
 
 
-def write_csv(data, filepath, move_columns={}):
+def write_csv(data, filepath, move_columns=None):
     """Write a numpy structured array to a CSV file.
 
     Parameters
@@ -19,7 +19,7 @@ def write_csv(data, filepath, move_columns={}):
     """
     df = pd.DataFrame(data)
 
-    if move_columns != {}:
+    if move_columns != None:
         column_names = list(df.columns.values)
         for col in move_columns.keys():
             try:
