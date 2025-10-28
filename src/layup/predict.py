@@ -54,32 +54,37 @@ def _get_result_dtypes(primary_id_column_name: str):
         ]
     )
 
+
 def _convert_to_sg(data):
     """This function appends two columns of the RA and Dec in sexagesimal to the input array.
-    
+
     Parameters
     ----------
     data : numpy structured array
         The data to be processed.
-        
+
     Returns
     -------
-    input numpy structured array with ra and dec in sexagesimal appended, called ra_str_hms and dec_str_dms respectively.
+    input array with ra and dec in sexagesimal appended, called ra_str_hms and dec_str_dms respectively.
     """
-    ra_deg = (data["ra_deg"] / 15) %24.    # Ensuring ra is within 24 hours/360 degrees
+    ra_deg = (data["ra_deg"] / 15) % 24.0  # Ensuring ra is within 24 hours/360 degrees
     dec_deg = data["dec_deg"]
-    ra_decimal = ra_deg % 1.               # Take decimal portion to find arcminutes
+    ra_decimal = ra_deg % 1.0  # Take decimal portion to find arcminutes
     dec_decimal = np.abs(dec_deg) % 1
     ra_m = ra_decimal * 60
     dec_m = dec_decimal * 60
-    ra_decimal = ra_m % 1                  # Take decimal portion again for arcseconds
+    ra_decimal = ra_m % 1  # Take decimal portion again for arcseconds
     dec_decimal = dec_m % 1
-    ra = np.empty(len(ra_deg), dtype = '<U16')
-    dec = np.empty(len(ra_deg), dtype = '<U16')
+    ra = np.empty(len(ra_deg), dtype="<U16")
+    dec = np.empty(len(ra_deg), dtype="<U16")
     for i in range(len(ra_deg)):
 
-        ra[i] = f"{int(ra_deg[i]):02} {int(ra_m[i]):02} {np.round(ra_decimal[i]*60, decimals=2):05.2f}"       # Same format as 
-        dec[i] = f"{int(dec_deg[i]):+03} {int(dec_m[i]):02} {np.round(dec_decimal[i]*60, decimals=1):04.1f}"  # JPL Horizons
+        ra[i] = (
+            f"{int(ra_deg[i]):02} {int(ra_m[i]):02} {np.round(ra_decimal[i]*60, decimals=2):05.2f}"  # Same format as
+        )
+        dec[i] = (
+            f"{int(dec_deg[i]):+03} {int(dec_m[i]):02} {np.round(dec_decimal[i]*60, decimals=1):04.1f}"  # JPL Horizons
+        )
 
     return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
 
