@@ -176,13 +176,10 @@ def main():
     )
 
     optional.add_argument(
-        "-us",
-        "--units-sexagesimal",
-        help="Option for output units of RA and Dec to be given in sexagesimal. False will use degrees.",
-        dest="units",
-        type=bool,
-        default=False,
-        required=False,
+        "-sg",
+        "--sexagesimal",
+        action="store_true",
+        help="Option for output units of RA and Dec to be given in sexagesimal.",
     )
 
     args = parser.parse_args()

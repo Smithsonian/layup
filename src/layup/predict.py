@@ -67,24 +67,24 @@ def _convert_to_sg(data):
     -------
     input array with ra and dec in sexagesimal appended, called ra_str_hms and dec_str_dms respectively.
     """
-    ra_deg = (data["ra_deg"] / 15) % 24.0  # Ensuring ra is within 24 hours/360 degrees
+    ra_deg = (data["ra_deg"] / 15) % 24  # Ensuring ra is within 24 hours/360 degrees
+    ra_h = ra_deg.astype(int)
     dec_deg = data["dec_deg"]
-    ra_decimal = ra_deg % 1.0  # Take decimal portion to find arcminutes
-    dec_decimal = np.abs(dec_deg) % 1
-    ra_m = ra_decimal * 60
-    dec_m = dec_decimal * 60
-    ra_decimal = ra_m % 1  # Take decimal portion again for arcseconds
-    dec_decimal = dec_m % 1
-    ra = np.empty(len(ra_deg), dtype="<U16")
-    dec = np.empty(len(ra_deg), dtype="<U16")
-    for i in range(len(ra_deg)):
+    dec_d = dec_deg.astype(int)
+    ra_decimal = (ra_deg % 1) * 60
+    ra_m = ra_decimal.astype(int)
+    dec_decimal = (np.abs(dec_deg) % 1) * 60
+    dec_m = dec_decimal.astype(int)
+    ra_s = (ra_decimal % 1) * 60  # Take decimal portion again for arcseconds
+    dec_s = (dec_decimal % 1) * 60
 
-        ra[i] = (
-            f"{int(ra_deg[i]):02} {int(ra_m[i]):02} {np.round(ra_decimal[i]*60, decimals=2):05.2f}"  # Same format as
-        )
-        dec[i] = (
-            f"{int(dec_deg[i]):+03} {int(dec_m[i]):02} {np.round(dec_decimal[i]*60, decimals=1):04.1f}"  # JPL Horizons
-        )
+    ra = np.empty(len(ra_h), dtype="<U16")
+    dec = np.empty(len(ra_h), dtype="<U16")
+
+    for i in range(len(ra_h)):
+
+        ra[i] = f"{ra_h[i]:02} {ra_m[i]:02} {ra_s[i]:05.2f}"  # Same format as
+        dec[i] = f"{dec_d[i]:+03} {dec_m[i]:02} {dec_s[i]:04.1f}"  # JPL Horizons
 
     return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
 
@@ -277,8 +277,9 @@ def predict_cli(
             primary_id_column_name=cli_args.primary_id_column_name,
         )
 
-        if cli_args.units == True:
-            predictions = _convert_to_sg(predictions)
-
         if len(predictions) > 0:
-            write_csv(predictions, output_file)
+            if cli_args.sexagesimal:
+                predictions = _convert_to_sg(predictions)
+                write_csv(predictions, output_file, move_columns={"ra_str_hms": 3, "dec_str_dms": 4})
+            else:
+                write_csv(predictions, output_file)

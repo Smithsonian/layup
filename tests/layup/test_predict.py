@@ -39,7 +39,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
             self.n = 1
             self.chunk = chunk_size
             self.station = "X05"
-            self.units = False
+            self.sexagesimal = False
 
     # The naming scheme for the test files indicates its orbit format
     test_filename = f"predict_chunk_{input_format}.csv"
@@ -154,7 +154,6 @@ def test_predict_output(tmpdir):
     # assert np.allclose(output_data["obs_cov3"], known_data["obs_cov3"])
 
     # Testing the output of the sexagesimal conversion separately
-    sexagesimal_units = "True"
 
     result = subprocess.run(
         [
@@ -166,8 +165,7 @@ def test_predict_output(tmpdir):
             str(temp_out_file),
             "-s",
             start,
-            "-us",
-            sexagesimal_units,
+            "-sg",
         ]
     )
 
