@@ -175,6 +175,13 @@ def main():
         required=False,
     )
 
+    optional.add_argument(
+        "-sg",
+        "--sexagesimal",
+        action="store_true",
+        help="Flag to add RA and Dec in sexagesimal format to the output.",
+    )
+
     args = parser.parse_args()
 
     return execute(args)

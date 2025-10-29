@@ -55,6 +55,40 @@ def _get_result_dtypes(primary_id_column_name: str):
     )
 
 
+def _convert_to_sg(data):
+    """This function appends two columns of the RA and Dec in sexagesimal to the input array.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to be processed.
+
+    Returns
+    -------
+    input array with ra and dec in sexagesimal appended, called ra_str_hms and dec_str_dms respectively.
+    """
+    ra_deg = (data["ra_deg"] / 15) % 24  # Ensuring ra is within 24 hours/360 degrees
+    ra_h = ra_deg.astype(int)
+    dec_deg = data["dec_deg"]
+    dec_d = dec_deg.astype(int)
+    ra_decimal = (ra_deg % 1) * 60
+    ra_m = ra_decimal.astype(int)
+    dec_decimal = (np.abs(dec_deg) % 1) * 60
+    dec_m = dec_decimal.astype(int)
+    ra_s = (ra_decimal % 1) * 60  # Take decimal portion again for arcseconds
+    dec_s = (dec_decimal % 1) * 60
+
+    ra = np.empty(len(ra_h), dtype="<U16")
+    dec = np.empty(len(ra_h), dtype="<U16")
+
+    for i in range(len(ra_h)):
+
+        ra[i] = f"{ra_h[i]:02} {ra_m[i]:02} {ra_s[i]:05.2f}"  # Same format as
+        dec[i] = f"{dec_d[i]:+03} {dec_m[i]:02} {dec_s[i]:04.1f}"  # JPL Horizons
+
+    return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
+
+
 def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     """This function is called by the parallelization function to call the C++ code.
 
@@ -244,4 +278,8 @@ def predict_cli(
         )
 
         if len(predictions) > 0:
-            write_csv(predictions, output_file)
+            if cli_args.sexagesimal:
+                predictions = _convert_to_sg(predictions)
+                write_csv(predictions, output_file, move_columns={"ra_str_hms": 3, "dec_str_dms": 4})
+            else:
+                write_csv(predictions, output_file)
