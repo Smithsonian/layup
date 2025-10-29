@@ -49,6 +49,7 @@ def test_write_csv(tmpdir):
     assert_equal(appended_data[0:2], data[1:3])
     assert_equal(appended_data[2:4], data[3:5])
 
+
 def test_write_csv_move_columns(tmpdir):
     # Read a test CSV file into a numpy structured array.
     csv_reader = CSVDataReader(get_test_filepath("CART.csv"))
@@ -58,15 +59,17 @@ def test_write_csv_move_columns(tmpdir):
     temp_filepath = os.path.join(tmpdir, "test_output.csv")
 
     # Pass a nonexistent column into write_csv to check it returns a ValueError
-    TestCase().assertRaises(ValueError, write_csv, data, temp_filepath, move_columns={"fake_col":0})
+    TestCase().assertRaises(ValueError, write_csv, data, temp_filepath, move_columns={"fake_col": 0})
 
     # Write to temp filepath with swapped columns
-    write_csv(data, temp_filepath, move_columns = {'x':0, 'y':1, 'z':2})
+    write_csv(data, temp_filepath, move_columns={"x": 0, "y": 1, "z": 2})
 
     # Read the data back in and check the columns have been swapped
     csv_reader2 = CSVDataReader(temp_filepath)
     data2 = csv_reader2.read_rows()
-    assert_equal(data2.dtype.names, ['x','y','z','ObjID','FORMAT','xdot','ydot','zdot','epochMJD_TDB'])
+    assert_equal(
+        data2.dtype.names, ["x", "y", "z", "ObjID", "FORMAT", "xdot", "ydot", "zdot", "epochMJD_TDB"]
+    )
 
 
 def test_write_empty_hdf5(tmpdir):
