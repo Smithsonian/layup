@@ -28,7 +28,7 @@ def write_csv(data, filepath, move_columns=None):
             except:
                 raise ValueError(f"column {col} not found in df.columns.values.")
 
-        df = df[column_names]
+        df = df.reindex(columns=column_names)
 
     if os.path.exists(filepath):
         df.to_csv(filepath, mode="a", header=False, index=False)
