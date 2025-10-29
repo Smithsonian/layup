@@ -179,7 +179,7 @@ def main():
         "-sg",
         "--sexagesimal",
         action="store_true",
-        help="Option for output units of RA and Dec to be given in sexagesimal.",
+        help="Flag to add RA and Dec in sexagesimal format to the output.",
     )
 
     args = parser.parse_args()
