@@ -23,7 +23,9 @@ def write_csv(data, filepath, move_columns=None):
         column_names = list(df.columns.values)
         for col in move_columns.keys():
             if abs(move_columns[col]) > len(column_names):
-                raise IndexError(f"Column position is outside of range. Must be between +-{len(column_names)}")
+                raise IndexError(
+                    f"Column position is outside of range. Must be between +-{len(column_names)}"
+                )
             try:
                 column_names.pop(column_names.index((col)))
                 column_names.insert(move_columns[col], col)
