@@ -60,6 +60,7 @@ def test_write_csv_move_columns(tmpdir):
 
     # Pass a nonexistent column into write_csv to check it returns a ValueError
     TestCase().assertRaises(ValueError, write_csv, data, temp_filepath, move_columns={"fake_col": 0})
+    TestCase().assertRaises(IndexError, write_csv, data, temp_filepath, move_columns={"x": 20})
 
     # Write to temp filepath with swapped columns
     write_csv(data, temp_filepath, move_columns={"x": 0, "y": 1, "z": 2})
