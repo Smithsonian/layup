@@ -2,6 +2,8 @@ import logging
 import os
 from pathlib import Path
 from typing import Literal
+import numpy as np
+from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 
 from layup.convert import get_output_column_names_and_types, convert
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
@@ -37,6 +39,23 @@ def _apply_comet(data, cache_dir=None, primary_id_column_name=None):
     data : numpy structured array
         The comet data output
     """
+
+    data_kep = convert(
+                data,
+                convert_to="KEP",
+                cache_dir=cache_dir,
+                primary_id_column_name=primary_id_column_name,
+            )
+    to_delete = []
+
+    for i in range(len(data)):
+
+        a = data_kep['a'][i]
+        if np.isinf(a) or a<200:
+            to_delete.append(i)
+    data = np.delete(data, to_delete)
+
+
     return data
 
 
@@ -160,10 +179,10 @@ def comet_cli(
     for chunk_start, chunk_end in chunks:
         # Read the chunk of data
         chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
-        if get_format(chunk_data) != "BCART_EQ":
+        if get_format(chunk_data) != "COM":
             chunk_data = convert(
                 chunk_data,
-                convert_to="BCART_EQ",
+                convert_to="COM",
                 num_workers=num_workers,
                 cache_dir=cache_dir,
                 primary_id_column_name=primary_id_column_name,
