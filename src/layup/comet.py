@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Literal
 import numpy as np
 from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
+from layup.routines import get_ephem
+import pooch
 
 from layup.convert import get_output_column_names_and_types, convert
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
@@ -11,7 +13,10 @@ from layup.utilities.file_io.file_output import write_csv, write_hdf5
 from layup.utilities.data_processing_utilities import (
     get_format,
     process_data,
+    layup_furnish_spiceypy,
+    FakeSorchaArgs
 )
+from layup.utilities.layup_configs import AuxiliaryConfigs
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +26,7 @@ INPUT_READERS = {
 }
 
 
-def _apply_comet(data, cache_dir=None, primary_id_column_name=None):
+def _apply_comet(data, args=None, cache_dir=None, primary_id_column_name=None):
     """
     Determines original orbit for comets
 
@@ -40,26 +45,31 @@ def _apply_comet(data, cache_dir=None, primary_id_column_name=None):
         The comet data output
     """
 
-    data_kep = convert(
-                data,
-                convert_to="KEP",
-                cache_dir=cache_dir,
-                primary_id_column_name=primary_id_column_name,
-            )
+    # Assumes provided data is in COM format
+    # Check for short period comets, remove them
     to_delete = []
-
     for i in range(len(data)):
-
-        a = data_kep['a'][i]
-        if np.isinf(a) or a<200:
-            to_delete.append(i)
+        if data['e'][i] < 1:
+            a = data['q'][i]/(1 - data['e'][i])
+            if a<250:
+                to_delete.append(i)
     data = np.delete(data, to_delete)
+
+    # if cache_dir is not provided, use the default os_cache
+    if cache_dir is None:
+        kernels_loc = str(pooch.os_cache("layup"))
+    else:
+        kernels_loc = str(cache_dir)
+    layup_furnish_spiceypy(cache_dir)
+    aux_args = AuxiliaryConfigs()
+    ephem = get_ephem(kernels_loc)
+    print(ephem)
 
 
     return data
 
 
-def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID"):
+def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", args=None):
     """
     _apply_comet wrapper with support for parallel processing
 
@@ -77,9 +87,8 @@ def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID"):
     data : numpy structured array
         The comet data output
     """
-
     if num_workers == 1:
-        return _apply_comet(data, cache_dir=cache_dir, primary_id_column_name=primary_id_column_name)
+        return _apply_comet(data, args, cache_dir=cache_dir, primary_id_column_name=primary_id_column_name)
     # Parallelize the conversion of the data across the requested number of workers
     return process_data(
         data,
@@ -87,6 +96,7 @@ def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID"):
         _apply_comet,
         cache_dir=cache_dir,
         primary_id_column_name=primary_id_column_name,
+        args=args
     )
 
 
@@ -193,6 +203,7 @@ def comet_cli(
             num_workers=num_workers,
             cache_dir=cache_dir,
             primary_id_column_name=primary_id_column_name,
+            args=cli_args
         )
         # Write out the converted data in in the requested file format.
         if file_format == "hdf5":
