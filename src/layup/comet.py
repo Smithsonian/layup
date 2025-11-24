@@ -2,9 +2,12 @@ import logging
 import os
 from pathlib import Path
 from typing import Literal
+from ctypes import *
 import numpy as np
-from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
+import pandas as pd
+import rebound, assist
 from layup.routines import get_ephem
+from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, generate_simulations
 import pooch
 
 from layup.convert import get_output_column_names_and_types, convert
@@ -16,7 +19,7 @@ from layup.utilities.data_processing_utilities import (
     layup_furnish_spiceypy,
     FakeSorchaArgs
 )
-from layup.utilities.layup_configs import AuxiliaryConfigs
+from layup.utilities.layup_configs import LayupConfigs
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +28,41 @@ INPUT_READERS = {
     "hdf5": HDF5DataReader,
 }
 
+def _remove_spc(data):
+    # Check for short period comets, remove them
+    to_delete = []
+    for i in range(len(data)):
+        if data['e'][i] <= 1:
+            a = data['q'][i]/(1 - data['e'][i])
+            if np.isinf(a) or a<250:
+                to_delete.append(i)
+    data = np.delete(data, to_delete)
 
-def _apply_comet(data, args=None, cache_dir=None, primary_id_column_name=None):
+    return data
+
+def _sim_setup(comet, ephem, Mtot, add_assist = True, t_initial = None):
+    sim = rebound.Simulation()
+    # Change GR handling for speed (could change in future if needed)
+    if add_assist:
+        extras = assist.Extras(sim, ephem)
+        forces = extras.forces
+        forces.remove("GR_EIH")
+        forces.append("GR_SIMPLE")
+        extras.forces = forces
+        # Define start time from comet file
+    if t_initial == None:
+        t_initial = (2400000.0 + comet['epochMJD_TDB']) - ephem.jd_ref
+    sim.t = t_initial
+
+    # Add particles to simulation; assist bodies and the LPC
+    primary = rebound.Particle(m=Mtot)
+    initial = rebound.Particle(primary=primary, simulation=sim, a=comet['q']/(1.0-comet['e']), e=comet['e'], inc=comet['inc']/180.0*np.pi, Omega=comet['node']/180.0*np.pi, omega=comet['argPeri']/180.0*np.pi, T=comet['t_p_MJD_TDB'])
+    sim.add(initial)
+
+    return sim, primary
+
+
+def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=None):
     """
     Determines original orbit for comets
 
@@ -47,29 +83,58 @@ def _apply_comet(data, args=None, cache_dir=None, primary_id_column_name=None):
 
     # Assumes provided data is in COM format
     # Check for short period comets, remove them
-    to_delete = []
+    data = _remove_spc(data)
+
+    ephem, _, Mtot = create_assist_ephemeris(args, aux)
+    ao = np.zeros(len(data)) # This is for storing the 1/ao values
+    d = np.zeros(len(data))
+
     for i in range(len(data)):
-        if data['e'][i] < 1:
-            a = data['q'][i]/(1 - data['e'][i])
-            if a<250:
-                to_delete.append(i)
-    data = np.delete(data, to_delete)
+        # Set up simulation
+        sim, primary = _sim_setup(data[i], ephem, Mtot)
 
-    # if cache_dir is not provided, use the default os_cache
-    if cache_dir is None:
-        kernels_loc = str(pooch.os_cache("layup"))
-    else:
-        kernels_loc = str(cache_dir)
-    layup_furnish_spiceypy(cache_dir)
-    aux_args = AuxiliaryConfigs()
-    ephem = get_ephem(kernels_loc)
-    print(ephem)
+        deltaT = 10.0 # Time step per integration
+        oi = sim.particles[0].orbit(primary=primary)
+        sim.integrate(sim.t+deltaT)
+        of = sim.particles[0].orbit(primary=primary)
+        initialInwards = False
+        if oi.d > of.d:
+            # Moving inwards initially
+            initialInwards = True
+            print("io")
+        while oi.d < of.d or initialInwards==True:
+            oi = sim.particles[0].orbit(primary=primary)
+            try:
+                sim.integrate(sim.t+deltaT)
+                of = sim.particles[0].orbit(primary=primary)
+            except RuntimeError: # If the sim exceeds the timeframe in assist, switch to rebound only and continue
+                sim, primary = _sim_setup(data[i], ephem, Mtot, add_assist=False, t_initial=sim.t)
+                sim.integrate(sim.t+deltaT)
+                of = sim.particles[0].orbit(primary=primary)
+            print(of.d, oi.d)
+            if initialInwards==True:
+                if oi.d < of.d:
+                    initialInwards = False
+                    print("now outwards")
+            else:
+                if oi.d > of.d:
+                    # Turned around
+                    print("1/a at d=%.1f:" % of.d, 1./of.a)
+                    ao[i] = 1./of.a
+                    d[i] = of.d
+                if of.d>250.0:
+                    # Hit 250AU
+                    print("1/a at d=%.1f:" % of.d, 1./of.a)
+                    ao[i] = 1./of.a
+                    d[i] = of.d
+                    break
 
+    data = np.lib.recfunctions.append_fields(data, ["ao", "d"], [ao, d], usemask=False)
 
     return data
 
 
-def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", args=None):
+def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", args=None, aux=None):
     """
     _apply_comet wrapper with support for parallel processing
 
@@ -88,15 +153,16 @@ def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", a
         The comet data output
     """
     if num_workers == 1:
-        return _apply_comet(data, args, cache_dir=cache_dir, primary_id_column_name=primary_id_column_name)
+        return _apply_comet(data, args, cache_dir=cache_dir, primary_id_column_name=primary_id_column_name, aux=aux)
     # Parallelize the conversion of the data across the requested number of workers
     return process_data(
         data,
         num_workers,
         _apply_comet,
+        args=args,
         cache_dir=cache_dir,
         primary_id_column_name=primary_id_column_name,
-        args=args
+        aux=aux
     )
 
 
@@ -107,6 +173,7 @@ def comet_cli(
     chunk_size: int = 10_000,
     num_workers: int = -1,
     cli_args: dict = None,
+    aux=None,
 ):
     """
     Determines original orbit for comets with support for parallel processing.
@@ -200,10 +267,11 @@ def comet_cli(
         # Parallelize conversion of this chunk of data.
         comet_data = comet(
             chunk_data,
-            num_workers=num_workers,
+            num_workers=1,
             cache_dir=cache_dir,
             primary_id_column_name=primary_id_column_name,
-            args=cli_args
+            args=cli_args,
+            aux=aux
         )
         # Write out the converted data in in the requested file format.
         if file_format == "hdf5":
