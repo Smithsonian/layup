@@ -9,6 +9,10 @@ import rebound, assist
 from layup.routines import get_ephem
 from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, generate_simulations
 import pooch
+from collections import defaultdict
+import sys
+from sorcha.ephemeris import simulation_parsing as sp
+import matplotlib.pyplot as plt
 
 from layup.convert import get_output_column_names_and_types, convert
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
@@ -32,34 +36,29 @@ def _remove_spc(data):
     # Check for short period comets, remove them
     to_delete = []
     for i in range(len(data)):
-        if data['e'][i] <= 1:
+        if data['e'][i] < 1:
             a = data['q'][i]/(1 - data['e'][i])
-            if np.isinf(a) or a<250:
+            if np.isinf(a) or a<250 or data['q'][i] > 250:
                 to_delete.append(i)
     data = np.delete(data, to_delete)
 
     return data
 
-def _sim_setup(comet, ephem, Mtot, add_assist = True, t_initial = None):
-    sim = rebound.Simulation()
-    # Change GR handling for speed (could change in future if needed)
-    if add_assist:
-        extras = assist.Extras(sim, ephem)
-        forces = extras.forces
-        forces.remove("GR_EIH")
-        forces.append("GR_SIMPLE")
-        extras.forces = forces
-        # Define start time from comet file
-    if t_initial == None:
-        t_initial = (2400000.0 + comet['epochMJD_TDB']) - ephem.jd_ref
-    sim.t = t_initial
+def _comet_integrate(sim, ex, ephem, dt):
+    # Attempts to integrate the simulation, failing that, switches to rebound and tries again
+    if sim.t > -165000:
+        ex.integrate_or_interpolate(sim.t+dt)
+        #print(sim.t)
+        #print(sim.particles[0])
+        
+    else:  # If the sim exceeds the timeframe in assist, switch to rebound and continue
+        print("switching to rebound only")
+        sim = assist.simulation_convert_to_rebound(sim, ephem)
+        sim.integrate(sim.t+dt)
+        #print(sim.t)
+        #print(sim.particles[0])
 
-    # Add particles to simulation; assist bodies and the LPC
-    primary = rebound.Particle(m=Mtot)
-    initial = rebound.Particle(primary=primary, simulation=sim, a=comet['q']/(1.0-comet['e']), e=comet['e'], inc=comet['inc']/180.0*np.pi, Omega=comet['node']/180.0*np.pi, omega=comet['argPeri']/180.0*np.pi, T=comet['t_p_MJD_TDB'])
-    sim.add(initial)
-
-    return sim, primary
+    return sim
 
 
 def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=None):
@@ -84,54 +83,67 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     # Assumes provided data is in COM format
     # Check for short period comets, remove them
     data = _remove_spc(data)
-
-    ephem, _, Mtot = create_assist_ephemeris(args, aux)
-    ao = np.zeros(len(data)) # This is for storing the 1/ao values
+    ephem, Msun, Mtot = create_assist_ephemeris(args, aux)
+    ao = np.zeros(len(data)) # This is for storing the ao values
     d = np.zeros(len(data))
+    e = np.zeros(len(data))
+    data = np.lib.recfunctions.append_fields(data, ["ao", "d_ao", "e_ao"], [ao, d, e], usemask=False)
+    cols = data.dtype.names
+    orbit_df = pd.DataFrame(data, columns=cols, index=data['ObjID'])
+    sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
+    step = 10
+    for comet in sim_dict:
+        sim = sim_dict[comet]['sim']
+        ex = sim_dict[comet]['ex']
 
-    for i in range(len(data)):
-        # Set up simulation
-        sim, primary = _sim_setup(data[i], ephem, Mtot)
-
-        deltaT = 10.0 # Time step per integration
+        primary = rebound.Particle(m=Msun)
         oi = sim.particles[0].orbit(primary=primary)
-        sim.integrate(sim.t+deltaT)
+        ex.integrate_or_interpolate(sim.t+step)
         of = sim.particles[0].orbit(primary=primary)
-        initialInwards = False
-        if oi.d > of.d:
-            # Moving inwards initially
-            initialInwards = True
-            print("io")
-        while oi.d < of.d or initialInwards==True:
+        #print(oi.d, of.d)
+
+        if oi.d < of.d:
+            #print('Moving outwards')
+            # Moving outwards initially
+            dt = -abs(step)
             oi = sim.particles[0].orbit(primary=primary)
-            try:
-                sim.integrate(sim.t+deltaT)
+            sim = _comet_integrate(sim, ex, ephem, dt)
+            of = sim.particles[0].orbit(primary=primary)
+            while of.d <= oi.d:
+                #print("going to periapsis")
+                
+                oi = sim.particles[0].orbit(primary=primary)
+                sim = _comet_integrate(sim, ex, ephem, dt)
                 of = sim.particles[0].orbit(primary=primary)
-            except RuntimeError: # If the sim exceeds the timeframe in assist, switch to rebound only and continue
-                sim, primary = _sim_setup(data[i], ephem, Mtot, add_assist=False, t_initial=sim.t)
-                sim.integrate(sim.t+deltaT)
-                of = sim.particles[0].orbit(primary=primary)
-            print(of.d, oi.d)
-            if initialInwards==True:
-                if oi.d < of.d:
-                    initialInwards = False
-                    print("now outwards")
+                #print(oi.d, of.d)
+        else:
+            # Moving inwards; if already passed 250au go back, otherwise go forward
+            if of.d > 250:
+                dt = abs(step)
             else:
-                if oi.d > of.d:
-                    # Turned around
-                    print("1/a at d=%.1f:" % of.d, 1./of.a)
-                    ao[i] = 1./of.a
-                    d[i] = of.d
-                if of.d>250.0:
-                    # Hit 250AU
-                    print("1/a at d=%.1f:" % of.d, 1./of.a)
-                    ao[i] = 1./of.a
-                    d[i] = of.d
-                    break
+                dt = -abs(step)
+                oi = sim.particles[0].orbit(primary=primary)
+                sim = _comet_integrate(sim, ex, ephem, dt)
+                of = sim.particles[0].orbit(primary=primary)
+        if dt > 0:
+            while of.d>250 and oi.d > of.d:
+                oi = sim.particles[0].orbit(primary=primary)
+                sim = _comet_integrate(sim, ex, ephem, dt)
+                of = sim.particles[0].orbit(primary=primary)
+        else:
+            while of.d < 250 and oi.d<of.d:
+                oi = sim.particles[0].orbit(primary=primary)
+                sim = _comet_integrate(sim, ex, ephem, dt)
+                of = sim.particles[0].orbit(primary=primary)
+        #print(sim.t)
+        if np.isnan(of.a):
+            print(f"Comet {comet} has exceeded the timeframe of the ASSIST Ephemeris")
+        else:
+            orbit_df.loc[comet, 'ao'] = of.a
+            orbit_df.loc[comet, 'd_ao'] = of.d
+            orbit_df.loc[comet, 'e_ao'] = of.e 
 
-    data = np.lib.recfunctions.append_fields(data, ["ao", "d"], [ao, d], usemask=False)
-
-    return data
+    return orbit_df
 
 
 def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", args=None, aux=None):
@@ -267,7 +279,7 @@ def comet_cli(
         # Parallelize conversion of this chunk of data.
         comet_data = comet(
             chunk_data,
-            num_workers=1,
+            num_workers=num_workers,
             cache_dir=cache_dir,
             primary_id_column_name=primary_id_column_name,
             args=cli_args,
