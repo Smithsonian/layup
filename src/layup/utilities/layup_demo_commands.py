@@ -25,7 +25,7 @@ def print_demo_command(verb, printall=True):
         current_demo_command = "layup predict cmd (demo not created yet)"
     elif verb == "comet":
 
-        current_demo_command = "layup comet cmd (demo not created yet)"
+        current_demo_command = "layup comet demo_comet_input.csv -o demo_comet_output"
     elif verb == "visualize":
 
         current_demo_command = "layup visualize cmd (demo not created yet)"
