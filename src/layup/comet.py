@@ -23,20 +23,71 @@ INPUT_READERS = {
 }
 
 def _remove_spc(data):
-    # Check for short period comets, remove them
+    """
+    Removes Short Period Comets (SPCs) from the input data
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to remove SPCs from.
+
+    Returns
+    -------
+    data : numpy structured array
+        The data with SPCs removed.
+    """
+
+    # Convert to BCOM if not already
+    if get_format(data) != "BCOM":
+        data_BCOM = convert(
+            data,
+            convert_to="BCOM",
+        )
+    else:
+        data_BCOM = data
     to_delete = []
-    for i in range(len(data)):
-        if data['e'][i] < 1:
-            a = data['q'][i]/(1 - data['e'][i])
-            if np.isinf(a) or a<250 or data['q'][i] > 250:
+    for i in range(len(data_BCOM)):
+        if data_BCOM['e'][i] < 1:
+            a = data_BCOM['q'][i]/(1 - data_BCOM['e'][i])
+            if np.isinf(a) or a<250 or data_BCOM['q'][i] > 250:
                 to_delete.append(i)
     data = np.delete(data, to_delete)
 
     return data
 
-def _assist_integrate(sim, primary, ex, dt, include_assist=True):
-    # Attempts to integrate the simulation, failing that, switches to rebound and tries again
-    oi = sim.particles[0].orbit(primary=primary)
+def _assist_integrate(sim, ephem, ex, dt, include_assist=True):
+    """
+    Integrates the simulation across a specified time, and returns the orbits before and after integrating.
+
+    Parameters
+    ----------
+    sim : REBOUND simulation 
+        The data to use comet function on.
+    ephem : ASSIST Ephem Object
+        The ASSIST Ephemeris.
+    ex : ASSIST Extras object
+        The ASSIST extras.
+    dt : int
+        The timestep to integrate across.
+    include_assist : bool, optional
+        If True, the simulation will run the integration through ASSIST, otherwise it will be a pure REBOUND integration. Default is True.
+
+    Returns
+    -------
+    oi : REBOUND Orbit instance
+        The orbit of the simulated particle before integration.
+    of : REBOUND Orbit instance
+        The orbit of the simulated particle after integration.
+    sim : REBOUND simulation
+        The simulation after integration.
+    """
+    #print(sim.particles[0])
+    if include_assist==True:
+        primary = ephem.get_particle("sun", sim.t)
+    else:
+        #print(sim.particles[0])
+        primary = sim.particles[0]
+    oi = sim.particles[-1].orbit(primary=primary)
 
     if include_assist==True:
         ex.integrate_or_interpolate(sim.t+dt)
@@ -44,19 +95,53 @@ def _assist_integrate(sim, primary, ex, dt, include_assist=True):
     else:
         sim.integrate(sim.t+dt)
 
-    of = sim.particles[0].orbit(primary=primary)
+    if include_assist==True:
+        primary = ephem.get_particle("sun", sim.t)
+    else:
+        #print(sim)
+        primary = sim.particles[0]
+    of = sim.particles[-1].orbit(primary=primary)
 
+    #print("of.d = ", of.d)
     return oi, of, sim
 
-def _direction_of_integration(sim, step, primary, ex, include_assist=True):
-    oi, of, sim = _assist_integrate(sim, primary, ex, step, include_assist=include_assist) # Get initial values of oi, of
+def _direction_of_integration(sim, step, ephem, ex, include_assist=True):
+    """
+    Determines if the simulation is approaching or receding from d=250au, and from this sets the timestep to be positive or negative in order to approach this distance.
+
+    Parameters
+    ----------
+    sim : REBOUND simulation 
+        The data to use comet function on.
+    step : int
+        The timestep to integrate across.
+    ephem : ASSIST Ephem Object
+        The ASSIST Ephemeris.
+    ex : ASSIST Extras object
+        The ASSIST extras.
+    dt : int
+        The timestep to integrate across.
+    include_assist : bool, optional
+        If True, the simulation will run the integration through ASSIST, otherwise it will be a pure REBOUND integration. Default is True.
+
+    Returns
+    -------
+    dt : int
+        The timestep modified to be positive or negative, depending on the direction the comet must be integrated to get to d=250au
+    oi : REBOUND Orbit instance
+        The orbit of the simulated particle before integration.
+    of : REBOUND Orbit instance
+        The orbit of the simulated particle after integration.
+    """
+    
+    oi, of, sim = _assist_integrate(sim, ephem, ex, step, include_assist=include_assist) # Get initial values of oi, of
     if oi.d < of.d:
         # Moving outwards initially
         dt = -abs(step)
-        oi, of, sim = _assist_integrate(sim, primary, ex, dt, include_assist=include_assist)
-
+        oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=include_assist)
+        
         while of.d < oi.d: # Returns to its perihelion
-            oi, of, sim = _assist_integrate(sim, primary, ex, dt, include_assist=include_assist)
+            oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=include_assist)
             #print(of.d)
 
     else:
@@ -66,7 +151,7 @@ def _direction_of_integration(sim, step, primary, ex, include_assist=True):
 
         else:
             dt = -abs(step)
-            oi, of, sim = _assist_integrate(sim, primary, ex, dt, include_assist=include_assist)
+            oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=include_assist)
 
     return dt, oi, of
 
@@ -78,6 +163,10 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     ----------
     data : numpy structured array
         The data to use comet function on.
+    args : argparse
+        The argparse object that was created when running from the CLI.
+    aux : AuxiliaryConfigs object
+        The LayUp auxiliary arguments
     cache_dir : str, optional
         The base directory for downloaded files.
     primary_id_column_name : str, optional
@@ -85,79 +174,87 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
 
     Returns
     -------
-    data : numpy structured array
+    output : numpy structured array
         The comet data output
     """
 
-    # Assumes provided data is in COM format
     # Check for short period comets, remove them
     data = _remove_spc(data)
     ephem, Msun, Mtot = create_assist_ephemeris(args, aux)
-    primary = rebound.Particle(m=Msun)
-    output = np.array([tuple([objid, 0, 0, 0, 0]) for objid in data["ObjID"]], dtype=[("ObjID", "<U16"), ("inv_ao", float), ("ao", float), ("d_ao", float), ("e_ao", float)])
+    #primary = ephem.get_particle("sun", t_initial)
+
+    output = np.array([tuple([objid, np.nan, np.nan, np.nan, np.nan]) for objid in data["ObjID"]], dtype=[("ObjID", "<U16"), ("inv_ao", float), ("ao_barycentric", float), ("d_ao", float), ("e_ao", float)])
 
     cols = data.dtype.names
     orbit_df = pd.DataFrame(data, columns=cols, index=data['ObjID'])
     sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
     step = 10
-    repeat = []
-    repeat_index = []
+    rebound_only = []
     for i in range(len(sim_dict)):
+        timeframe_max = 2688000 - ephem.jd_ref
+        timeframe_min = 2288000 - ephem.jd_ref
+        print(timeframe_min)
         comet = list(sim_dict)[i]
-        print(comet)
         sim = sim_dict[comet]['sim']
         ex = sim_dict[comet]['ex']
-        dt, oi, of = _direction_of_integration(sim, step, primary, ex) # Decide whether to go backwards in time or forwards
-        print(dt)
+        print(comet, sim.t)
+        
+        dt, oi, of = _direction_of_integration(sim, step, ephem, ex) # Decide whether to go backwards in time or forwards
+        
+
         if dt > 0:
-            while of.d>250 and oi.d > of.d:
-                oi, of, sim = _assist_integrate(sim, primary, ex, dt, include_assist=True)
+            while of.d>250 and oi.d > of.d and sim.t < timeframe_max:
+                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=True)
 
         else:
-            while of.d < 250 and oi.d < of.d:
-                oi, of, sim = _assist_integrate(sim, primary, ex, dt, include_assist=True)
-                #print(of.d)
+            while of.d < 250 and oi.d < of.d and sim.t > timeframe_min:
+                #print(sim.t)
+                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=True)
+                
 
 
-        if np.isnan(of.d):
-            repeat.append(comet)
-            repeat_index.append(i)
-            print(f"Comet {comet} has exceeded the timeframe of the ASSIST Ephemeris")
+        if sim.t >= timeframe_max or sim.t <= timeframe_min:
+            print(sim.t)
+            rebound_only.append(comet)
+            print(f"{comet} has exceeded the timeframe of the ASSIST Ephemeris")
         else:
             output['inv_ao'][i] = 1/of.a
-            output['ao'][i] = of.a
+            output['ao_barycentric'][i] = of.a
             output['d_ao'][i] = of.d
             output['e_ao'][i] = of.e 
 
-    sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)#orbit_df[orbit_df["ObjID"].isin(repeat)], args)
+    #sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)#orbit_df[orbit_df["ObjID"].isin(repeat)], args)
     step=10
-    for comet in sim_dict:#repeat:
+    for comet in rebound_only:
         i = np.where(orbit_df["ObjID"] == comet)
         print(f"Running rebound only for {comet}")
         sim = sim_dict[comet]['sim']
         ex = sim_dict[comet]['ex']
-        oi = sim.particles[0].orbit(primary=primary).d
+
+        primary = ephem.get_particle("sun", sim.t)
+        oi = sim.particles[-1].orbit(primary=primary).d
         sim = assist.simulation_convert_to_rebound(sim, ephem)
-        of = sim.particles[0].orbit(primary=primary).d
-        print(oi/of)
-        dt, oi, of = _direction_of_integration(sim, step, primary, ex, include_assist=False) # Decide whether to go backwards in time or forwards
+        primary = ephem.get_particle("sun", sim.t)
+        of = sim.particles[-1].orbit(primary=primary).d
+        #print(oi, of)
+        dt, oi, of = _direction_of_integration(sim, step, ephem, ex, include_assist=False) # Decide whether to go backwards in time or forwards
 
         if dt > 0:
             while of.d>250 and oi.d > of.d:
-                oi, of, sim = _assist_integrate(sim, primary, ex, dt, include_assist=False)
+                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=False)
 
         else:
             while of.d < 250 and oi.d < of.d:
-                oi, of, sim = _assist_integrate(sim, primary, ex, dt, include_assist=False)
+                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=False)
                 #print(of.d)
         output['inv_ao'][i] = 1/of.a
-        output['ao'][i] = of.a
+        output['ao_barycentric'][i] = of.a
         output['d_ao'][i] = of.d
         output['e_ao'][i] = of.e 
 
     if args.code_format: # Put into same format as CODE, if requested
          output['inv_ao'] *= 1e6
-         output.dtype.names = ('ObjID','inv_ao_CODE','ao' ,'d_ao','e_ao')
+         output.dtype.names = ('ObjID','inv_ao_CODE','ao_barycentric' ,'d_ao','e_ao')
 
 
     return output
@@ -285,10 +382,10 @@ def comet_cli(
     for chunk_start, chunk_end in chunks:
         # Read the chunk of data
         chunk_data = full_reader.read_rows(block_start=chunk_start, block_size=chunk_end - chunk_start)
-        if get_format(chunk_data) != "BCOM":
+        if get_format(chunk_data) != "COM":
             chunk_data = convert(
                 chunk_data,
-                convert_to="BCOM",
+                convert_to="COM",
                 num_workers=num_workers,
                 cache_dir=cache_dir,
                 primary_id_column_name=primary_id_column_name,
