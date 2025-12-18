@@ -81,11 +81,9 @@ def _assist_integrate(sim, ephem, ex, dt, include_assist=True):
     sim : REBOUND simulation
         The simulation after integration.
     """
-    #print(sim.particles[0])
     if include_assist==True:
         primary = ephem.get_particle("sun", sim.t)
     else:
-        #print(sim.particles[0])
         primary = sim.particles[0]
     oi = sim.particles[-1].orbit(primary=primary)
 
@@ -98,11 +96,9 @@ def _assist_integrate(sim, ephem, ex, dt, include_assist=True):
     if include_assist==True:
         primary = ephem.get_particle("sun", sim.t)
     else:
-        #print(sim)
         primary = sim.particles[0]
     of = sim.particles[-1].orbit(primary=primary)
 
-    #print("of.d = ", of.d)
     return oi, of, sim
 
 def _direction_of_integration(sim, step, ephem, ex, include_assist=True):
@@ -142,7 +138,6 @@ def _direction_of_integration(sim, step, ephem, ex, include_assist=True):
         
         while of.d < oi.d: # Returns to its perihelion
             oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=include_assist)
-            #print(of.d)
 
     else:
         # Moving inwards; if already passed 250au go back, otherwise go forward
@@ -181,7 +176,6 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     # Check for short period comets, remove them
     data = _remove_spc(data)
     ephem, Msun, Mtot = create_assist_ephemeris(args, aux)
-    #primary = ephem.get_particle("sun", t_initial)
 
     output = np.array([tuple([objid, np.nan, np.nan, np.nan, np.nan]) for objid in data["ObjID"]], dtype=[("ObjID", "<U16"), ("inv_ao", float), ("ao_barycentric", float), ("d_ao", float), ("e_ao", float)])
 
@@ -193,11 +187,9 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     for i in range(len(sim_dict)):
         timeframe_max = 2688000 - ephem.jd_ref
         timeframe_min = 2288000 - ephem.jd_ref
-        print(timeframe_min)
         comet = list(sim_dict)[i]
         sim = sim_dict[comet]['sim']
         ex = sim_dict[comet]['ex']
-        print(comet, sim.t)
         
         dt, oi, of = _direction_of_integration(sim, step, ephem, ex) # Decide whether to go backwards in time or forwards
         
@@ -208,13 +200,11 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
 
         else:
             while of.d < 250 and oi.d < of.d and sim.t > timeframe_min:
-                #print(sim.t)
                 oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=True)
                 
 
 
         if sim.t >= timeframe_max or sim.t <= timeframe_min:
-            print(sim.t)
             rebound_only.append(comet)
             print(f"{comet} has exceeded the timeframe of the ASSIST Ephemeris")
         else:
@@ -223,7 +213,7 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
             output['d_ao'][i] = of.d
             output['e_ao'][i] = of.e 
 
-    #sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)#orbit_df[orbit_df["ObjID"].isin(repeat)], args)
+    sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df[orbit_df["ObjID"].isin(rebound_only)], args)
     step=10
     for comet in rebound_only:
         i = np.where(orbit_df["ObjID"] == comet)
@@ -236,7 +226,6 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         sim = assist.simulation_convert_to_rebound(sim, ephem)
         primary = ephem.get_particle("sun", sim.t)
         of = sim.particles[-1].orbit(primary=primary).d
-        #print(oi, of)
         dt, oi, of = _direction_of_integration(sim, step, ephem, ex, include_assist=False) # Decide whether to go backwards in time or forwards
 
         if dt > 0:
@@ -246,13 +235,12 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         else:
             while of.d < 250 and oi.d < of.d:
                 oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=False)
-                #print(of.d)
         output['inv_ao'][i] = 1/of.a
         output['ao_barycentric'][i] = of.a
         output['d_ao'][i] = of.d
         output['e_ao'][i] = of.e 
 
-    if args.code_format: # Put into same format as CODE, if requested
+    if args.code_format: # Put into same format as CODE Catalogue, if requested
          output['inv_ao'] *= 1e6
          output.dtype.names = ('ObjID','inv_ao_CODE','ao_barycentric' ,'d_ao','e_ao')
 
