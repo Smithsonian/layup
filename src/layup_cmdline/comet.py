@@ -155,7 +155,7 @@ def execute(args):
         chunk_size=args.chunk,
         num_workers=args.n,
         cli_args=args,
-        aux=configs.auxiliary
+        aux=configs.auxiliary,
     )
 
 

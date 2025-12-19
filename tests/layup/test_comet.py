@@ -18,21 +18,23 @@ from argparse import Namespace
 
 from layup.utilities.data_processing_utilities import layup_furnish_spiceypy
 
+
 def test_remove_spc(tmpdir):
-    'Read in data, pass it through _remove_spc and compare to expected data'
+    "Read in data, pass it through _remove_spc and compare to expected data"
     os.chdir(tmpdir)
     data = CSVDataReader(
-    get_test_filepath("COM_LPCs_NEW.csv"), "csv", primary_id_column_name="ObjID"
+        get_test_filepath("COM_LPCs_NEW.csv"), "csv", primary_id_column_name="ObjID"
     ).read_rows()
 
     data = _remove_spc(data)
     # Read in expected data
     expected = CSVDataReader(
         get_test_filepath("COM_LPCs_no_spc.csv"), "csv", primary_id_column_name="ObjID"
-        ).read_rows()
-    
+    ).read_rows()
+
     # Check that all of the LPCs are present
-    assert data['ObjID'].all() == expected['ObjID'].all()
+    assert data["ObjID"].all() == expected["ObjID"].all()
+
 
 @pytest.mark.parametrize(
     "time_step, index, include_assist",
@@ -52,28 +54,38 @@ def test_remove_spc(tmpdir):
     ],
 )
 def test_assist_integrate(tmpdir, index, time_step, include_assist):
-    'Test the function _assist_integrate to make sure it integrates forward or backwards in time as expected.'
+    "Test the function _assist_integrate to make sure it integrates forward or backwards in time as expected."
     os.chdir(tmpdir)
 
     data = CSVDataReader(
-    get_test_filepath("COM_LPCs_NEW.csv"), "csv", primary_id_column_name="ObjID"
+        get_test_filepath("COM_LPCs_NEW.csv"), "csv", primary_id_column_name="ObjID"
     ).read_rows()
 
-    args = Namespace(input='IGNORE_ME', ar_data_file_path=None, config=None, chunk=10000, force=True, i='csv', o='cometed_output', n=1, primary_id_column_name='ObjID')
+    args = Namespace(
+        input="IGNORE_ME",
+        ar_data_file_path=None,
+        config=None,
+        chunk=10000,
+        force=True,
+        i="csv",
+        o="cometed_output",
+        n=1,
+        primary_id_column_name="ObjID",
+    )
     aux = LayupConfigs().auxiliary
 
     ephem, Msun, Mtot = create_assist_ephemeris(args, aux)
-    
+
     # Convert to pandas to use generate_simulations
     cols = data.dtype.names
-    orbit_df = pd.DataFrame(data, columns=cols, index=data['ObjID'])
+    orbit_df = pd.DataFrame(data, columns=cols, index=data["ObjID"])
     sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
-    sim = sim_dict[data[index]['ObjID']]['sim']
-    ex = sim_dict[data[index]['ObjID']]['ex']
+    sim = sim_dict[data[index]["ObjID"]]["sim"]
+    ex = sim_dict[data[index]["ObjID"]]["ex"]
 
     if include_assist == False:
         sim = assist.simulation_convert_to_rebound(sim, ephem)
-    
+
     initial = sim.particles[-1].xyz
 
     oi, of, sim = _assist_integrate(sim, ephem, ex, time_step, include_assist=include_assist)
@@ -83,7 +95,7 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
 
     # Once we find the returned values, compare that to what we get if we manually set up a rebound simulation (if include_assist is False, compare it to an assist simulation instead)
     sim_dict_check = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
-    sim_check = sim_dict_check[data[index]['ObjID']]['sim']
+    sim_check = sim_dict_check[data[index]["ObjID"]]["sim"]
 
     initial_check = sim_check.particles[-1].xyz
 
@@ -92,10 +104,9 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
         initial_check = sim_check.particles[-1].xyz
         primary_check = sim_check.particles[0]
         initial_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
-        sim_check.integrate(sim.t) # Want to integrate to the same time as the function
+        sim_check.integrate(sim.t)  # Want to integrate to the same time as the function
         primary_check = sim_check.particles[0]
 
-    
     else:
         primary_check = ephem.get_particle("sun", sim_check.t)
         initial_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
@@ -104,72 +115,89 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
     final_check = sim_check.particles[-1].xyz
     final_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
 
-    #assert data[index]['ObjID'] == None
-    
     assert_equal(np.array(initial), np.array(initial_check))
     assert_equal(sim.t, sim_check.t)
     assert_allclose(np.array(final), np.array(final_check), rtol=0.01, atol=0.15)
-    assert_allclose(np.array([initial_orbit, final_orbit]), np.array([initial_orbit_check, final_orbit_check]), rtol=0.2, atol=0.0001)
-    
+    assert_allclose(
+        np.array([initial_orbit, final_orbit]),
+        np.array([initial_orbit_check, final_orbit_check]),
+        rtol=0.2,
+        atol=0.0001,
+    )
 
 
 def test_direction_of_integration(tmpdir):
-    'Test the function direction_of_integration to make sure it returns the correct direction in time for the 4 different comet positions'
+    "Test the function direction_of_integration to make sure it returns the correct direction in time for the 4 different comet positions"
     os.chdir(tmpdir)
 
     data = CSVDataReader(
-    get_test_filepath("comets_various_positions.csv"), "csv", primary_id_column_name="ObjID"
+        get_test_filepath("comets_various_positions.csv"), "csv", primary_id_column_name="ObjID"
     ).read_rows()
 
-    args = Namespace(input='IGNORE_ME', ar_data_file_path=None, config=None, chunk=10000, force=True, i='csv', o='cometed_output', n=1, primary_id_column_name='ObjID')
-    aux = LayupConfigs().auxiliary
-
-    ephem, Msun, Mtot = create_assist_ephemeris(args, aux)
-
-    cols = list(data.dtype.names)
-    cols.pop(-1) # remove the check stored in the last column
-    orbit_df = pd.DataFrame(data, columns=cols, index=data['ObjID'])
-
-    sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
-    for comet in range(len(data)):
-        sim = sim_dict[data[comet]['ObjID']]['sim']
-        ex = sim_dict[data[comet]['ObjID']]['ex']
-        dt, oi, of = _direction_of_integration(sim, 1, ephem, ex, include_assist=True)
-        assert dt == data['expected_step'][comet]
-        
-
-def test_apply_comet(tmpdir):
-    'Test _apply_comet against LPCs from the CODE Catalogue.'
-    os.chdir(tmpdir)
-
-    data = CSVDataReader(
-        get_test_filepath("code_LPCs.csv"), "csv", primary_id_column_name="ObjID"
-        ).read_rows()
-    
     class FakeCliArgs:
         def __init__(self, g=None):
             self.primary_id_column_name = "ObjID"
             self.n = 1
             self.chunk = 10000
-            self.ar_data_file_path=None
+            self.ar_data_file_path = None
             self.force = True
             self.code_format = True
 
-    args = FakeCliArgs()#Namespace(input='IGNORE_ME', ar_data_file_path=None, config=None, chunk=10000, force=True, i='csv', o='cometed_output', n=1, primary_id_column_name='ObjID', code_format=True)
+    args = FakeCliArgs()
     aux = LayupConfigs().auxiliary
 
-    output = _apply_comet(data, args, aux, primary_id_column_name='ObjID')
+    ephem, Msun, Mtot = create_assist_ephemeris(args, aux)
+
+    cols = list(data.dtype.names)
+    cols.pop(-1)  # remove the check stored in the last column
+    orbit_df = pd.DataFrame(data, columns=cols, index=data["ObjID"])
+
+    sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
+    for comet in range(len(data)):
+        sim = sim_dict[data[comet]["ObjID"]]["sim"]
+        ex = sim_dict[data[comet]["ObjID"]]["ex"]
+        dt, oi, of = _direction_of_integration(sim, 1, ephem, ex, include_assist=True)
+        assert dt == data["expected_step"][comet]
+
+
+def test_apply_comet(tmpdir):
+    "Test _apply_comet against LPCs from the CODE Catalogue."
+    os.chdir(tmpdir)
+
+    data = CSVDataReader(
+        get_test_filepath("code_LPCs.csv"), "csv", primary_id_column_name="ObjID"
+    ).read_rows()
+
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.primary_id_column_name = "ObjID"
+            self.n = 1
+            self.chunk = 10000
+            self.ar_data_file_path = None
+            self.force = True
+            self.code_format = True
+
+    args = FakeCliArgs()
+    aux = LayupConfigs().auxiliary
+    output = _apply_comet(data, args, aux, primary_id_column_name="ObjID")
+
+    # Read in expected output
     expected = CSVDataReader(
         get_test_filepath("code_LPCs_originals.csv"), "csv", primary_id_column_name="ObjID"
-        ).read_rows()
-    
-    for comet in output['ObjID']:
-        i_test = np.where(output['ObjID'] == comet)[0][0]
-        i_expected = np.where(expected['ObjID'] == comet)[0][0]
-        assert_allclose(output[i_test]['inv_ao_CODE'], expected[i_expected]['inv_ao'], atol=100) # It is difficult to test the accuracy of the simulations without a measure of uncertainties, and as it is checking the reciprocal semimajor axis, small changes in a0 result in big changes in 1/a0, so this tolerance is quite high. The simulations give an order of magnitude agreement with the code catalogue. 
-    
-    
+    ).read_rows()
+
+    # Compare inv_ao to the CODE Catalogue for each comet
+    for comet in output["ObjID"]:
+        i_test = np.where(output["ObjID"] == comet)[0][0]
+        i_expected = np.where(expected["ObjID"] == comet)[0][0]
+        assert_allclose(
+            output[i_test]["inv_ao_CODE"], expected[i_expected]["inv_ao"], atol=100
+        )  # It is difficult to test the accuracy of the simulations without a measure of uncertainties
+        # so this tolerance is quite high. The simulations give an order of magnitude agreement with the code catalogue.
+
+
 def test_comet_output(tmpdir):
+    "Test that running layup comet as a user would returns the expected output"
     import subprocess
     from pathlib import Path
 
@@ -179,9 +207,7 @@ def test_comet_output(tmpdir):
     input_file = Path(get_test_filepath(test_filename))
     temp_out_file = f"test_output{input_file.stem}"
 
-    result = subprocess.run(
-        ["layup", "comet", str(input_file), "-f", "-o", str(temp_out_file), "-cf"]
-    )
+    result = subprocess.run(["layup", "comet", str(input_file), "-f", "-o", str(temp_out_file), "-cf"])
 
     assert result.returncode == 0
 
@@ -201,6 +227,3 @@ def test_comet_output(tmpdir):
     assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"])
     assert np.allclose(output_data["d_ao"], known_data["d_ao"])
     assert np.allclose(output_data["e_ao"], known_data["e_ao"])
-
-
-    print()

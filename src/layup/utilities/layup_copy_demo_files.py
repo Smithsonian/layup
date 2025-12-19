@@ -51,9 +51,7 @@ def copy_demo_files(verb, copy_location, force_overwrite):
     elif verb == "comet":
         demo_data_root = files("layup.data.demo.comet")
 
-        demo_files = [
-            "demo_comet_input.csv"
-        ]
+        demo_files = ["demo_comet_input.csv"]
 
     elif verb == "visualize":
         demo_data_root = files("layup.data.demo.visualise")
