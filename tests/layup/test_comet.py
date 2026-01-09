@@ -12,7 +12,6 @@ import assist
 from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, generate_simulations
 from layup.utilities.layup_configs import (
     LayupConfigs,
-    AuxiliaryConfigs,
 )
 from argparse import Namespace
 
@@ -87,8 +86,9 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
         sim = assist.simulation_convert_to_rebound(sim, ephem)
 
     initial = sim.particles[-1].xyz
+    sim.dt = time_step
 
-    oi, of, sim = _assist_integrate(sim, ephem, ex, time_step, include_assist=include_assist)
+    oi, of, sim = _assist_integrate(sim, ex, time_step, ephem, include_assist=include_assist)
     initial_orbit, final_orbit = oi.a, of.a
 
     final = sim.particles[-1].xyz
@@ -98,31 +98,31 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
     sim_check = sim_dict_check[data[index]["ObjID"]]["sim"]
 
     initial_check = sim_check.particles[-1].xyz
+    sim_check.dt = time_step
 
     if include_assist == True:
         sim_check = assist.simulation_convert_to_rebound(sim_check, ephem)
         initial_check = sim_check.particles[-1].xyz
         primary_check = sim_check.particles[0]
         initial_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
-        sim_check.integrate(sim.t)  # Want to integrate to the same time as the function
+        sim_check.integrate(sim_check.t + time_step)  # Want to integrate to the same time as the function
         primary_check = sim_check.particles[0]
 
     else:
         primary_check = ephem.get_particle("sun", sim_check.t)
         initial_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
-        sim_check.integrate(sim.t)
+        sim_check.integrate(sim_check.t + time_step)
         primary_check = ephem.get_particle("sun", sim_check.t)
     final_check = sim_check.particles[-1].xyz
     final_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
 
     assert_equal(np.array(initial), np.array(initial_check))
     assert_equal(sim.t, sim_check.t)
-    assert_allclose(np.array(final), np.array(final_check), rtol=0.01, atol=0.15)
+    assert_allclose(np.array(final), np.array(final_check), rtol=2e-7)
     assert_allclose(
         np.array([initial_orbit, final_orbit]),
         np.array([initial_orbit_check, final_orbit_check]),
-        rtol=0.2,
-        atol=0.0001,
+        rtol=1e-2
     )
 
 
@@ -156,7 +156,7 @@ def test_direction_of_integration(tmpdir):
     for comet in range(len(data)):
         sim = sim_dict[data[comet]["ObjID"]]["sim"]
         ex = sim_dict[data[comet]["ObjID"]]["ex"]
-        dt, oi, of = _direction_of_integration(sim, 1, ephem, ex, include_assist=True)
+        dt, oi, of = _direction_of_integration(sim, ex, 1, ephem, include_assist=True)
         assert dt == data["expected_step"][comet]
 
 
@@ -224,7 +224,7 @@ def test_comet_output(tmpdir):
     known_data = known_output_csv_reader.read_rows()
 
     print("assert 1")
-    assert np.allclose(output_data["inv_ao_CODE"], known_data["inv_ao_CODE"])
+    assert np.allclose(output_data["inv_ao_CODE"], known_data["inv_ao_CODE"], rtol=1e-5)
     print("assert 2")
     assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"])
     print("assert 3")

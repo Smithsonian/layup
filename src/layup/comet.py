@@ -57,7 +57,7 @@ def _remove_spc(data):
     return data
 
 
-def _assist_integrate(sim, ephem, ex, dt, include_assist=True):
+def _assist_integrate(sim, ex, dt, ephem, include_assist=True):
     """
     Integrates the simulation across a specified time, and returns the orbits before and after integrating.
 
@@ -104,7 +104,7 @@ def _assist_integrate(sim, ephem, ex, dt, include_assist=True):
     return oi, of, sim
 
 
-def _direction_of_integration(sim, step, ephem, ex, include_assist=True):
+def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
     """
     Determines if the simulation is approaching or receding from d=250au, and from this sets the timestep to be positive or negative in order to approach this distance.
 
@@ -134,15 +134,15 @@ def _direction_of_integration(sim, step, ephem, ex, include_assist=True):
     """
 
     oi, of, sim = _assist_integrate(
-        sim, ephem, ex, step, include_assist=include_assist
+        sim, ex, step, ephem, include_assist=include_assist
     )  # Get initial values of oi, of
     if oi.d < of.d:
         # Moving outwards initially
         dt = -abs(step)
-        oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=include_assist)
+        oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
 
         while of.d < oi.d:  # Returns to its perihelion
-            oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=include_assist)
+            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
 
     else:
         # Moving inwards; if already passed 250au go back, otherwise go forward
@@ -151,7 +151,7 @@ def _direction_of_integration(sim, step, ephem, ex, include_assist=True):
 
         else:
             dt = -abs(step)
-            oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=include_assist)
+            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
 
     return dt, oi, of
 
@@ -183,16 +183,7 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     data = _remove_spc(data)
     ephem, Msun, Mtot = create_assist_ephemeris(args, aux)
 
-    output = np.array(
-        [tuple([objid, np.nan, np.nan, np.nan, np.nan]) for objid in data["ObjID"]],
-        dtype=[
-            ("ObjID", "<U16"),
-            ("inv_ao", float),
-            ("ao_barycentric", float),
-            ("d_ao", float),
-            ("e_ao", float),
-        ],
-    )
+    output = {objid: (np.nan, np.nan, np.nan, np.nan) for objid in data["ObjID"]}
 
     # Convert to pandas to use generate_simulations
     cols = data.dtype.names
@@ -200,42 +191,37 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
     step = 10  # Guess to begin with
     rebound_only = []
-    for i in range(len(sim_dict)):
+    for comet in sim_dict:
         timeframe_max = (
             2688000 - ephem.jd_ref
         )  # This is the range of the assist ephemeris timeframe, running outside of this requires switching to a pure rebound simulation
         timeframe_min = 2288000 - ephem.jd_ref
-        comet = list(sim_dict)[i]
         sim = sim_dict[comet]["sim"]
         ex = sim_dict[comet]["ex"]
 
         dt, oi, of = _direction_of_integration(
-            sim, step, ephem, ex
+            sim, ex, step, ephem
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
             while of.d > 250 and oi.d > of.d and sim.t < timeframe_max:
-                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=True)
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
 
         else:
             while of.d < 250 and oi.d < of.d and sim.t > timeframe_min:
-                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=True)
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
 
         if sim.t >= timeframe_max or sim.t <= timeframe_min:
             # If comet goes outside assist timeframe, continue the simulation in pure rebound
             rebound_only.append(comet)
             print(f"{comet} has exceeded the timeframe of the ASSIST Ephemeris")
         else:
-            output["inv_ao"][i] = 1 / of.a
-            output["ao_barycentric"][i] = of.a
-            output["d_ao"][i] = of.d
-            output["e_ao"][i] = of.e
+            output[comet] = (1 / of.a, of.a, of.d, of.e)
 
     # Repeat steps as before, only as a rebound simulation
     sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df[orbit_df["ObjID"].isin(rebound_only)], args)
     step = 10
     for comet in rebound_only:
-        i = np.where(orbit_df["ObjID"] == comet)
         print(f"Running rebound only for {comet}")
         sim = sim_dict[comet]["sim"]
         ex = sim_dict[comet]["ex"]
@@ -246,20 +232,29 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         primary = ephem.get_particle("sun", sim.t)
         of = sim.particles[-1].orbit(primary=primary).d
         dt, oi, of = _direction_of_integration(
-            sim, step, ephem, ex, include_assist=False
+            sim, ex, step, ephem, include_assist=False
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
             while of.d > 250 and oi.d > of.d:
-                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=False)
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=False)
 
         else:
             while of.d < 250 and oi.d < of.d:
-                oi, of, sim = _assist_integrate(sim, ephem, ex, dt, include_assist=False)
-        output["inv_ao"][i] = 1 / of.a
-        output["ao_barycentric"][i] = of.a
-        output["d_ao"][i] = of.d
-        output["e_ao"][i] = of.e
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=False)
+        output[comet] = (1 / of.a, of.a, of.d, of.e)
+    
+    # turn output into an array
+    output = np.array(
+        [tuple([comet, *output[comet]]) for comet in output],
+        dtype=[
+            ("ObjID", "<U16"),
+            ("inv_ao", float),
+            ("ao_barycentric", float),
+            ("d_ao", float),
+            ("e_ao", float),
+        ],
+    )
 
     if args.code_format:  # Put into same format as CODE Catalogue, if requested
         output["inv_ao"] *= 1e6
