@@ -120,9 +120,7 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
     assert_equal(sim.t, sim_check.t)
     assert_allclose(np.array(final), np.array(final_check), rtol=2e-7)
     assert_allclose(
-        np.array([initial_orbit, final_orbit]),
-        np.array([initial_orbit_check, final_orbit_check]),
-        rtol=1e-2
+        np.array([initial_orbit, final_orbit]), np.array([initial_orbit_check, final_orbit_check]), rtol=1e-2
     )
 
 

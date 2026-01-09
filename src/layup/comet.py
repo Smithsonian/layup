@@ -243,7 +243,7 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
             while of.d < 250 and oi.d < of.d:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=False)
         output[comet] = (1 / of.a, of.a, of.d, of.e)
-    
+
     # turn output into an array
     output = np.array(
         [tuple([comet, *output[comet]]) for comet in output],
