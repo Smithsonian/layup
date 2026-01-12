@@ -15,6 +15,9 @@ from layup.utilities.data_processing_utilities import (
     process_data,
 )
 
+# These are the maximum and minimum dates that the ASSIST ephemeris file allows for
+ASSIST_TIMEFRAME_MAX_MJD = 236455
+ASSIST_TIMEFRAME_MIN_MJD = -163545
 logger = logging.getLogger(__name__)
 
 INPUT_READERS = {
@@ -191,11 +194,9 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
     step = 10  # Guess to begin with
     rebound_only = []
+    
     for comet in sim_dict:
-        timeframe_max = (
-            2688000 - ephem.jd_ref
-        )  # This is the range of the assist ephemeris timeframe, running outside of this requires switching to a pure rebound simulation
-        timeframe_min = 2288000 - ephem.jd_ref
+
         sim = sim_dict[comet]["sim"]
         ex = sim_dict[comet]["ex"]
 
@@ -204,14 +205,14 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
-            while of.d > 250 and oi.d > of.d and sim.t < timeframe_max:
+            while of.d > 250 and oi.d > of.d and sim.t < ASSIST_TIMEFRAME_MAX_MJD:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
 
         else:
-            while of.d < 250 and oi.d < of.d and sim.t > timeframe_min:
+            while of.d < 250 and oi.d < of.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
 
-        if sim.t >= timeframe_max or sim.t <= timeframe_min:
+        if sim.t >= ASSIST_TIMEFRAME_MAX_MJD or sim.t <= ASSIST_TIMEFRAME_MIN_MJD:
             # If comet goes outside assist timeframe, continue the simulation in pure rebound
             rebound_only.append(comet)
             print(f"{comet} has exceeded the timeframe of the ASSIST Ephemeris")

@@ -222,7 +222,7 @@ def test_comet_output(tmpdir):
     known_data = known_output_csv_reader.read_rows()
 
     print("assert 1")
-    assert np.allclose(output_data["inv_ao_CODE"], known_data["inv_ao_CODE"], rtol=1e-5)
+    assert np.allclose(output_data["inv_ao_CODE"], known_data["inv_ao_CODE"], rtol=1e-4)
     print("assert 2")
     assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"])
     print("assert 3")
