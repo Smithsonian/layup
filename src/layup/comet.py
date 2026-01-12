@@ -194,7 +194,7 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df, args)
     step = 10  # Guess to begin with
     rebound_only = []
-    
+
     for comet in sim_dict:
 
         sim = sim_dict[comet]["sim"]
