@@ -205,7 +205,7 @@ def test_comet_output(tmpdir):
     input_file = Path(get_test_filepath(test_filename))
     temp_out_file = f"test_output{input_file.stem}"
 
-    result = subprocess.run(["layup", "comet", str(input_file), "-f", "-o", str(temp_out_file), "-cf"])
+    result = subprocess.run(["layup", "comet", str(input_file), "-f", "-o", str(temp_out_file)])
 
     assert result.returncode == 0
 
@@ -222,7 +222,7 @@ def test_comet_output(tmpdir):
     known_data = known_output_csv_reader.read_rows()
 
     print("assert 1")
-    assert np.allclose(output_data["inv_ao_CODE"], known_data["inv_ao_CODE"], rtol=2e-4)
+    assert np.allclose(output_data["inv_ao_CODE"] / 1e6, known_data["inv_ao_CODE"])
     print("assert 2")
     assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"])
     print("assert 3")
