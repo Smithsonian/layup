@@ -86,6 +86,8 @@ def _assist_integrate(sim, ex, dt, ephem, include_assist=True):
     sim : REBOUND simulation
         The simulation after integration.
     """
+    sim.dt = dt
+    #print(sim.t, sim.dt)
     if include_assist == True:
         primary = ephem.get_particle("sun", sim.t)
     else:
@@ -136,6 +138,7 @@ def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
         The orbit of the simulated particle after integration.
     """
 
+    convert_to_rebound = False
     oi, of, sim = _assist_integrate(
         sim, ex, step, ephem, include_assist=include_assist
     )  # Get initial values of oi, of
@@ -144,8 +147,10 @@ def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
         dt = -abs(step)
         oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
 
-        while of.d < oi.d:  # Returns to its perihelion
+        while of.d < oi.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:  # Returns to its perihelion
             oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
+        if sim.t < ASSIST_TIMEFRAME_MIN_MJD:
+            convert_to_rebound = True
 
     else:
         # Moving inwards; if already passed 250au go back, otherwise go forward
@@ -155,6 +160,11 @@ def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
         else:
             dt = -abs(step)
             oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
+    if convert_to_rebound:
+        sim = assist.simulation_convert_to_rebound(sim, ephem)
+        while of.d < oi.d:  # Returns to its perihelion
+            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
+
 
     return dt, oi, of
 

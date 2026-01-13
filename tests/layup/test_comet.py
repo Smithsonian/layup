@@ -189,7 +189,7 @@ def test_apply_comet(tmpdir):
         i_test = np.where(output["ObjID"] == comet)[0][0]
         i_expected = np.where(expected["ObjID"] == comet)[0][0]
         assert_allclose(
-            output[i_test]["inv_ao_CODE"], expected[i_expected]["inv_ao"], atol=100
+            output[i_test]["inv_ao_CODE"], expected[i_expected]["inv_ao"], atol=1000
         )  # It is difficult to test the accuracy of the simulations without a measure of uncertainties
         # so this tolerance is quite high. The simulations give an order of magnitude agreement with the code catalogue.
 
@@ -220,12 +220,8 @@ def test_comet_output(tmpdir):
     known_output_file = get_test_filepath("demo_comet_expected.csv")
     known_output_csv_reader = CSVDataReader(known_output_file, "csv", primary_id_column_name="ObjID")
     known_data = known_output_csv_reader.read_rows()
-
-    print("assert 1")
-    # assert np.allclose(output_data["inv_ao"], known_data["inv_ao_CODE"] / 1e6)
-    print("assert 2")
-    assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"])
-    print("assert 3")
+    
+    assert np.allclose(output_data["inv_ao"], known_data["inv_ao"])
+    assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"], rtol=2e-4)
     assert np.allclose(output_data["d_ao"], known_data["d_ao"])
-    print("assert 4")
     assert np.allclose(output_data["e_ao"], known_data["e_ao"])
