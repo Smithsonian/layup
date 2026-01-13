@@ -220,7 +220,7 @@ def test_comet_output(tmpdir):
     known_output_file = get_test_filepath("demo_comet_expected.csv")
     known_output_csv_reader = CSVDataReader(known_output_file, "csv", primary_id_column_name="ObjID")
     known_data = known_output_csv_reader.read_rows()
-    
+
     assert np.allclose(output_data["inv_ao"], known_data["inv_ao"])
     assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"], rtol=2e-4)
     assert np.allclose(output_data["d_ao"], known_data["d_ao"])
