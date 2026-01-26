@@ -23,7 +23,11 @@ dependencies = [
     "tqdm",
     "sorcha @ git+https://github.com/dirac-institute/sorcha.git",
     "jax",
-    "scipy"
+    "scipy",
+    "plotly",
+    "dash",
+    "dash-daq",
+    "dash-ag-grid"
 ]
 
 [project.scripts]
