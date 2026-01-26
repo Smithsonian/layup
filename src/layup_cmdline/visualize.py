@@ -28,7 +28,7 @@ def main():
         type=str,
         choices=["equatorial", "ecliptic"],
         required=False,
-        default=None
+        default=None,
     )
     frame.add_argument(
         "--input-origin",
@@ -37,7 +37,7 @@ def main():
         type=str,
         choices=["heliocentric", "barycentric"],
         required=False,
-        default=None
+        default=None,
     )
 
     optional = parser.add_argument_group("Optional arguments")
@@ -47,7 +47,7 @@ def main():
         dest="block_size",
         type=int,
         default=10000,
-        required=False
+        required=False,
     )
     optional.add_argument(
         "-n",
@@ -56,7 +56,7 @@ def main():
         dest="num_orbs",
         type=int,
         default=100,
-        required=False
+        required=False,
     )
     optional.add_argument(
         "--n-points",
@@ -64,7 +64,7 @@ def main():
         dest="n_points",
         type=int,
         default=500,
-        required=False
+        required=False,
     )
     optional.add_argument(
         "--r-max",
@@ -72,7 +72,7 @@ def main():
         dest="r_max",
         type=float,
         default=50.0,
-        required=False
+        required=False,
     )
     optional.add_argument(
         "--random",
@@ -80,7 +80,7 @@ def main():
         dest="random",
         type=bool,
         default=False,
-        required=False
+        required=False,
     )
     optional.add_argument(
         "--ar-data-file-path",
@@ -117,8 +117,9 @@ def execute(args):
         n_points=args.n_points,
         r_max=args.r_max,
         random=args.random,
-        cache_dir=cache_dir
+        cache_dir=cache_dir,
     )
+
 
 if __name__ == "__main__":
     main()
