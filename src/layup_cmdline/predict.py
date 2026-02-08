@@ -182,6 +182,13 @@ def main():
         help="Flag to add RA and Dec in sexagesimal format to the output.",
     )
 
+    optional.add_argument(
+        "-osd",
+        "--onsky-data",
+        action="store_true",
+        help="Outputs additional on-sky data",
+    )
+
     args = parser.parse_args()
 
     return execute(args)
@@ -318,6 +325,7 @@ def execute(args):
         timestep_day=timestep_day,
         output_file=output_file,
         cache_dir=cache_dir,
+        configs=configs,
     )
 
 

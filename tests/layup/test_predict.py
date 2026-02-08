@@ -1,10 +1,12 @@
 import os
+import subprocess
+from pathlib import Path
 
 import numpy as np
 import pytest
 from numpy.testing import assert_equal
 
-from layup.predict import predict, predict_cli, _convert_to_sg
+from layup.predict import predict, predict_cli, _convert_to_sg, _get_on_sky_data
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -111,8 +113,6 @@ def test_predict_output(tmpdir):
     """Compare the output of predict (as run from the command line) against an
     expected output."""
 
-    import subprocess
-    from pathlib import Path
 
     os.chdir(tmpdir)
 
@@ -189,8 +189,30 @@ def test_predict_output(tmpdir):
     # Check the columns have been swapped too
     assert (known_data.dtype.names == output_data.dtype.names) == True
 
+def test_get_on_sky_data(tmpdir):
+    # Test against the same output from Sorcha
+    os.chdir(tmpdir)
 
-def test_convert_to_sg(tmpdir):
+    start = "2025 MAY 18 00:00:00"
+    test_filename = "holman.csv"
+    input_file = Path(get_test_filepath(test_filename))
+    temp_out_file = f"test_output_{input_file.stem}"
+
+    result = subprocess.run(
+        [
+            "layup",
+            "predict",
+            str(input_file),
+            "-f",
+            "-o",
+            str(temp_out_file),
+            "-s",
+            start,
+            "-osd",
+        ]
+    )
+
+def test_convert_to_sg():
     """Compare the output given by _convert_to_sg() with an expected output, seeing how it handles edge cases."""
 
     data = CSVDataReader(

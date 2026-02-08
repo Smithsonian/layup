@@ -6,7 +6,14 @@ from pathlib import Path
 import numpy as np
 import pooch
 import spiceypy as spice
-from sorcha.ephemeris.simulation_geometry import vec2ra_dec
+from sorcha.ephemeris.simulation_geometry import vec2ra_dec, integrate_light_time
+from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, furnish_spiceypy, generate_simulations
+from sorcha.ephemeris.simulation_driver import (
+    EphemerisGeometryParameters,
+    calculate_rates_and_geometry,
+)
+from pandas import DataFrame, Series
+from numpy.lib.recfunctions import join_by
 
 from layup.convert import convert
 from layup.routines import Observation, get_ephem, numpy_to_eigen, predict_sequence
@@ -30,6 +37,91 @@ REQUIRED_INPUT_COLUMN_NAMES = [
     "epochMJD_TDB",
     "FORMAT",
 ]
+
+
+def _get_on_sky_data(orbits_df, observations, predictions, args, configs):
+    # Create simulations
+    ephem, gm_sun, gm_total = create_assist_ephemeris(args, configs.auxiliary)
+    furnish_spiceypy(args, configs.auxiliary)
+    sim_dict = generate_simulations(ephem, gm_sun, gm_total, orbits_df, args)
+
+    # For each predicted position, want to generate on-sky info
+    rates = [(objid, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) for objid in predictions["provID"]]
+    rates = np.array(
+        rates,
+        dtype=[
+            ("provID", "<U16"),
+            ("epoch_JD_TDB", "f8"),
+            ("RARateCosDec_deg_day", "f8"),
+            ("DecRate_deg_day", "f8"),
+            ("Obj_Sun_x_LTC_km", "f8"),
+            ("Obj_Sun_y_LTC_km", "f8"),
+            ("Obj_Sun_z_LTC_km", "f8"),
+            ("Obj_Sun_vx_LTC_km_s", "f8"),
+            ("Obj_Sun_vy_LTC_km_s", "f8"),
+            ("Obj_Sun_vz_LTC_km_s", "f8"),
+            ("phase_deg", "f8"),
+        ],
+    )
+
+    for i, pred in enumerate(predictions):
+        # Setup - define values used later
+        provid = pred["provID"]
+        ephem_geom_params = EphemerisGeometryParameters()
+        ephem_geom_params.obj_id = provid
+
+        v = sim_dict[provid]
+        sim, ex = v["sim"], v["ex"]
+        obs_pos = observations[i].observer_position
+        obs_vel = observations[i].observer_velocity
+        sun_pos = ephem.get_particle("sun", pred["epoch_JD_TDB"] - ephem.jd_ref).xyz
+        sun_vel = ephem.get_particle("sun", pred["epoch_JD_TDB"] - ephem.jd_ref).vxyz
+        # Get rest of geometry params
+        (
+            ephem_geom_params.rho,
+            ephem_geom_params.rho_mag,
+            _,
+            ephem_geom_params.r_ast,
+            ephem_geom_params.v_ast,
+        ) = integrate_light_time(sim, ex, pred["epoch_JD_TDB"] - ephem.jd_ref, obs_pos, lt0=0.01)
+        ephem_geom_params.rho_hat = ephem_geom_params.rho / ephem_geom_params.rho_mag
+
+        # Formatting the pointing data
+        cols = (
+            "FieldID",
+            "fieldJD_TDB",
+            "r_obs_x",
+            "r_obs_y",
+            "r_obs_z",
+            "v_obs_x",
+            "v_obs_y",
+            "v_obs_z",
+            "r_sun_x",
+            "r_sun_y",
+            "r_sun_z",
+            "v_sun_x",
+            "v_sun_y",
+            "v_sun_z",
+        )
+        # Make pointing a Series because input needs to be 1darray, every value is a float (even the fieldID) for performance (including a string in a series of floats/ints reduces performance dramatically, as per https://stackoverflow.com/questions/52129791/how-can-i-have-different-types-in-pandas-series-if-pandas-series-uses-numpy)
+        pointing = Series(
+            (
+                i,
+                pred["epoch_JD_TDB"],
+                *obs_pos,
+                *obs_vel,
+                *sun_pos,
+                *sun_vel,
+            ),
+            index=cols,
+        )
+
+        onsky = calculate_rates_and_geometry(pointing, ephem_geom_params)
+        # Only want certain returned values: on-sky rates and phase angle
+        onsky_desired = (onsky[n] for n in [7, 9, 10, 11, 12, 13, 14, 15, 22])
+
+        rates[i] = (provid, pred["epoch_JD_TDB"], *onsky_desired)
+    return rates
 
 
 def _get_result_dtypes(primary_id_column_name: str):
@@ -89,7 +181,7 @@ def _convert_to_sg(data):
     return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
 
 
-def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
+def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name, args, configs):
     """This function is called by the parallelization function to call the C++ code.
 
     Parameters
@@ -163,11 +255,33 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
         results["obs_cov_yy"],
         results["obs_cov_xy"],
     )
+    if args.onsky_data:  # Get onsky data if flagged
+        # generate_simulations (used in _get_on_sky_data) doesn't accept BCART_EQ, accepts COM, KEP, CART and their barycentric equivalents
+        data = convert(
+            data,
+            "BCART",
+            cache_dir=cache_dir,
+            primary_id_column_name=args.primary_id_column_name,
+        )
+        cols = data.dtype.names
+        orbits_df = DataFrame(data, columns=cols, index=data["provID"])
+        orbits_df = orbits_df.rename(columns={"provID": "ObjID"})
+        onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
+        results = join_by(["provID", "epoch_JD_TDB"], results, onsky_results, usemask=False, asrecarray=True)
 
     return results
 
 
-def predict(data, obscode, times, primary_id_column_name="provID", num_workers=-1, cache_dir=None):
+def predict(
+    data,
+    obscode,
+    times,
+    primary_id_column_name="provID",
+    num_workers=-1,
+    cache_dir=None,
+    args=None,
+    configs=None,
+):
     """The function to all that predict functionality interactively, i.e from a notebook or a script.
 
     Parameters
@@ -208,6 +322,8 @@ def predict(data, obscode, times, primary_id_column_name="provID", num_workers=-
         times=times,
         cache_dir=cache_dir,
         primary_id_column_name=primary_id_column_name,
+        args=args,
+        configs=configs,
     )
 
 
@@ -219,6 +335,7 @@ def predict_cli(
     timestep_day: float,
     output_file: str,
     cache_dir: Path,
+    configs: Namespace,
 ):
     """The function for calling predict through the command line interface.
 
@@ -275,6 +392,8 @@ def predict_cli(
             num_workers=cli_args.n,
             cache_dir=cache_dir,
             primary_id_column_name=cli_args.primary_id_column_name,
+            args=cli_args,
+            configs=configs,
         )
 
         if len(predictions) > 0:
