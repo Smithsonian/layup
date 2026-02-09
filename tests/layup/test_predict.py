@@ -211,6 +211,7 @@ def test_get_on_sky_data(tmpdir):
             "-osd",
         ]
     )
+    # Get sorcha results
 
 def test_convert_to_sg():
     """Compare the output given by _convert_to_sg() with an expected output, seeing how it handles edge cases."""

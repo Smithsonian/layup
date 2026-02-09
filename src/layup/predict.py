@@ -64,6 +64,24 @@ def _get_on_sky_data(orbits_df, observations, predictions, args, configs):
         ],
     )
 
+    rows = [(objid, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) for objid in predictions["provID"]]
+    cols = [
+            ("FieldID", '<U16'),
+            ("fieldJD_TDB", 'f8'),
+            ("r_obs_x", 'f8'),
+            ("r_obs_y", 'f8'),
+            ("r_obs_z", 'f8'),
+            ("v_obs_x", 'f8'),
+            ("v_obs_y", 'f8'),
+            ("v_obs_z", 'f8'),
+            ("r_sun_x", 'f8'),
+            ("r_sun_y", 'f8'),
+            ("r_sun_z", 'f8'),
+            ("v_sun_x", 'f8'),
+            ("v_sun_y", 'f8'),
+            ("v_sun_z", 'f8'),
+    ]
+    rows = np.array(rows, dtype=cols)
     for i, pred in enumerate(predictions):
         # Setup - define values used later
         provid = pred["provID"]
@@ -172,11 +190,11 @@ def _convert_to_sg(data):
 
     ra = np.empty(len(ra_h), dtype="<U16")
     dec = np.empty(len(ra_h), dtype="<U16")
-
+    
     for i in range(len(ra_h)):
 
         ra[i] = f"{ra_h[i]:02} {ra_m[i]:02} {ra_s[i]:05.2f}"  # Same format as
-        dec[i] = f"{dec_d[i]:+03} {dec_m[i]:02} {dec_s[i]:04.1f}"  # JPL Horizons
+        dec[i] = f"{'-' if dec_deg[i] < 0 else '+'}{dec_d[i]:02} {dec_m[i]:02} {dec_s[i]:04.1f}"  # JPL Horizons
 
     return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
 
