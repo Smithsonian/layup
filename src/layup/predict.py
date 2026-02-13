@@ -11,6 +11,7 @@ from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, furnish_s
 from sorcha.ephemeris.simulation_driver import (
     EphemerisGeometryParameters,
     calculate_rates_and_geometry,
+    get_vec
 )
 from pandas import DataFrame, Series
 from numpy.lib.recfunctions import join_by
@@ -24,6 +25,7 @@ from layup.utilities.data_processing_utilities import (
     layup_furnish_spiceypy,
     parse_fit_result,
     process_data,
+    process_data_by_id,
     skyplane_cov_to_radec_cov,
 )
 from layup.utilities.file_io import CSVDataReader
@@ -33,27 +35,195 @@ logger = logging.getLogger(__name__)
 
 # The list of required input column names. Note: This should not include the
 # primary id column name.
+AU_M = 149597870700
+AU_KM = AU_M / 1000.0
+SPEED_OF_LIGHT = 2.99792458e5 * 86400.0 / AU_KM
 REQUIRED_INPUT_COLUMN_NAMES = [
     "epochMJD_TDB",
     "FORMAT",
 ]
 
+def layup_get_residual_vectors(v1):
+    """
+    Decomposes the vector into two unit vectors to facilitate computation of on-sky angles
+    The decomposition is such that A  = (-sin (RA), cos(RA), 0) is in the direction of increasing RA,
+    and D = (-sin(dec)cos (RA), -sin(dec) sin(RA), cos(dec)) is in the direction of increasing Dec
+    The triplet (A,D,v1) forms an orthonormal basis of the 3D vector space.
 
-def _get_on_sky_data(orbits_df, observations, predictions, args, configs):
+    Parameters
+    ----------
+    v1 : array, shape = (3,))
+        The vector to be decomposed
+
+    Returns
+    -------
+    A :  array, shape = (3,))
+        A  vector
+    D : array, shape = (3,))
+        D vector
+    """
+    #print(v1.shape)
+    [x, y, z] = v1
+    cosd = np.sqrt(1 - z * z)
+    A = np.array((-y, x, np.zeros(len(x)))) / cosd
+    D = np.array((-z * x / cosd, -z * y / cosd, cosd))
+    return A, D
+
+def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: EphemerisGeometryParameters):
+    """Calculate rates and geometry for objects within the field of view
+
+    Parameters
+    ----------
+    pointing : pandas dataframe
+        The dataframe containing the pointing database.
+    ephem_geom_params : EphemerisGeometryParameters
+        Various parameters necessary to calculate the ephemeris
+
+    Returns
+    -------
+    : tuple
+        Tuple containing the ephemeris parameters needed for Sorcha post processing.
+    """
+    r_sun = get_vec(pointing, "r_sun")
+    r_obs = get_vec(pointing, "r_obs")
+    v_sun = get_vec(pointing, "v_sun")
+    v_obs = get_vec(pointing, "v_obs")
+
+    ra0, dec0 = vec2ra_dec(ephem_geom_params.rho_hat)
+    drhodt = ephem_geom_params.v_ast - v_obs
+    #drhodt = drhodt.T
+    #print(drhodt.shape)
+    drho_magdt = (1 / ephem_geom_params.rho_mag) * np.einsum('ji,ji->i',ephem_geom_params.rho, drhodt)
+    ddeltatdt = drho_magdt / (SPEED_OF_LIGHT)
+    drhodt = ephem_geom_params.v_ast * (1 - ddeltatdt) - v_obs
+    
+    #ephem_geom_params.rho_hat = ephem_geom_params.rho_hat.T
+    A, D = layup_get_residual_vectors(ephem_geom_params.rho_hat)
+    
+    drho_hatdt = (
+        drhodt / ephem_geom_params.rho_mag
+        - drho_magdt * ephem_geom_params.rho_hat / ephem_geom_params.rho_mag
+    )
+    dradt = np.einsum('ji,ji->i',A, drho_hatdt)
+    ddecdt = np.einsum('ji,ji->i',D, drho_hatdt)
+   
+    r_ast_sun = ephem_geom_params.r_ast - r_sun
+    v_ast_sun = ephem_geom_params.v_ast - v_sun
+    r_ast_obs = ephem_geom_params.r_ast - r_obs
+    #print(np.einsum('ji,ji->i',r_ast_sun, r_ast_obs))
+    phase_angle = np.arccos(
+        np.einsum('ji,ji->i',r_ast_sun, r_ast_obs) / (np.linalg.norm(r_ast_sun, axis=0) * np.linalg.norm(r_ast_obs, axis=0))
+    )
+    #print('drhotdt_vectorised = ', phase_angle)
+    obs_sun = r_obs - r_sun
+    dobs_sundt = v_obs - v_sun
+    return (
+        ephem_geom_params.obj_id,
+        pointing["FieldID"],
+        ephem_geom_params.mjd_tai,
+        pointing["fieldJD_TDB"],
+        ephem_geom_params.rho_mag * AU_KM,
+        drho_magdt * AU_KM / (24 * 60 * 60),
+        ra0,
+        dradt * 180 / np.pi,
+        dec0,
+        ddecdt * 180 / np.pi,
+        r_ast_sun[0] * AU_KM,
+        r_ast_sun[1] * AU_KM,
+        r_ast_sun[2] * AU_KM,
+        v_ast_sun[0] * AU_KM / (24 * 60 * 60),
+        v_ast_sun[1] * AU_KM / (24 * 60 * 60),
+        v_ast_sun[2] * AU_KM / (24 * 60 * 60),
+        obs_sun[0] * AU_KM,
+        obs_sun[1] * AU_KM,
+        obs_sun[2] * AU_KM,
+        dobs_sundt[0] * AU_KM / (24 * 60 * 60),
+        dobs_sundt[1] * AU_KM / (24 * 60 * 60),
+        dobs_sundt[2] * AU_KM / (24 * 60 * 60),
+        phase_angle * 180 / np.pi,
+    )
+
+
+def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name, args, configs):
+
+    observations = []
+    for i, pos in enumerate(obs_pos_vel):
+        obs = Observation()
+        obs.observer_position = [pos["x"], pos["y"], pos["z"]]
+        obs.observer_velocity = [pos["vx"], pos["vy"], pos["vz"]]
+        obs.epoch = predictions['epoch_JD_TDB'][i]
+        observations.append(obs)
+    
     # Create simulations
     ephem, gm_sun, gm_total = create_assist_ephemeris(args, configs.auxiliary)
     furnish_spiceypy(args, configs.auxiliary)
     sim_dict = generate_simulations(ephem, gm_sun, gm_total, orbits_df, args)
 
-    # For each predicted position, want to generate on-sky info
-    rates = [(objid, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) for objid in predictions["provID"]]
+    ephem_geom_params = EphemerisGeometryParameters()
+    ephem_geom_params.obj_id = predictions[primary_id_column_name]
+    ephem_geom_params.rho = np.zeros((3,len(predictions)))
+    ephem_geom_params.rho_mag = np.zeros(len(predictions))
+    ephem_geom_params.r_ast = np.zeros((3,len(predictions)))
+    ephem_geom_params.v_ast = np.zeros((3,len(predictions)))
+    ephem_geom_params.rho_hat = np.zeros((3,len(predictions)))
+    obs_pos = np.zeros((len(predictions), 3))
+    obs_vel = np.zeros((len(predictions), 3))
+    sun_pos = np.zeros((len(predictions), 3))
+    sun_vel = np.zeros((len(predictions), 3))
+    #print(len(observations))
+    #print(len(predictions))
+    v = sim_dict[predictions[primary_id_column_name][0]]
+    sim = v['sim']
+    ex = v['ex']
+    for i, pred in enumerate(predictions):
+        # Setup - define values used later
+
+        obs_pos[i] = observations[i].observer_position
+        obs_vel[i] = observations[i].observer_velocity
+        sun_pos[i] = ephem.get_particle("sun", pred["epoch_JD_TDB"] - ephem.jd_ref).xyz
+        sun_vel[i] = ephem.get_particle("sun", pred["epoch_JD_TDB"] - ephem.jd_ref).vxyz
+
+        # Get rest of geometry params
+        (
+            [ephem_geom_params.rho[0][i],ephem_geom_params.rho[1][i],ephem_geom_params.rho[2][i]],
+            ephem_geom_params.rho_mag[i],
+            _,
+            [ephem_geom_params.r_ast[0][i],ephem_geom_params.r_ast[1][i],ephem_geom_params.r_ast[2][i]],
+            [ephem_geom_params.v_ast[0][i],ephem_geom_params.v_ast[1][i],ephem_geom_params.v_ast[2][i]]
+        ) = integrate_light_time(sim, ex, pred["epoch_JD_TDB"] - ephem.jd_ref, obs_pos[i], lt0=0.01)
+    #print('rho_mag = ', ephem_geom_params.rho_mag)
+    ephem_geom_params.rho_hat = ephem_geom_params.rho / ephem_geom_params.rho_mag[:,None].T
+
+    # Formatting the pointing data
+    pointing = DataFrame([(ephem_geom_params.obj_id,predictions["epoch_JD_TDB"], *obs_pos[i], *obs_vel[i], *sun_pos[i], *sun_vel[i]) for i in range(len(predictions))],
+        columns=(
+        "FieldID",
+        "fieldJD_TDB",
+        "r_obs_x", 
+        'r_obs_y', 
+        'r_obs_z',
+        "v_obs_x",
+        "v_obs_y",
+        "v_obs_z",
+        "r_sun_x",
+        "r_sun_y",
+        "r_sun_z",
+        "v_sun_x",
+        "v_sun_y",
+        "v_sun_z"))
+    
+    # Get the on-sky rates
+    onsky = layup_calculate_rates_and_geometry(pointing, ephem_geom_params)
+    #print(onsky)
+    # Only want certain bits of info returned (check rates dtype for their names)
+    rates_array = [(ephem_geom_params.obj_id[i], predictions["epoch_JD_TDB"][i], onsky[4][i], onsky[5][i], onsky[10][i], onsky[11][i], onsky[12][i], onsky[13][i], onsky[14][i], onsky[15][i], onsky[22][i]) for i, _ in enumerate(predictions)]
     rates = np.array(
-        rates,
+        rates_array,
         dtype=[
-            ("provID", "<U16"),
+            ("provID", "O"),
             ("epoch_JD_TDB", "f8"),
-            ("RARateCosDec_deg_day", "f8"),
-            ("DecRate_deg_day", "f8"),
+            ("Range_LTC_km", "f8"),
+            ("RangeRate_LTC_km_s", "f8"),
             ("Obj_Sun_x_LTC_km", "f8"),
             ("Obj_Sun_y_LTC_km", "f8"),
             ("Obj_Sun_z_LTC_km", "f8"),
@@ -63,82 +233,7 @@ def _get_on_sky_data(orbits_df, observations, predictions, args, configs):
             ("phase_deg", "f8"),
         ],
     )
-
-    rows = [(objid, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) for objid in predictions["provID"]]
-    cols = [
-            ("FieldID", '<U16'),
-            ("fieldJD_TDB", 'f8'),
-            ("r_obs_x", 'f8'),
-            ("r_obs_y", 'f8'),
-            ("r_obs_z", 'f8'),
-            ("v_obs_x", 'f8'),
-            ("v_obs_y", 'f8'),
-            ("v_obs_z", 'f8'),
-            ("r_sun_x", 'f8'),
-            ("r_sun_y", 'f8'),
-            ("r_sun_z", 'f8'),
-            ("v_sun_x", 'f8'),
-            ("v_sun_y", 'f8'),
-            ("v_sun_z", 'f8'),
-    ]
-    rows = np.array(rows, dtype=cols)
-    for i, pred in enumerate(predictions):
-        # Setup - define values used later
-        provid = pred["provID"]
-        ephem_geom_params = EphemerisGeometryParameters()
-        ephem_geom_params.obj_id = provid
-
-        v = sim_dict[provid]
-        sim, ex = v["sim"], v["ex"]
-        obs_pos = observations[i].observer_position
-        obs_vel = observations[i].observer_velocity
-        sun_pos = ephem.get_particle("sun", pred["epoch_JD_TDB"] - ephem.jd_ref).xyz
-        sun_vel = ephem.get_particle("sun", pred["epoch_JD_TDB"] - ephem.jd_ref).vxyz
-        # Get rest of geometry params
-        (
-            ephem_geom_params.rho,
-            ephem_geom_params.rho_mag,
-            _,
-            ephem_geom_params.r_ast,
-            ephem_geom_params.v_ast,
-        ) = integrate_light_time(sim, ex, pred["epoch_JD_TDB"] - ephem.jd_ref, obs_pos, lt0=0.01)
-        ephem_geom_params.rho_hat = ephem_geom_params.rho / ephem_geom_params.rho_mag
-
-        # Formatting the pointing data
-        cols = (
-            "FieldID",
-            "fieldJD_TDB",
-            "r_obs_x",
-            "r_obs_y",
-            "r_obs_z",
-            "v_obs_x",
-            "v_obs_y",
-            "v_obs_z",
-            "r_sun_x",
-            "r_sun_y",
-            "r_sun_z",
-            "v_sun_x",
-            "v_sun_y",
-            "v_sun_z",
-        )
-        # Make pointing a Series because input needs to be 1darray, every value is a float (even the fieldID) for performance (including a string in a series of floats/ints reduces performance dramatically, as per https://stackoverflow.com/questions/52129791/how-can-i-have-different-types-in-pandas-series-if-pandas-series-uses-numpy)
-        pointing = Series(
-            (
-                i,
-                pred["epoch_JD_TDB"],
-                *obs_pos,
-                *obs_vel,
-                *sun_pos,
-                *sun_vel,
-            ),
-            index=cols,
-        )
-
-        onsky = calculate_rates_and_geometry(pointing, ephem_geom_params)
-        # Only want certain returned values: on-sky rates and phase angle
-        onsky_desired = (onsky[n] for n in [7, 9, 10, 11, 12, 13, 14, 15, 22])
-
-        rates[i] = (provid, pred["epoch_JD_TDB"], *onsky_desired)
+    spice.kclear()
     return rates
 
 
@@ -180,7 +275,7 @@ def _convert_to_sg(data):
     ra_deg = (data["ra_deg"] / 15) % 24  # Ensuring ra is within 24 hours/360 degrees
     ra_h = ra_deg.astype(int)
     dec_deg = data["dec_deg"]
-    dec_d = dec_deg.astype(int)
+    dec_d = np.abs(dec_deg).astype(int)
     ra_decimal = (ra_deg % 1) * 60
     ra_m = ra_decimal.astype(int)
     dec_decimal = (np.abs(dec_deg) % 1) * 60
@@ -190,7 +285,7 @@ def _convert_to_sg(data):
 
     ra = np.empty(len(ra_h), dtype="<U16")
     dec = np.empty(len(ra_h), dtype="<U16")
-    
+
     for i in range(len(ra_h)):
 
         ra[i] = f"{ra_h[i]:02} {ra_m[i]:02} {ra_s[i]:05.2f}"  # Same format as
@@ -273,19 +368,6 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name, args, 
         results["obs_cov_yy"],
         results["obs_cov_xy"],
     )
-    if args.onsky_data:  # Get onsky data if flagged
-        # generate_simulations (used in _get_on_sky_data) doesn't accept BCART_EQ, accepts COM, KEP, CART and their barycentric equivalents
-        data = convert(
-            data,
-            "BCART",
-            cache_dir=cache_dir,
-            primary_id_column_name=args.primary_id_column_name,
-        )
-        cols = data.dtype.names
-        orbits_df = DataFrame(data, columns=cols, index=data["provID"])
-        orbits_df = orbits_df.rename(columns={"provID": "ObjID"})
-        onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
-        results = join_by(["provID", "epoch_JD_TDB"], results, onsky_results, usemask=False, asrecarray=True)
 
     return results
 
@@ -332,7 +414,7 @@ def predict(
 
     obs_pos_vel = Layup_observatory.obscodes_to_barycentric(obs_data)
 
-    return process_data(
+    predictions = process_data(
         data,
         n_workers=num_workers,
         func=_predict,
@@ -343,6 +425,32 @@ def predict(
         args=args,
         configs=configs,
     )
+    if args.onsky_data:
+        # generate_simulations (used in _get_on_sky_data) doesn't accept BCART_EQ, accepts COM, KEP, CART and their barycentric equivalents
+        data = convert(
+            data,
+            "BCART",
+            cache_dir=cache_dir,
+            primary_id_column_name=args.primary_id_column_name,
+        )
+        cols = data.dtype.names
+        orbits_df = DataFrame(data, columns=cols, index=data["provID"])
+        orbits_df = orbits_df.rename(columns={"provID": "ObjID"})
+        #onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
+        onsky_results2 = process_data_by_id(
+            predictions,
+            n_workers=num_workers,
+            func=_get_on_sky_data,
+            primary_id_column_name=primary_id_column_name,
+            orbits_df=orbits_df,
+            obs_pos_vel=obs_pos_vel,
+            args=args,
+            configs=configs,
+        )
+        results = join_by(["provID", "epoch_JD_TDB"], predictions, onsky_results2, usemask=False, asrecarray=True)
+        return results
+    else:
+        return predictions
 
 
 def predict_cli(
@@ -380,6 +488,13 @@ def predict_cli(
     if num_workers < 0:
         num_workers = os.cpu_count()
 
+    #times_array = CSVDataReader(
+    #    'ephem.csv',
+    #    primary_id_column_name='fieldJD_TDB',
+    #    sep="csv",
+    #    required_columns=['fieldJD_TDB'],
+    #)
+    #times = times_array.read_rows()['fieldJD_TDB'].astype(float)
     times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
 
     reader = CSVDataReader(

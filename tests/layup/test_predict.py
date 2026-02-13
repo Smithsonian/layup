@@ -54,6 +54,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
         timestep_day=time_step,
         output_file=temp_out_file,
         cache_dir=None,
+        configs=None
     )
 
     # Verify predict produced an output file
