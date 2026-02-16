@@ -11,7 +11,7 @@ from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, furnish_s
 from sorcha.ephemeris.simulation_driver import (
     EphemerisGeometryParameters,
     calculate_rates_and_geometry,
-    get_vec
+    get_vec,
 )
 from pandas import DataFrame, Series
 from numpy.lib.recfunctions import join_by
@@ -30,6 +30,7 @@ from layup.utilities.data_processing_utilities import (
 )
 from layup.utilities.file_io import CSVDataReader
 from layup.utilities.file_io.file_output import write_csv
+from layup.utilities.cli_utilities import warn_or_remove_file
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ REQUIRED_INPUT_COLUMN_NAMES = [
     "epochMJD_TDB",
     "FORMAT",
 ]
+
 
 def layup_get_residual_vectors(v1):
     """
@@ -62,12 +64,13 @@ def layup_get_residual_vectors(v1):
     D : array, shape = (3,))
         D vector
     """
-    #print(v1.shape)
+    # print(v1.shape)
     [x, y, z] = v1
     cosd = np.sqrt(1 - z * z)
     A = np.array((-y, x, np.zeros(len(x)))) / cosd
     D = np.array((-z * x / cosd, -z * y / cosd, cosd))
     return A, D
+
 
 def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: EphemerisGeometryParameters):
     """Calculate rates and geometry for objects within the field of view
@@ -91,30 +94,31 @@ def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: E
 
     ra0, dec0 = vec2ra_dec(ephem_geom_params.rho_hat)
     drhodt = ephem_geom_params.v_ast - v_obs
-    #drhodt = drhodt.T
-    #print(drhodt.shape)
-    drho_magdt = (1 / ephem_geom_params.rho_mag) * np.einsum('ji,ji->i',ephem_geom_params.rho, drhodt)
+    # drhodt = drhodt.T
+    # print(drhodt.shape)
+    drho_magdt = (1 / ephem_geom_params.rho_mag) * np.einsum("ji,ji->i", ephem_geom_params.rho, drhodt)
     ddeltatdt = drho_magdt / (SPEED_OF_LIGHT)
     drhodt = ephem_geom_params.v_ast * (1 - ddeltatdt) - v_obs
-    
-    #ephem_geom_params.rho_hat = ephem_geom_params.rho_hat.T
+
+    # ephem_geom_params.rho_hat = ephem_geom_params.rho_hat.T
     A, D = layup_get_residual_vectors(ephem_geom_params.rho_hat)
-    
+
     drho_hatdt = (
         drhodt / ephem_geom_params.rho_mag
         - drho_magdt * ephem_geom_params.rho_hat / ephem_geom_params.rho_mag
     )
-    dradt = np.einsum('ji,ji->i',A, drho_hatdt)
-    ddecdt = np.einsum('ji,ji->i',D, drho_hatdt)
-   
+    dradt = np.einsum("ji,ji->i", A, drho_hatdt)
+    ddecdt = np.einsum("ji,ji->i", D, drho_hatdt)
+
     r_ast_sun = ephem_geom_params.r_ast - r_sun
     v_ast_sun = ephem_geom_params.v_ast - v_sun
     r_ast_obs = ephem_geom_params.r_ast - r_obs
-    #print(np.einsum('ji,ji->i',r_ast_sun, r_ast_obs))
+    # print(np.einsum('ji,ji->i',r_ast_sun, r_ast_obs))
     phase_angle = np.arccos(
-        np.einsum('ji,ji->i',r_ast_sun, r_ast_obs) / (np.linalg.norm(r_ast_sun, axis=0) * np.linalg.norm(r_ast_obs, axis=0))
+        np.einsum("ji,ji->i", r_ast_sun, r_ast_obs)
+        / (np.linalg.norm(r_ast_sun, axis=0) * np.linalg.norm(r_ast_obs, axis=0))
     )
-    #print('drhotdt_vectorised = ', phase_angle)
+    # print('drhotdt_vectorised = ', phase_angle)
     obs_sun = r_obs - r_sun
     dobs_sundt = v_obs - v_sun
     return (
@@ -151,9 +155,9 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
         obs = Observation()
         obs.observer_position = [pos["x"], pos["y"], pos["z"]]
         obs.observer_velocity = [pos["vx"], pos["vy"], pos["vz"]]
-        obs.epoch = predictions['epoch_JD_TDB'][i]
+        obs.epoch = predictions["epoch_JD_TDB"][i]
         observations.append(obs)
-    
+
     # Create simulations
     ephem, gm_sun, gm_total = create_assist_ephemeris(args, configs.auxiliary)
     furnish_spiceypy(args, configs.auxiliary)
@@ -161,20 +165,15 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
 
     ephem_geom_params = EphemerisGeometryParameters()
     ephem_geom_params.obj_id = predictions[primary_id_column_name]
-    ephem_geom_params.rho = np.zeros((3,len(predictions)))
-    ephem_geom_params.rho_mag = np.zeros(len(predictions))
-    ephem_geom_params.r_ast = np.zeros((3,len(predictions)))
-    ephem_geom_params.v_ast = np.zeros((3,len(predictions)))
-    ephem_geom_params.rho_hat = np.zeros((3,len(predictions)))
-    obs_pos = np.zeros((len(predictions), 3))
-    obs_vel = np.zeros((len(predictions), 3))
-    sun_pos = np.zeros((len(predictions), 3))
-    sun_vel = np.zeros((len(predictions), 3))
-    #print(len(observations))
-    #print(len(predictions))
+    [ephem_geom_params.rho, ephem_geom_params.r_ast, ephem_geom_params.v_ast, ephem_geom_params.rho_hat] = (
+        np.empty((4, 3, len(predictions)))
+    )
+    ephem_geom_params.rho_mag = np.empty(len(predictions))
+    [obs_pos, obs_vel, sun_pos, sun_vel] = np.empty((4, len(predictions), 3))
+
     v = sim_dict[predictions[primary_id_column_name][0]]
-    sim = v['sim']
-    ex = v['ex']
+    sim = v["sim"]
+    ex = v["ex"]
     for i, pred in enumerate(predictions):
         # Setup - define values used later
 
@@ -185,54 +184,87 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
 
         # Get rest of geometry params
         (
-            [ephem_geom_params.rho[0][i],ephem_geom_params.rho[1][i],ephem_geom_params.rho[2][i]],
+            [ephem_geom_params.rho[0][i], ephem_geom_params.rho[1][i], ephem_geom_params.rho[2][i]],
             ephem_geom_params.rho_mag[i],
             _,
-            [ephem_geom_params.r_ast[0][i],ephem_geom_params.r_ast[1][i],ephem_geom_params.r_ast[2][i]],
-            [ephem_geom_params.v_ast[0][i],ephem_geom_params.v_ast[1][i],ephem_geom_params.v_ast[2][i]]
+            [ephem_geom_params.r_ast[0][i], ephem_geom_params.r_ast[1][i], ephem_geom_params.r_ast[2][i]],
+            [ephem_geom_params.v_ast[0][i], ephem_geom_params.v_ast[1][i], ephem_geom_params.v_ast[2][i]],
         ) = integrate_light_time(sim, ex, pred["epoch_JD_TDB"] - ephem.jd_ref, obs_pos[i], lt0=0.01)
-    #print('rho_mag = ', ephem_geom_params.rho_mag)
-    ephem_geom_params.rho_hat = ephem_geom_params.rho / ephem_geom_params.rho_mag[:,None].T
+    ephem_geom_params.rho_hat = ephem_geom_params.rho / ephem_geom_params.rho_mag[:, None].T
 
     # Formatting the pointing data
-    pointing = DataFrame([(ephem_geom_params.obj_id,predictions["epoch_JD_TDB"], *obs_pos[i], *obs_vel[i], *sun_pos[i], *sun_vel[i]) for i in range(len(predictions))],
-        columns=(
-        "FieldID",
-        "fieldJD_TDB",
-        "r_obs_x", 
-        'r_obs_y', 
-        'r_obs_z',
-        "v_obs_x",
-        "v_obs_y",
-        "v_obs_z",
-        "r_sun_x",
-        "r_sun_y",
-        "r_sun_z",
-        "v_sun_x",
-        "v_sun_y",
-        "v_sun_z"))
-    
+    pointing = DataFrame(
+        {
+            "FieldID": ephem_geom_params.obj_id,
+            "fieldJD_TDB": predictions["epoch_JD_TDB"],
+            "r_obs_x": obs_pos.T[0],
+            "r_obs_y": obs_pos.T[1],
+            "r_obs_z": obs_pos.T[2],
+            "v_obs_x": obs_vel.T[0],
+            "v_obs_y": obs_vel.T[1],
+            "v_obs_z": obs_vel.T[2],
+            "r_sun_x": sun_pos.T[0],
+            "r_sun_y": sun_pos.T[1],
+            "r_sun_z": sun_pos.T[2],
+            "v_sun_x": sun_vel.T[0],
+            "v_sun_y": sun_vel.T[1],
+            "v_sun_z": sun_vel.T[2],
+        }
+    )
+
     # Get the on-sky rates
     onsky = layup_calculate_rates_and_geometry(pointing, ephem_geom_params)
-    #print(onsky)
-    # Only want certain bits of info returned (check rates dtype for their names)
-    rates_array = [(ephem_geom_params.obj_id[i], predictions["epoch_JD_TDB"][i], onsky[4][i], onsky[5][i], onsky[10][i], onsky[11][i], onsky[12][i], onsky[13][i], onsky[14][i], onsky[15][i], onsky[22][i]) for i, _ in enumerate(predictions)]
-    rates = np.array(
-        rates_array,
-        dtype=[
-            ("provID", "O"),
-            ("epoch_JD_TDB", "f8"),
-            ("Range_LTC_km", "f8"),
-            ("RangeRate_LTC_km_s", "f8"),
-            ("Obj_Sun_x_LTC_km", "f8"),
-            ("Obj_Sun_y_LTC_km", "f8"),
-            ("Obj_Sun_z_LTC_km", "f8"),
-            ("Obj_Sun_vx_LTC_km_s", "f8"),
-            ("Obj_Sun_vy_LTC_km_s", "f8"),
-            ("Obj_Sun_vz_LTC_km_s", "f8"),
-            ("phase_deg", "f8"),
-        ],
+
+    # Only want certain info from onsky
+
+    # This method is the fastest for making a recarray, but I've commented a different way in case we don't want to depend on pandas
+
+    rates_df = DataFrame(
+        {
+            "provID": ephem_geom_params.obj_id,
+            "epoch_JD_TDB": predictions["epoch_JD_TDB"],
+            "Range_LTC_km": onsky[4],
+            "RangeRate_LTC_km_s": onsky[5],
+            "Obj_Sun_x_LTC_km": onsky[10],
+            "Obj_Sun_y_LTC_km": onsky[11],
+            "Obj_Sun_z_LTC_km": onsky[12],
+            "Obj_Sun_vx_LTC_km_s": onsky[13],
+            "Obj_Sun_vy_LTC_km_s": onsky[14],
+            "Obj_Sun_vz_LTC_km_s": onsky[15],
+            "phase_deg": onsky[22],
+        }
     )
+    rates = rates_df.to_records(index=False)
+
+    # rates = np.empty(
+    #     len(predictions),
+    #     dtype=[
+    #         ("provID", "O"),
+    #         ("epoch_JD_TDB", "f8"),
+    #         ("Range_LTC_km", "f8"),
+    #         ("RangeRate_LTC_km_s", "f8"),
+    #         ("Obj_Sun_x_LTC_km", "f8"),
+    #         ("Obj_Sun_y_LTC_km", "f8"),
+    #         ("Obj_Sun_z_LTC_km", "f8"),
+    #         ("Obj_Sun_vx_LTC_km_s", "f8"),
+    #         ("Obj_Sun_vy_LTC_km_s", "f8"),
+    #         ("Obj_Sun_vz_LTC_km_s", "f8"),
+    #         ("phase_deg", "f8"),
+    #     ],
+    # )
+    # rates["provID"], rates["epoch_JD_TDB"] = ephem_geom_params.obj_id, predictions["epoch_JD_TDB"]
+    # rates["Range_LTC_km"], rates["RangeRate_LTC_km_s"] = onsky[4], onsky[5]
+    # (
+    #     rates["Obj_Sun_x_LTC_km"],
+    #     rates["Obj_Sun_y_LTC_km"],
+    #     rates["Obj_Sun_z_LTC_km"],
+    #     rates["Obj_Sun_vx_LTC_km_s"],
+    #     rates["Obj_Sun_vy_LTC_km_s"],
+    #     rates["Obj_Sun_vz_LTC_km_s"],
+    # ) = (onsky[10], onsky[11], onsky[12], onsky[13], onsky[14], onsky[15])
+    # rates["phase_deg"] = onsky[22]
+
+    
     spice.kclear()
     return rates
 
@@ -289,7 +321,9 @@ def _convert_to_sg(data):
     for i in range(len(ra_h)):
 
         ra[i] = f"{ra_h[i]:02} {ra_m[i]:02} {ra_s[i]:05.2f}"  # Same format as
-        dec[i] = f"{'-' if dec_deg[i] < 0 else '+'}{dec_d[i]:02} {dec_m[i]:02} {dec_s[i]:04.1f}"  # JPL Horizons
+        dec[i] = (
+            f"{'-' if dec_deg[i] < 0 else '+'}{dec_d[i]:02} {dec_m[i]:02} {dec_s[i]:04.1f}"  # JPL Horizons
+        )
 
     return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
 
@@ -436,8 +470,8 @@ def predict(
         cols = data.dtype.names
         orbits_df = DataFrame(data, columns=cols, index=data["provID"])
         orbits_df = orbits_df.rename(columns={"provID": "ObjID"})
-        #onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
-        onsky_results2 = process_data_by_id(
+        # onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
+        onsky_results = process_data_by_id(
             predictions,
             n_workers=num_workers,
             func=_get_on_sky_data,
@@ -447,7 +481,9 @@ def predict(
             args=args,
             configs=configs,
         )
-        results = join_by(["provID", "epoch_JD_TDB"], predictions, onsky_results2, usemask=False, asrecarray=True)
+        results = join_by(
+            ["provID", "epoch_JD_TDB"], predictions, onsky_results, usemask=False, asrecarray=True
+        )
         return results
     else:
         return predictions
@@ -488,13 +524,13 @@ def predict_cli(
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    #times_array = CSVDataReader(
+    # times_array = CSVDataReader(
     #    'ephem.csv',
     #    primary_id_column_name='fieldJD_TDB',
     #    sep="csv",
     #    required_columns=['fieldJD_TDB'],
-    #)
-    #times = times_array.read_rows()['fieldJD_TDB'].astype(float)
+    # )
+    # times = times_array.read_rows()['fieldJD_TDB'].astype(float)
     times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
 
     reader = CSVDataReader(
