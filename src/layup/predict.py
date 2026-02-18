@@ -221,10 +221,16 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
 
     rates_df = DataFrame(
         {
-            "provID": ephem_geom_params.obj_id,
+            primary_id_column_name: ephem_geom_params.obj_id,
             "epoch_JD_TDB": predictions["epoch_JD_TDB"],
             "Range_LTC_km": onsky[4],
             "RangeRate_LTC_km_s": onsky[5],
+            # calculate heliocentric distance
+            "Obj_Sun_LTC_km": np.sqrt(
+            onsky[10] ** 2
+            + onsky[11] ** 2
+            + onsky[12] ** 2
+            ),
             "Obj_Sun_x_LTC_km": onsky[10],
             "Obj_Sun_y_LTC_km": onsky[11],
             "Obj_Sun_z_LTC_km": onsky[12],
@@ -395,7 +401,9 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name, args, 
 
     results = np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
     results["ra_deg"], results["dec_deg"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
-    results["a_arcsec"], results["b_arcsec"], results["PA_deg"] = skyplane_cov_to_radec_cov(
+    # Only calculate covariances if covaraiances are in the input file
+    if 'cov_0_0' in data.dtype.names and data['cov_0_0'] != 0:
+        results["a_arcsec"], results["b_arcsec"], results["PA_deg"] = skyplane_cov_to_radec_cov(
         results["ra_deg"],
         results["dec_deg"],
         results["obs_cov_xx"],
@@ -410,7 +418,7 @@ def predict(
     data,
     obscode,
     times,
-    primary_id_column_name="provID",
+    primary_id_column_name='provID',
     num_workers=-1,
     cache_dir=None,
     args=None,
@@ -468,8 +476,9 @@ def predict(
             primary_id_column_name=args.primary_id_column_name,
         )
         cols = data.dtype.names
-        orbits_df = DataFrame(data, columns=cols, index=data["provID"])
-        orbits_df = orbits_df.rename(columns={"provID": "ObjID"})
+        orbits_df = DataFrame(data, columns=cols, index=data[primary_id_column_name])
+        if primary_id_column_name != 'ObjID':
+            orbits_df = orbits_df.rename(columns={primary_id_column_name: "ObjID"})
         # onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
         onsky_results = process_data_by_id(
             predictions,
@@ -482,7 +491,7 @@ def predict(
             configs=configs,
         )
         results = join_by(
-            ["provID", "epoch_JD_TDB"], predictions, onsky_results, usemask=False, asrecarray=True
+            [primary_id_column_name, "epoch_JD_TDB"], predictions, onsky_results, usemask=False, asrecarray=True
         )
         return results
     else:
