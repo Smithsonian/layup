@@ -31,6 +31,7 @@ jobs:
         pip install -e .
         pip install -e .[dev]
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ "$(uname)" == "Darwin" ]; then mkdir /Users/runner/Library/Caches/layup/ && curl https://minorplanetcenter.net/Extended_Files/obscodes_extended.json.gz -o /Users/runner/Library/Caches/layup/ObsCodes.json.gz; fi
         layup bootstrap
     - name: Run unit tests with pytest
       run: |
