@@ -18,7 +18,7 @@ from layup.routines import (
     run_from_vector_with_initial_guess,
 )
 from layup.convert import convert
-
+from layup.utilities.herget_iod import herget
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
@@ -343,9 +343,40 @@ def do_gauss_iod(observations, seq):
     # Get gauss solution, using the first, middle, and last observation
     # of the primary sequence
     idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
+    print("required gauss values ", type(observations[idx0]), (observations[idx2].epoch))
     logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
     solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
+    print(solns, type(solns), len(solns), dir(solns[0]))
+    for x in ["cov", "csq", "epoch", "flag", "method", "ndof", "niter", "state"]:
+        print(x, getattr(solns[0], x))
 
+    return solns
+
+
+def do_herget_iod(observations, seq):
+    """Calculate an initial orbit estimate using Herget's method.
+
+    Parameters
+    ----------
+    observations : list[Observation]
+        The list of Observations used for the orbit estimate
+    seq : list[list[int]
+        The list of lists of indexes of observations that are closely spaced in time.
+
+    Returns
+    -------
+    list[FitResult]
+        A collection of orbit fit results that can be used to perform a higher
+        quality fit estimate.
+    """
+    # Get gauss solution, using the first, middle, and last observation
+    # of the primary sequence
+    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
+
+    logger.debug(f"Sequence indexs passed to Herget: {idx0}, {idx2}")
+    solns = herget(observations[idx0], observations[idx2], 0.00001)
+    for x in ["cov", "csq", "epoch", "flag", "method", "ndof", "niter", "state"]:
+        print(x, getattr(solns[0], x))
     return solns
 
 
@@ -387,6 +418,8 @@ def do_fit(observations, seq, cache_dir, iod="gauss"):
 
     if iod.lower() == "gauss":
         solns = do_gauss_iod(observations, seq)
+    elif iod.lower() == "herget":
+        solns = do_herget_iod(observations, seq)
     else:
         raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
 
@@ -589,7 +622,7 @@ def _orbitfit(
 
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
-            if iod.lower() in ["gauss"]:
+            if iod.lower() in ["gauss", "herget"]:
                 res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower())
             else:
                 res = do_other_fit(iod=iod.lower())
