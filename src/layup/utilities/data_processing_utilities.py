@@ -192,7 +192,7 @@ def parse_fit_result(
 
     if isinstance(fit_result_row, np.ndarray) and fit_result_row.shape == (1,):
         fit_result_row = fit_result_row[0]
-        
+
     res = FitResult()
 
     if orbit_colm_flag == True:
