@@ -47,24 +47,23 @@ REQUIRED_INPUT_COLUMN_NAMES = [
 
 def layup_get_residual_vectors(v1):
     """
-    Decomposes the vector into two unit vectors to facilitate computation of on-sky angles
+    Decomposes n vectors into two unit vectors to facilitate computation of on-sky angles
     The decomposition is such that A  = (-sin (RA), cos(RA), 0) is in the direction of increasing RA,
     and D = (-sin(dec)cos (RA), -sin(dec) sin(RA), cos(dec)) is in the direction of increasing Dec
-    The triplet (A,D,v1) forms an orthonormal basis of the 3D vector space.
+    The triplet (A,D,v1) forms an orthonormal basis of the 3D vector space. Has vectorisation capabilities.
 
     Parameters
     ----------
-    v1 : array, shape = (3,))
-        The vector to be decomposed
+    v1 : array, shape = (3, n))
+        The vectors to be decomposed
 
     Returns
     -------
-    A :  array, shape = (3,))
-        A  vector
-    D : array, shape = (3,))
-        D vector
+    A :  array, shape = (3, n))
+        A  vectors
+    D : array, shape = (3, n))
+        D vectors
     """
-    # print(v1.shape)
     [x, y, z] = v1
     cosd = np.sqrt(1 - z * z)
     A = np.array((-y, x, np.zeros(len(x)))) / cosd
@@ -73,7 +72,7 @@ def layup_get_residual_vectors(v1):
 
 
 def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: EphemerisGeometryParameters):
-    """Calculate rates and geometry for objects within the field of view
+    """Calculate rates and geometry for objects within the field of view, with vectorisation capabilities
 
     Parameters
     ----------
@@ -94,13 +93,11 @@ def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: E
 
     ra0, dec0 = vec2ra_dec(ephem_geom_params.rho_hat)
     drhodt = ephem_geom_params.v_ast - v_obs
-    # drhodt = drhodt.T
-    # print(drhodt.shape)
+
     drho_magdt = (1 / ephem_geom_params.rho_mag) * np.einsum("ji,ji->i", ephem_geom_params.rho, drhodt)
     ddeltatdt = drho_magdt / (SPEED_OF_LIGHT)
     drhodt = ephem_geom_params.v_ast * (1 - ddeltatdt) - v_obs
 
-    # ephem_geom_params.rho_hat = ephem_geom_params.rho_hat.T
     A, D = layup_get_residual_vectors(ephem_geom_params.rho_hat)
 
     drho_hatdt = (
@@ -113,12 +110,10 @@ def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: E
     r_ast_sun = ephem_geom_params.r_ast - r_sun
     v_ast_sun = ephem_geom_params.v_ast - v_sun
     r_ast_obs = ephem_geom_params.r_ast - r_obs
-    # print(np.einsum('ji,ji->i',r_ast_sun, r_ast_obs))
     phase_angle = np.arccos(
         np.einsum("ji,ji->i", r_ast_sun, r_ast_obs)
         / (np.linalg.norm(r_ast_sun, axis=0) * np.linalg.norm(r_ast_obs, axis=0))
     )
-    # print('drhotdt_vectorised = ', phase_angle)
     obs_sun = r_obs - r_sun
     dobs_sundt = v_obs - v_sun
     return (
@@ -149,6 +144,28 @@ def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: E
 
 
 def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name, args, configs):
+    '''Calculates the on-sky rates and geometry for a set of orbits at certain pointings.
+
+    Parameters
+    ----------
+    predictions : numpy recarray
+        Numpy recarray containing the pre-calculated predictions of the objects.
+    orbits_df : pandas dataframe
+        The dataframe containing the orbits being predicted.
+    obs_pos_vel : numpy recarray
+        Numpy recarray containing the position and velocity of the observatory at the times requested for predictions.
+    primary_id_column_name : str
+        The name of the primary ID column.
+    args : argparse
+        The argparse object that was created when running from the CLI.
+    aux : AuxiliaryConfigs object
+        The LayUp auxiliary arguments.
+
+    Returns
+    -------
+    rates : numpy recarray
+        Numpy recarray containing the on-sky rates.
+    """'''
 
     observations = []
     for i, pos in enumerate(obs_pos_vel):
@@ -223,14 +240,12 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
         {
             primary_id_column_name: ephem_geom_params.obj_id,
             "epoch_JD_TDB": predictions["epoch_JD_TDB"],
+            "Range_LTC_au": onsky[4] / AU_KM,
             "Range_LTC_km": onsky[4],
             "RangeRate_LTC_km_s": onsky[5],
             # calculate heliocentric distance
-            "Obj_Sun_LTC_km": np.sqrt(
-            onsky[10] ** 2
-            + onsky[11] ** 2
-            + onsky[12] ** 2
-            ),
+            "Obj_Sun_LTC_au": np.sqrt(onsky[10] ** 2 + onsky[11] ** 2 + onsky[12] ** 2) / AU_KM,
+            "Obj_Sun_LTC_km": np.sqrt(onsky[10] ** 2 + onsky[11] ** 2 + onsky[12] ** 2),
             "Obj_Sun_x_LTC_km": onsky[10],
             "Obj_Sun_y_LTC_km": onsky[11],
             "Obj_Sun_z_LTC_km": onsky[12],
@@ -270,7 +285,6 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
     # ) = (onsky[10], onsky[11], onsky[12], onsky[13], onsky[14], onsky[15])
     # rates["phase_deg"] = onsky[22]
 
-    
     spice.kclear()
     return rates
 
@@ -334,7 +348,7 @@ def _convert_to_sg(data):
     return np.lib.recfunctions.append_fields(data, ["ra_str_hms", "dec_str_dms"], [ra, dec], usemask=False)
 
 
-def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name, args, configs):
+def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     """This function is called by the parallelization function to call the C++ code.
 
     Parameters
@@ -402,14 +416,14 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name, args, 
     results = np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
     results["ra_deg"], results["dec_deg"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
     # Only calculate covariances if covaraiances are in the input file
-    if 'cov_0_0' in data.dtype.names and data['cov_0_0'] != 0:
+    if "cov_0_0" in data.dtype.names and data["cov_0_0"] != 0:
         results["a_arcsec"], results["b_arcsec"], results["PA_deg"] = skyplane_cov_to_radec_cov(
-        results["ra_deg"],
-        results["dec_deg"],
-        results["obs_cov_xx"],
-        results["obs_cov_yy"],
-        results["obs_cov_xy"],
-    )
+            results["ra_deg"],
+            results["dec_deg"],
+            results["obs_cov_xx"],
+            results["obs_cov_yy"],
+            results["obs_cov_xy"],
+        )
 
     return results
 
@@ -418,7 +432,7 @@ def predict(
     data,
     obscode,
     times,
-    primary_id_column_name='provID',
+    primary_id_column_name="provID",
     num_workers=-1,
     cache_dir=None,
     args=None,
@@ -440,6 +454,10 @@ def predict(
         The number of workers to use for parallelization. If -1, use all available cores.
     cache_dir : str or None
         The directory to the cached kernels. If None, use the default cache directory.
+    args : argparse
+        The argparse object that was created when running from the CLI.
+    aux : AuxiliaryConfigs object
+        The LayUp auxiliary arguments. Needed if on-sky rates are requested.
 
     Returns
     -------
@@ -464,8 +482,6 @@ def predict(
         times=times,
         cache_dir=cache_dir,
         primary_id_column_name=primary_id_column_name,
-        args=args,
-        configs=configs,
     )
     if args.onsky_data:
         # generate_simulations (used in _get_on_sky_data) doesn't accept BCART_EQ, accepts COM, KEP, CART and their barycentric equivalents
@@ -477,7 +493,7 @@ def predict(
         )
         cols = data.dtype.names
         orbits_df = DataFrame(data, columns=cols, index=data[primary_id_column_name])
-        if primary_id_column_name != 'ObjID':
+        if primary_id_column_name != "ObjID":
             orbits_df = orbits_df.rename(columns={primary_id_column_name: "ObjID"})
         # onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
         onsky_results = process_data_by_id(
@@ -491,7 +507,11 @@ def predict(
             configs=configs,
         )
         results = join_by(
-            [primary_id_column_name, "epoch_JD_TDB"], predictions, onsky_results, usemask=False, asrecarray=True
+            [primary_id_column_name, "epoch_JD_TDB"],
+            predictions,
+            onsky_results,
+            usemask=False,
+            asrecarray=True,
         )
         return results
     else:
@@ -506,7 +526,7 @@ def predict_cli(
     timestep_day: float,
     output_file: str,
     cache_dir: Path,
-    configs: Namespace,
+    configs: None,
 ):
     """The function for calling predict through the command line interface.
 
@@ -526,6 +546,8 @@ def predict_cli(
         The output file to write the predictions to.
     cache_dir : Path
         The directory to the cached kernels.
+    aux : AuxiliaryConfigs object
+        The LayUp auxiliary arguments
     """
 
     num_workers = cli_args.n
@@ -533,13 +555,6 @@ def predict_cli(
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    # times_array = CSVDataReader(
-    #    'ephem.csv',
-    #    primary_id_column_name='fieldJD_TDB',
-    #    sep="csv",
-    #    required_columns=['fieldJD_TDB'],
-    # )
-    # times = times_array.read_rows()['fieldJD_TDB'].astype(float)
     times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
 
     reader = CSVDataReader(
