@@ -50,6 +50,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
             self.chunk = chunk_size
             self.station = "X05"
             self.sexagesimal = False
+            self.onsky_data = False
 
     # The naming scheme for the test files indicates its orbit format
     test_filename = f"predict_chunk_{input_format}.csv"
@@ -99,6 +100,9 @@ def test_external_predict(tmpdir):
     """Ensure that we can run predict with data that doesn't have our csq and ndof columns."""
     # this file contains some rows with csq and ndof columns and some without
     # so this should test that all functionality remains the same.
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.onsky_data = False
     data = CSVDataReader(
         get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
     ).read_rows()
@@ -111,6 +115,7 @@ def test_external_predict(tmpdir):
         num_workers=1,
         cache_dir=None,
         primary_id_column_name="provID",
+        args=FakeCliArgs()
     )
 
     # make sure we generated a prediction for each object at every time step
@@ -233,7 +238,9 @@ def test_layup_calculate_rates_and_geometry():
     import pandas as pd
 
     # define pointings
-    pointings = pd.read_csv("./tests/data/test_pointings.csv", header=0)
+    pointings_filename = "test_pointings.csv"
+    pointings_file = Path(get_test_filepath(pointings_filename))
+    pointings = pd.read_csv(pointings_file, header=0)
     print(pointings)
     ephem_geom_params = EphemerisGeometryParameters(
         obj_id=np.array(["Holman", "Holman", "Holman", "Holman", "Holman", "Holman"], dtype=object),

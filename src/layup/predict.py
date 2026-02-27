@@ -416,7 +416,7 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     results = np.array(predict_results, dtype=_get_result_dtypes(primary_id_column_name))
     results["ra_deg"], results["dec_deg"] = vec2ra_dec([results["rho_x"], results["rho_y"], results["rho_z"]])
     # Only calculate covariances if covaraiances are in the input file
-    if "cov_0_0" in data.dtype.names and data["cov_0_0"] != 0:
+    if "cov_0_0" in data.dtype.names:
         results["a_arcsec"], results["b_arcsec"], results["PA_deg"] = skyplane_cov_to_radec_cov(
             results["ra_deg"],
             results["dec_deg"],
