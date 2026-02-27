@@ -98,11 +98,13 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
 
 def test_external_predict(tmpdir):
     """Ensure that we can run predict with data that doesn't have our csq and ndof columns."""
+
     # this file contains some rows with csq and ndof columns and some without
     # so this should test that all functionality remains the same.
     class FakeCliArgs:
         def __init__(self, g=None):
             self.onsky_data = False
+
     data = CSVDataReader(
         get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
     ).read_rows()
@@ -115,7 +117,7 @@ def test_external_predict(tmpdir):
         num_workers=1,
         cache_dir=None,
         primary_id_column_name="provID",
-        args=FakeCliArgs()
+        args=FakeCliArgs(),
     )
 
     # make sure we generated a prediction for each object at every time step
