@@ -210,6 +210,7 @@ def execute(args):
         chunk_size=args.chunksize,
         num_workers=args.n,
         cli_args=args,
+        aux=configs.auxiliary
     )
 
 
