@@ -173,6 +173,15 @@ namespace orbit_fit
 
         Observation() {}
 
+        std::array<double, 3> get_rho_hat() {
+            std::array<double, 3> rho_to_return;
+            rho_to_return[0] = rho_hat.x();
+            rho_to_return[1] = rho_hat.y();
+            rho_to_return[2] = rho_hat.z();
+            return rho_to_return;
+}
+
+
         // Factory method for an Astrometry observation.
         static Observation from_astrometry(double ra, double dec, double epoch_val,
                                            const std::array<double, 3> &obs_position,
@@ -281,6 +290,7 @@ namespace orbit_fit
             .def_readwrite("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
             .def_readwrite("observer_velocity", &Observation::observer_velocity, "Observer velocity as a 3D vector")
             .def_readwrite("rho_hat", &Observation::rho_hat, "Unit direction vector")
+            .def("get_rho_hat", &Observation::get_rho_hat, "Unit direction vector")
             .def_readwrite("a_vec", &Observation::a_vec, "Tangent plane vector A")
             .def_readwrite("d_vec", &Observation::d_vec, "Tangent plane vector D")
             .def_readwrite("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")

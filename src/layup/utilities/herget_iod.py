@@ -127,7 +127,8 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     obs = [observations[i] for i in seq[0]]
     obs_1 = obs[0]
     r_e_1 = obs_1.observer_position
-    rho_hat_1 = obs_1.rho_hat # Errors out here
+    rho_hat_1 = obs_1.get_rho_hat() # Errors out here
+    print(rho_hat_1)
 
 
     rho_1 = 1 # this is the magnitude of rho, direction given by rho_hat, initial guess is 1au
