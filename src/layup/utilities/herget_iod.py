@@ -127,7 +127,11 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     obs = [observations[i] for i in seq[0]]
     obs_1 = obs[0]
     r_e_1 = obs_1.observer_position
-    rho_hat_1 = obs_1.get_rho_hat() # Errors out here
+    rho_hat_1 = obs_1.get_rho_hat() 
+    A_1 = obs_1.get_a_vec()
+    D_1 = obs_1.get_d_vec()
+    print(D_1)
+    print(A_1)
     print(rho_hat_1)
 
 
@@ -136,7 +140,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     r_1 = r_e_1 + rho_1*rho_hat_1
     obs_n = observations[-1]
     r_e_n = obs_n.observer_position
-    rho_hat_n = obs_n.rho_hat
+    rho_hat_n = obs_n.get_rho_hat()
     rho_n = 1 # this is the magnitude of rho, direction given by rho_hat, initial guess is 1au
     t_n = obs_n.epoch
     r_n = r_e_n + rho_n*rho_hat_n
@@ -155,10 +159,45 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
 
     furnish_spiceypy(args, aux)
     ephem, _, _ = create_assist_ephemeris(args, aux)
+    for i in range(10):
+        vx1, vy1, vz1, pos = find_new_vel(ephem, t_1, t_n, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'x')
+        vx1, vy1, vz1, pos = find_new_vel(ephem, t_1, t_n, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'y')
+        vx1, vy1, vz1, pos = find_new_vel(ephem, t_1, t_n, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'z')
+        print(pos)
+
+    print([xn, yn, zn])
+    print('velocity is now:', vx1, vy1, vz1)
+    
+    
+
+def find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change):
     sim = rebound.Simulation()
-    ex = assist.Extras(sim, ephem)
-    sim.t = t_1 - ephem.jd_ref
+    sim.t = t1 - ephem.jd_ref
     sim.add(x = x1, y = y1, z = z1, vx = vx1, vy =vy1, vz = vz1)
     var = sim.add_variation(testparticle=0)
-    ex.integrate_or_interpolate(t_n)
-    print(sim.t, t_n)
+    #print(var.particles[0].jacobi_com)
+    if change == 'x':
+        var.particles[0].vx = 1
+        ex = assist.Extras(sim, ephem)
+        ex.integrate_or_interpolate(tn - ephem.jd_ref)
+        diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(sim.particles[0].xyz), np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz))
+        vx1 -= diff
+    elif change == 'y':
+        var.particles[0].vy = 1
+        ex = assist.Extras(sim, ephem)
+        ex.integrate_or_interpolate(tn - ephem.jd_ref)
+        diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(sim.particles[0].xyz), np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz))
+        vy1 -= diff
+    elif change == 'z':
+        var.particles[0].vz = 1
+        ex = assist.Extras(sim, ephem)
+        ex.integrate_or_interpolate(tn - ephem.jd_ref)
+        diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(sim.particles[0].xyz), np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz))
+        vz1 -= diff
+    #print('this pos was', sim.particles[0].xyz)
+    #print('new_pos should be' ,np.array(sim.particles[0].xyz) - diff*np.array(var.particles[0].xyz))
+    return vx1, vy1, vz1, sim.particles[0].xyz
+
+def find_mag_to_adjust(P, Q, R):
+    mag = np.dot(R-Q, Q-P)/np.dot(R-Q, R-Q)
+    return mag

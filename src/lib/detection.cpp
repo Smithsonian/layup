@@ -179,7 +179,23 @@ namespace orbit_fit
             rho_to_return[1] = rho_hat.y();
             rho_to_return[2] = rho_hat.z();
             return rho_to_return;
-}
+        }
+
+        std::array<double, 3> get_a_vec() {
+            std::array<double, 3> a_to_return;
+            a_to_return[0] = a_vec.x();
+            a_to_return[1] = a_vec.y();
+            a_to_return[2] = a_vec.z();
+            return a_to_return;
+        }
+
+        std::array<double, 3> get_d_vec() {
+            std::array<double, 3> d_to_return;
+            d_to_return[0] = d_vec.x();
+            d_to_return[1] = d_vec.y();
+            d_to_return[2] = d_vec.z();
+            return d_to_return;
+        }
 
 
         // Factory method for an Astrometry observation.
@@ -292,7 +308,9 @@ namespace orbit_fit
             .def_readwrite("rho_hat", &Observation::rho_hat, "Unit direction vector")
             .def("get_rho_hat", &Observation::get_rho_hat, "Unit direction vector")
             .def_readwrite("a_vec", &Observation::a_vec, "Tangent plane vector A")
+            .def("get_a_vec", &Observation::get_a_vec, "Tangent plane vector A")
             .def_readwrite("d_vec", &Observation::d_vec, "Tangent plane vector D")
+            .def("get_d_vec", &Observation::get_d_vec, "Tangent plane vector D")
             .def_readwrite("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")
             .def_readwrite("ra_unc", &Observation::ra_unc, "RA uncertainty")
             .def_readwrite("dec_unc", &Observation::dec_unc, "Dec uncertainty")
