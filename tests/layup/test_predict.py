@@ -1,10 +1,20 @@
 import os
+import subprocess
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 from numpy.testing import assert_equal
 
-from layup.predict import predict, predict_cli, _convert_to_sg
+from layup.predict import (
+    predict,
+    predict_cli,
+    _convert_to_sg,
+    _get_on_sky_data,
+    layup_get_residual_vectors,
+    layup_calculate_rates_and_geometry,
+)
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
@@ -40,6 +50,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
             self.chunk = chunk_size
             self.station = "X05"
             self.sexagesimal = False
+            self.onsky_data = False
 
     # The naming scheme for the test files indicates its orbit format
     test_filename = f"predict_chunk_{input_format}.csv"
@@ -52,6 +63,7 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
         timestep_day=time_step,
         output_file=temp_out_file,
         cache_dir=None,
+        configs=None,
     )
 
     # Verify predict produced an output file
@@ -86,8 +98,13 @@ def test_predict_cli(tmpdir, chunk_size, time_step, input_format):
 
 def test_external_predict(tmpdir):
     """Ensure that we can run predict with data that doesn't have our csq and ndof columns."""
+
     # this file contains some rows with csq and ndof columns and some without
     # so this should test that all functionality remains the same.
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.onsky_data = False
+
     data = CSVDataReader(
         get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
     ).read_rows()
@@ -100,6 +117,7 @@ def test_external_predict(tmpdir):
         num_workers=1,
         cache_dir=None,
         primary_id_column_name="provID",
+        args=FakeCliArgs(),
     )
 
     # make sure we generated a prediction for each object at every time step
@@ -110,9 +128,6 @@ def test_external_predict(tmpdir):
 def test_predict_output(tmpdir):
     """Compare the output of predict (as run from the command line) against an
     expected output."""
-
-    import subprocess
-    from pathlib import Path
 
     os.chdir(tmpdir)
 
@@ -190,7 +205,7 @@ def test_predict_output(tmpdir):
     assert (known_data.dtype.names == output_data.dtype.names) == True
 
 
-def test_convert_to_sg(tmpdir):
+def test_convert_to_sg():
     """Compare the output given by _convert_to_sg() with an expected output, seeing how it handles edge cases."""
 
     data = CSVDataReader(
@@ -201,3 +216,126 @@ def test_convert_to_sg(tmpdir):
 
     assert (data["ra_str_hms"] == data["ra_str_hms_CHECK"]).all() == True
     assert (data["dec_str_dms"] == data["dec_str_dms_CHECK"]).all() == True
+
+
+def test_layup_get_residual_vectors():
+    """This is a version of the sorcha function _get_residual_vectors with the ability to
+    vectorise if an array is passed. Test will compare its output to the sorcha function."""
+    from sorcha.ephemeris.simulation_driver import get_residual_vectors
+
+    vectors = np.array([[1, 2, 3], [4, 5, 6], [0.7, 0.8, 0.9]])
+    output_A, output_D = layup_get_residual_vectors(vectors)
+
+    for i in range(len(vectors[0])):
+        sorcha_A, sorcha_D = get_residual_vectors(vectors.T[i])
+        np.allclose(output_A[i], sorcha_A)
+        np.allclose(output_D[i], sorcha_D)
+
+
+def test_layup_calculate_rates_and_geometry():
+    """This is a version of the sorcha function calculate_rates_and_geometry with the ability to
+    vectorise if an array is passed. Test will compare its output to the sorcha function."""
+
+    from sorcha.ephemeris.simulation_driver import EphemerisGeometryParameters, calculate_rates_and_geometry
+    import pandas as pd
+
+    # define pointings
+    pointings_filename = "test_pointings.csv"
+    pointings_file = Path(get_test_filepath(pointings_filename))
+    pointings = pd.read_csv(pointings_file, header=0)
+    print(pointings)
+    ephem_geom_params = EphemerisGeometryParameters(
+        obj_id=np.array(["Holman", "Holman", "Holman", "Holman", "Holman", "Holman"], dtype=object),
+        mjd_tai=None,
+        rho=np.array(
+            [
+                [3.74383268, 3.7434049, 3.74297428, 3.74254091, 3.74210503, 3.74166706],
+                [-0.49091188, -0.49024155, -0.48957158, -0.48890264, -0.48823533, -0.48757017],
+                [-0.30470345, -0.30443051, -0.30415773, -0.3038851, -0.30361262, -0.30334029],
+            ]
+        ),
+        rho_hat=np.array(
+            [
+                [0.98829964, 0.98832539, 0.98835109, 0.98837671, 0.98840224, 0.98842766],
+                [-0.12959127, -0.12943248, -0.12927383, -0.12911548, -0.1289576, -0.1288003],
+                [-0.08043584, -0.08037506, -0.08031437, -0.08025375, -0.0801932, -0.08013271],
+            ]
+        ),
+        rho_mag=np.array([3.78815546, 3.78762392, 3.78708975, 3.7865531, 3.78601432, 3.78547386]),
+        r_ast=np.array(
+            [
+                [3.18771634, 3.18787683, 3.18803727, 3.18819768, 3.18835805, 3.18851838],
+                [-1.27380146, -1.27350169, -1.27320191, -1.27290212, -1.27260231, -1.27230248],
+                [-0.64391493, -0.6437985, -0.64368206, -0.64356562, -0.64344916, -0.6433327],
+            ]
+        ),
+        v_ast=np.array(
+            [
+                [0.00385183, 0.00385091, 0.00384998, 0.00384906, 0.00384814, 0.00384722],
+                [0.00719365, 0.00719402, 0.00719439, 0.00719475, 0.00719512, 0.00719549],
+                [0.00279403, 0.00279421, 0.0027944, 0.00279458, 0.00279477, 0.00279495],
+            ]
+        ),
+    )
+    output = layup_calculate_rates_and_geometry(pointings, ephem_geom_params)
+    for i in range(len(pointings)):
+        pointing = pointings.iloc[i]
+        geom_param = EphemerisGeometryParameters()
+        geom_param.obj_id = ephem_geom_params.obj_id[i]
+        geom_param.mjd_tai = None
+        geom_param.rho = ephem_geom_params.rho.T[i]
+        geom_param.rho_hat = ephem_geom_params.rho_hat.T[i]
+        geom_param.rho_mag = ephem_geom_params.rho_mag.T[i]
+        geom_param.r_ast = ephem_geom_params.r_ast.T[i]
+        geom_param.v_ast = ephem_geom_params.v_ast.T[i]
+        print()
+        sorcha_output = calculate_rates_and_geometry(pointing, geom_param)
+        for j in range(3, len(sorcha_output)):
+            print(output[j][i], sorcha_output[j])
+            np.allclose(output[j][i], sorcha_output[j])
+
+
+def test_get_onsky_data_output(tmpdir):
+    # Test against the same output from Sorcha
+    os.chdir(tmpdir)
+
+    start = "2025 MAY 18 00:00:00"
+    test_filename = "holman.csv"
+    input_file = Path(get_test_filepath(test_filename))
+    temp_out_file = f"test_output_{input_file.stem}"
+
+    result = subprocess.run(
+        [
+            "layup",
+            "predict",
+            str(input_file),
+            "-f",
+            "-o",
+            str(temp_out_file),
+            "-s",
+            start,
+            "-osd",
+        ]
+    )
+    assert result.returncode == 0
+    result_file = Path(f"{tmpdir}/{temp_out_file}.csv")
+    results = pd.read_csv(result_file, header=0)
+    # read in the expected output, check if the numbers are close
+    expected_filename = "onsky_expected.csv"
+    expected_file = Path(get_test_filepath(expected_filename))
+    expected = pd.read_csv(expected_file, header=0)
+    for column in [
+        "Range_LTC_au",
+        "Range_LTC_km",
+        "RangeRate_LTC_km_s",
+        "Obj_Sun_LTC_au",
+        "Obj_Sun_LTC_km",
+        "Obj_Sun_x_LTC_km",
+        "Obj_Sun_y_LTC_km",
+        "Obj_Sun_z_LTC_km",
+        "Obj_Sun_vx_LTC_km_s",
+        "Obj_Sun_vy_LTC_km_s",
+        "Obj_Sun_vz_LTC_km_s",
+        "phase_deg",
+    ]:
+        np.allclose(results[column], expected[column])
