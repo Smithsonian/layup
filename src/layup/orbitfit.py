@@ -349,9 +349,6 @@ def do_gauss_iod(observations, seq):
     return solns
 
 
-<<<<<<< Updated upstream
-def do_fit(observations, seq, cache_dir, iod="gauss"):
-=======
 def do_herget_iod(observations, seq, args, aux):
     """Calculate an initial orbit estimate using Herget's method.
 
@@ -381,7 +378,6 @@ def do_herget_iod(observations, seq, args, aux):
 
 
 def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
->>>>>>> Stashed changes
     """Carry out an orbit fit to the observations in a
     series of steps.  A list of lists of observation indices
     specifies the order in which the fit proceeds.
