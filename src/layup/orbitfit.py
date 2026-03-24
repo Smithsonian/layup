@@ -18,7 +18,7 @@ from layup.routines import (
     run_from_vector_with_initial_guess,
 )
 from layup.convert import convert
-from layup.utilities.herget_iod import herget_with_assist
+
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
@@ -343,46 +343,13 @@ def do_gauss_iod(observations, seq):
     # Get gauss solution, using the first, middle, and last observation
     # of the primary sequence
     idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
-    print("required gauss values ", type(observations[idx0]), (observations[idx2].epoch))
     logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
-    print('input position = ', observations[idx0].observer_position)
     solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
-    print(solns, type(solns), len(solns), dir(solns[0]))
-    for x in ["cov", "csq", "epoch", "flag", "method", "ndof", "niter", "state"]:
-        print(x, getattr(solns[0], x))
 
     return solns
 
 
-def do_herget_iod(observations, seq, args, aux):
-    """Calculate an initial orbit estimate using Herget's method.
-
-    Parameters
-    ----------
-    observations : list[Observation]
-        The list of Observations used for the orbit estimate
-    seq : list[list[int]
-        The list of lists of indexes of observations that are closely spaced in time.
-
-    Returns
-    -------
-    list[FitResult]
-        A collection of orbit fit results that can be used to perform a higher
-        quality fit estimate.
-    """
-    # Get gauss solution, using the first, middle, and last observation
-    # of the primary sequence
-    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
-
-    logger.debug(f"Sequence indexs passed to Herget: {idx0}, {idx2}")
-    print(dir(observations[0]))
-    solns = herget_with_assist(observations, seq, 0.00001, args=args, aux=aux)
-    for attr in ["cov", "csq", "epoch", "flag", "method", "ndof", "niter", "state"]:
-        print(attr, getattr(solns[0], attr))
-    return solns
-
-
-def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
+def do_fit(observations, seq, cache_dir, iod="gauss"):
     """Carry out an orbit fit to the observations in a
     series of steps.  A list of lists of observation indices
     specifies the order in which the fit proceeds.
@@ -420,8 +387,6 @@ def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
 
     if iod.lower() == "gauss":
         solns = do_gauss_iod(observations, seq)
-    elif iod.lower() == "herget":
-        solns = do_herget_iod(observations, seq, args, aux)
     else:
         raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
 
@@ -456,8 +421,6 @@ def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
     # Attempt to fit all the data, given the fit of the primary interval
     obs = observations
     x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    for attr in ["cov", "csq", "epoch", "flag", "method", "ndof", "niter", "state"]:
-        print(attr, getattr(x, attr))
 
     # If that failed, build up the solution slowly
     if x.flag != 0:
@@ -476,7 +439,7 @@ def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
     else:
         logger.debug(f"Result `state`: {x.state}")
         logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
-    print(solns[0].state)
+
     return x
 
 
@@ -495,8 +458,6 @@ def _orbitfit(
     sort_array: bool = True,
     weight_data: bool = False,
     iod: str = "gauss",
-    args=None,
-    aux=None,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -525,7 +486,6 @@ def _orbitfit(
         The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
         Default is 'gauss'.
     """
-    print('columns = ',data.dtype.names)
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
@@ -556,7 +516,6 @@ def _orbitfit(
 
         # Check if certain columns are present in the data
         column_names = data.dtype.names
-        print('columns = ',data.dtype.names)
         g_column_present = "astCat" in column_names
         program_column_present = "program" in column_names
         position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
@@ -630,8 +589,8 @@ def _orbitfit(
 
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
-            if iod.lower() in ["gauss", "herget"]:
-                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower(), args=args, aux=aux)
+            if iod.lower() in ["gauss"]:
+                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower())
             else:
                 res = do_other_fit(iod=iod.lower())
         else:
@@ -672,8 +631,6 @@ def orbitfit(
     debias=False,
     weight_data=False,
     iod="gauss",
-    args=None,
-    aux=None,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -707,7 +664,6 @@ def orbitfit(
     data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
-    print(data.dtype.names)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
     bias_dict = None
@@ -724,8 +680,6 @@ def orbitfit(
         bias_dict=bias_dict,
         weight_data=weight_data,
         iod=iod,
-        args=args,
-        aux=aux,
     )
 
 
@@ -737,7 +691,6 @@ def orbitfit_cli(
     chunk_size: int = 10_000,
     num_workers: int = -1,
     cli_args: Optional[Namespace] = None,
-    aux: any = None,
 ):
     """This is the function that is called from the command line
 
@@ -883,8 +836,6 @@ def orbitfit_cli(
             debias=debias,
             weight_data=weight_data,
             iod=iod,
-            args=cli_args,
-            aux=aux,
         )
 
         # Convert the fit_orbits to the preferred output format
