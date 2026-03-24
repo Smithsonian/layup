@@ -349,7 +349,39 @@ def do_gauss_iod(observations, seq):
     return solns
 
 
+<<<<<<< Updated upstream
 def do_fit(observations, seq, cache_dir, iod="gauss"):
+=======
+def do_herget_iod(observations, seq, args, aux):
+    """Calculate an initial orbit estimate using Herget's method.
+
+    Parameters
+    ----------
+    observations : list[Observation]
+        The list of Observations used for the orbit estimate
+    seq : list[list[int]
+        The list of lists of indexes of observations that are closely spaced in time.
+
+    Returns
+    -------
+    list[FitResult]
+        A collection of orbit fit results that can be used to perform a higher
+        quality fit estimate.
+    """
+    # Get gauss solution, using the first, middle, and last observation
+    # of the primary sequence
+    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
+
+    logger.debug(f"Sequence indexs passed to Herget: {idx0}, {idx2}")
+    print(dir(observations[0]))
+    solns = herget_with_assist(observations, seq, 0.0000001, args=args, aux=aux)
+    for attr in ["cov", "csq", "epoch", "flag", "method", "ndof", "niter", "state"]:
+        print(attr, getattr(solns[0], attr))
+    return solns
+
+
+def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
+>>>>>>> Stashed changes
     """Carry out an orbit fit to the observations in a
     series of steps.  A list of lists of observation indices
     specifies the order in which the fit proceeds.
