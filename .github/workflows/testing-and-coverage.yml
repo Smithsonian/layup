@@ -37,6 +37,6 @@ jobs:
         export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH
         python -m pytest -n auto --cov=layup --cov-report=xml
     - name: Upload coverage report to codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v6
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
