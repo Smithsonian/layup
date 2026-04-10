@@ -72,23 +72,36 @@ avove the controls drawer so it remains clickable
 
 /* slider stuff */
 /*
-all of this is just restyling the slider based on the active theme
+newer dash replaced rc-slider internals with its own stuff, the old 
+classes no longer exist. the new classes are .dash-slider-* and they're
+all driven by --Dash-Fill-Interactive-Strong, which makes them purple 
+for some reason. we override each piece to follow the active theme instead
 */
-.rc-slider-mark-text {
-  color: var(--muted) !important; /* <-- tick labels */
+.dash-slider-track {
+  background-color: var(--rail, rgba(255,255,255,0.20)) !important; /* <-- inactive portion */
 }
 
-.rc-slider-rail {
-  background-color: var(--rail) !important; /* <-- inactive portion */
+.dash-slider-range {
+  background-color: var(--track, rgba(255,255,255,0.35)) !important; /* <-- active portion */
 }
 
-.rc-slider-track {
-  background-color: var(--track) !important; /* <-- active portion */
+.dash-slider-thumb {
+  background-color: var(--bg, #000000) !important; /* <-- handle fill */
+  border-color: var(--handle, rgba(255,255,255,0.85)) !important; /* <-- handle outline */
+  box-shadow: none !important;
 }
 
-.rc-slider-handle {
-  border: 2px solid var(--handle) !important; /* <-- handle outline */
-  background-color: var(--bg) !important; /* <-- handle fill */
+.dash-slider-thumb:focus,
+.dash-slider-thumb:hover,
+.dash-slider-thumb:active {
+  background-color: var(--bg, #000000) !important;
+  border-color: var(--handle, rgba(255,255,255,0.85)) !important;
+  outline: 2px solid var(--handle, rgba(255,255,255,0.85)) !important;
+  box-shadow: none !important;
+}
+
+.dash-slider-mark {
+  color: rgba(255,255,255,0.82) !important; /* <-- tick labels, white in both themes */
 }
 
 /* drawer / controls stuff */

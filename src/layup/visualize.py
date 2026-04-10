@@ -27,6 +27,7 @@ def build_fig_caches(
     orbit_format: str,
     input_plane: Literal["equatorial", "ecliptic"],
     input_origin: Literal["heliocentric", "barycentric"],
+    special_rows: Optional[np.ndarray] = None,
     n_points: int = 500,
     r_max: float = 50.0,
     cache_dir: Optional[str] = None,
@@ -47,6 +48,18 @@ def build_fig_caches(
         n_points=900,
     )
 
+    # if a special file was provided, drop any rows from the main set whose ObjID
+    # appears in the special set to avoid double-plotting the same orbit
+    if special_rows is not None and special_rows.size > 0 and "ObjID" in rows.dtype.names:
+        special_obj_ids = set(str(oid) for oid in special_rows["ObjID"])
+        mask = np.array([str(oid) not in special_obj_ids for oid in rows["ObjID"]])
+        n_dropped = int((~mask).sum())
+        if n_dropped > 0:
+            logger.info(
+                f"Dropping {n_dropped} orbit(s) from main set whose ObjID also appears in the special file"
+            )
+            rows = rows[mask]
+
     # construct input orbits lines, scatters, and sun positions
     logger.info(f"Constructing input object orbit lines")
     conic_cache, lines_cache, sunpos_cache, pos_cache = prepopulate_orbit_variants(
@@ -63,6 +76,29 @@ def build_fig_caches(
             r_max=r_max,
         )
 
+    # construct special orbit lines if a special file was provided
+    special_conic_cache = None
+    special_lines_cache = None
+    special_ids = []
+    if special_rows is not None and special_rows.size > 0:
+        logger.info(f"Constructing special object orbit lines")
+        special_conic_cache, special_lines_tmp, _, _ = prepopulate_orbit_variants(
+            special_rows,
+            orbit_format,
+            input_plane=input_plane,
+            input_origin=input_origin,
+        )
+        special_lines_cache = {}
+        for key, conic in special_conic_cache.items():
+            special_lines_cache[key] = conic_lines_from_classical_conic(
+                conic,
+                n_points=n_points,
+                r_max=r_max,
+            )
+        # collect IDs from first available key
+        first_key = next(iter(special_conic_cache))
+        special_ids = [str(oid) for oid in special_conic_cache[first_key].obj_id]
+
     logger.info(
         f"Creating cache of all input object and/or planet lines in heliocentric+barycentric && equatorial+ecliptic frames"
     )
@@ -71,15 +107,19 @@ def build_fig_caches(
     fig2d_cache = {}
     fig3d_cache = {}
     for key in conic_cache.keys():
+        s_lines = special_lines_cache[key] if special_lines_cache else None
+        s_canon = special_conic_cache[key] if special_conic_cache else None
+
         # 3D has few variants
         fig3d_cache[key] = plotly_3D(
             lines_cache[key],
             conic_cache[key],
             sun_xyz=sunpos_cache[key],
-            orbit_pos=pos_cache[key],
             planet_lines=planet_lines_cache[key],
             planet_id=planet_id,
             plot_sun=True,
+            special_lines=s_lines,
+            special_canon=s_canon,
             return_fig=True,
         )
 
@@ -90,11 +130,12 @@ def build_fig_caches(
                 lines_cache[key],
                 conic_cache[key],
                 sun_xyz=sunpos_cache[key],
-                orbit_pos=pos_cache[key],
                 planet_lines=planet_lines_cache[key],
                 planet_id=planet_id,
                 plot_sun=True,
                 panel=p,
+                special_lines=s_lines,
+                special_canon=s_canon,
                 return_fig=True,
             )
 
@@ -105,27 +146,27 @@ def build_fig_caches(
                     lines_cache[key],
                     conic_cache[key],
                     sun_xyz=sunpos_cache[key],
-                    orbit_pos=pos_cache[key],
                     planet_lines=planet_lines_cache[key],
                     planet_id=planet_id,
                     plot_sun=True,
                     panels=(pL, pR),
+                    special_lines=s_lines,
+                    special_canon=s_canon,
                     return_fig=True,
                 )
 
-    return fig2d_cache, fig3d_cache
+    return fig2d_cache, fig3d_cache, special_ids
 
 
 def visualize_cli(
     input: str,
-    input_plane: Optional[Literal["equatorial", "ecliptic"]] = None,
-    input_origin: Optional[Literal["heliocentric", "barycentric"]] = None,
     num_orbs: int = 100,
     block_size: int = 10000,
     n_points: int = 500,
     r_max: float = 50.0,
     random: bool = False,
     cache_dir: Optional[str] = None,
+    special: Optional[str] = None,
 ):
     """
     Create visualisation plots of a given set of input orbits from the command line
@@ -134,12 +175,6 @@ def visualize_cli(
     -----------
     input : str
         Input file path
-
-    input_plane : str, optional (default=None)
-        Input file reference plane. Must be one of "equatorial", "ecliptic"
-
-    input_origin : str, optional (default=None)
-        Input file frame of origin. Must be one of "heliocentric", "barycentric"
 
     num_orbs : int, optional (default=100)
         Number of orbits to plot at once
@@ -158,6 +193,10 @@ def visualize_cli(
 
     cache_dir : str, optional (default=None)
         Path to directory of cached auxiliary data
+
+    special : str, optional (default=None)
+        Path to a second orbit file whose orbits are highlighted in a distinct accent colour;
+        regular orbits are greyed out when this is supplied
     """
 
     logger.info(f"Reading input file: {input}")
@@ -186,49 +225,24 @@ def visualize_cli(
             raise ValueError(f"Expected a single FORMAT in file, found {n}")
     orbit_format = get_format(probe_rows)
 
-    # infer some stuff about the input
-    input_origin_infer = input_origin
-    input_plane_infer = input_plane
+    # determine input frame — default is heliocentric ecliptic (as per MPC/JPL convention)
+    # BCART_EQ is the one exception: that format name explicitly encodes barycentric+equatorial
     input_format_infer = orbit_format
-
-    # BCART_EQ can be normalised down to BCART to not break maths later,
-    # and we just asign equatorial now
     if input_format_infer == "BCART_EQ":
         input_format_infer = "BCART"
-        if input_plane_infer is None:
-            logger.warning(
-                "FORMAT=BCART_EQ implies using equatorial plane. Setting --input-plane = equatorial"
-            )
-            # raise Warning("FORMAT=BCART_EQ implies using equatorial plane. Setting --input-plane = equatorial")
         input_plane_infer = "equatorial"
-
-    # infer origin if not user supplied
-    if input_origin_infer is None:
-        input_origin_infer = "barycentric" if input_format_infer.startswith("B") else "heliocentric"
+        input_origin_infer = "barycentric"
+        logger.info("FORMAT=BCART_EQ detected: using barycentric equatorial reference frame")
+    else:
+        input_plane_infer = "ecliptic"
+        input_origin_infer = "heliocentric"
         logger.warning(
-            f"--input-origin not provided. Inferring {input_origin_infer} from input file column FORMAT={orbit_format}"
+            f"Assuming heliocentric ecliptic input reference frame (as per MPC/JPL convention) for FORMAT={orbit_format}"
         )
-        # raise Warning(f"--input-origin not provided. Inferring {input_origin_infer} from input file column FORMAT={orbit_format}")
 
-    # infer plane if not user supplied
-    if input_plane_infer is None:
-        if input_format_infer in ("COM", "BCOM", "KEP", "BKEP"):
-            input_plane_infer = "ecliptic"
-            logger.warning(
-                f"--input-plane not provided. Inferring ecliptic for input file column FORMAT={orbit_format}"
-            )
-            raise Warning(
-                f"--input-plane not provided. Inferring ecliptic for input file column FORMAT={orbit_format}"
-            )
-        else:
-            logger.warning(
-                "--input-plane is required for CART/BCART formats unless FORMAT column encodes it (e.g. BCART_EQ)"
-            )
-            # raise Warning("--input-plane is required for CART/BCART formats unless FORMAT column encodes it (e.g. BCART_EQ)")
-
-    logger.info(f"Inferred input orbit origin: {input_origin_infer}")
-    logger.info(f"Inferred input orbit reference plane: {input_plane_infer}")
-    logger.info(f"Inferred input orbit format: {input_format_infer}")
+    logger.info(f"Input orbit origin: {input_origin_infer}")
+    logger.info(f"Input orbit reference plane: {input_plane_infer}")
+    logger.info(f"Input orbit format: {input_format_infer}")
 
     # full reader with required columns
     logger.info(f"Reading full input file: {input}")
@@ -262,44 +276,66 @@ def visualize_cli(
             f"FORMAT changed between probe and full read: {orbit_format} -> {orbit_format_check}"
         )
 
-    fig2d_cache, fig3d_cache = build_fig_caches(
+    # read optional special file
+    special_rows = None
+    if special is not None:
+        logger.info(f"Reading special input file: {special}")
+        special_file = Path(special)
+        if not special_file.exists():
+            logger.error(f"Special file not found: {special}")
+            raise FileNotFoundError(special_file)
+        special_suffix = special_file.suffix.lower()
+        if special_suffix == ".csv":
+            special_reader = CSVDataReader(
+                special_file, format_column_name="FORMAT", required_column_names=required_cols
+            )
+        else:
+            special_reader = HDF5DataReader(
+                special_file, format_column_name="FORMAT", required_column_names=required_cols
+            )
+        special_rows = special_reader.read_rows(block_start=0, block_size=block_size)
+        special_format = get_format(special_rows)
+        if special_format != orbit_format:
+            logger.error(
+                f"Special file FORMAT ({special_format}) does not match main file FORMAT ({orbit_format})"
+            )
+            raise ValueError(
+                f"Special file FORMAT ({special_format}) does not match main file FORMAT ({orbit_format})"
+            )
+        logger.info(f"Loaded {special_rows.size} special orbits from {special}")
+
+    fig2d_cache, fig3d_cache, special_ids = build_fig_caches(
         rows=rows,
         orbit_format=orbit_format,
-        input_plane=input_format_infer,
+        input_plane=input_plane_infer,
         input_origin=input_origin_infer,
+        special_rows=special_rows,
         n_points=n_points,
         r_max=r_max,
         cache_dir=cache_dir,
     )
 
     logger.info(f"Running Dash web app")
-    run_dash_app(fig2d_cache, fig3d_cache)
+    run_dash_app(fig2d_cache, fig3d_cache, special_ids=special_ids)
 
 
 def visualize_notebook(
     data: str | Path | np.ndarray,
-    input_plane: Optional[Literal["equatorial", "ecliptic"]] = None,
-    input_origin: Optional[Literal["heliocentric", "barycentric"]] = None,
     num_orbs: int = 100,
     block_size: int = 10000,
     n_points: int = 500,
     r_max: float = 50.0,
     random: bool = False,
     cache_dir: Optional[str] = None,
+    special: Optional[str | Path | np.ndarray] = None,
 ):
     """
     Create visualisation plots of a given set of input orbits in a Jupyter notebook
 
     Parameters
     -----------
-    input : str
-        Input file path
-
-    input_plane : str, optional (default=None)
-        Input file reference plane. Must be one of "equatorial", "ecliptic"
-
-    input_origin : str, optional (default=None)
-        Input file frame of origin. Must be one of "heliocentric", "barycentric"
+    data : str, Path, or numpy structured array
+        Input file path or structured array with a FORMAT column
 
     num_orbs : int, optional (default=100)
         Number of orbits to plot at once
@@ -320,16 +356,16 @@ def visualize_notebook(
         Path to directory of cached auxiliary data
     """
     if isinstance(data, (str, Path)):
+        special_path = str(special) if isinstance(special, (str, Path)) else None
         visualize_cli(
             str(data),
-            input_plane=input_plane,
-            input_origin=input_origin,
             num_orbs=num_orbs,
             block_size=block_size,
             n_points=n_points,
             r_max=r_max,
             random=random,
             cache_dir=cache_dir,
+            special=special_path,
         )
     elif isinstance(data, np.ndarray):
         if data.dtype.names is None or "FORMAT" not in data.dtype.names:
@@ -343,46 +379,24 @@ def visualize_notebook(
         rows = data
         orbit_format = get_format(rows)
 
-        input_origin_infer = input_origin
-        input_plane_infer = input_plane
+        # determine input frame — default is heliocentric ecliptic (as per MPC/JPL convention)
+        # BCART_EQ is the one exception: that format name explicitly encodes barycentric+equatorial
         input_format_infer = orbit_format
-
-        # BCART_EQ can be normalised down to BCART to not break maths later,
-        # and we just asign equatorial now
         if input_format_infer == "BCART_EQ":
             input_format_infer = "BCART"
-            if input_plane_infer is None:
-                logger.warning(
-                    "FORMAT=BCART_EQ implies using equatorial plane. Setting --input-plane = equatorial"
-                )
-                # raise Warning("FORMAT=BCART_EQ implies using equatorial plane. Setting --input-plane = equatorial")
             input_plane_infer = "equatorial"
-
-        # infer origin if not user supplied
-        if input_origin_infer is None:
-            input_origin_infer = "barycentric" if input_format_infer.startswith("B") else "heliocentric"
+            input_origin_infer = "barycentric"
+            logger.info("FORMAT=BCART_EQ detected: using barycentric equatorial reference frame")
+        else:
+            input_plane_infer = "ecliptic"
+            input_origin_infer = "heliocentric"
             logger.warning(
-                f"--input-origin not provided. Inferring {input_origin_infer} from input file format column FORMAT={orbit_format}"
+                f"Assuming heliocentric ecliptic input reference frame (as per MPC/JPL convention) for FORMAT={orbit_format}"
             )
-            # raise Warning(f"--input-origin not provided. Inferring {input_origin_infer} from input file column FORMAT={orbit_format}")
 
-        # infer plane if not user supplied
-        if input_plane_infer is None:
-            if input_format_infer in ("COM", "BCOM", "KEP", "BKEP"):
-                input_plane_infer = "ecliptic"
-                logger.warning(
-                    f"--input-plane not provided. Inferring ecliptic for input file format column FORMAT={orbit_format}"
-                )
-                # raise Warning(f"--input-plane not provided. Inferring ecliptic for input file column FORMAT={orbit_format}")
-            else:
-                logger.warning(
-                    "--input-plane is required for CART/BCART formats unless FORMAT column encodes it (e.g. BCART_EQ)"
-                )
-                # raise Warning("--input-plane is required for CART/BCART formats unless FORMAT column encodes it (e.g. BCART_EQ)")
-
-        logger.info(f"Inferred input orbit origin: {input_origin_infer}")
-        logger.info(f"Inferred input orbit reference plane: {input_plane_infer}")
-        logger.info(f"Inferred input orbit format: {input_format_infer}")
+        logger.info(f"Input orbit origin: {input_origin_infer}")
+        logger.info(f"Input orbit reference plane: {input_plane_infer}")
+        logger.info(f"Input orbit format: {input_format_infer}")
 
         # make sure we actually have the requested number of orbits, else return all,
         # then either randomly sample that many or sample the first that many
@@ -409,17 +423,32 @@ def visualize_notebook(
                 f"FORMAT changed between probe and full read: {orbit_format} -> {orbit_format_check}"
             )
 
-        fig2d_cache, fig3d_cache = build_fig_caches(
+        # handle special rows if provided as a numpy array
+        special_rows = None
+        if isinstance(special, np.ndarray):
+            if special.dtype.names is None or "FORMAT" not in special.dtype.names:
+                raise ValueError(
+                    "Special structured array must contain a FORMAT column"
+                )
+            special_rows = special
+            special_format = get_format(special_rows)
+            if special_format != orbit_format:
+                raise ValueError(
+                    f"Special array FORMAT ({special_format}) does not match main array FORMAT ({orbit_format})"
+                )
+
+        fig2d_cache, fig3d_cache, special_ids = build_fig_caches(
             rows=rows,
             orbit_format=orbit_format,
-            input_plane=input_format_infer,
+            input_plane=input_plane_infer,
             input_origin=input_origin_infer,
+            special_rows=special_rows,
             n_points=n_points,
             r_max=r_max,
             cache_dir=cache_dir,
         )
 
-        run_dash_app(fig2d_cache, fig3d_cache)
+        run_dash_app(fig2d_cache, fig3d_cache, special_ids=special_ids)
 
     else:
         raise TypeError("Input data must be a file path or a numpy structured array")

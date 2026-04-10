@@ -2,7 +2,6 @@ import logging
 from typing import Literal, Tuple, Optional, Any
 
 import numpy as np
-from datetime import datetime, timedelta
 
 from layup.orbit_maths import ClassicalConic
 
@@ -28,6 +27,16 @@ PLANET_COLOURS_DAY = {
     "Saturn": "rgba(160,140,40,0.95)",  # olive gold
     "Uranus": "rgba(0,150,110,0.95)",  # green-teal
     "Neptune": "rgba(115,0,170,0.95)",  # deep purple
+}
+
+SPECIAL_COLOUR = {
+    "night": "rgba(255,0,0,0.95)",  # bright red
+    "day": "rgba(200,80,0,0.95)",  # dark orange
+}
+
+ORBIT_COLOUR_DIM = {
+    "night": {"3d": "rgba(144,167,209,0.05)", "2d": "rgba(144,167,209,0.20)"},
+    "day":   {"3d": "rgba(30,60,120,0.55)",   "2d": "rgba(30,60,120,0.15)"},
 }
 
 logger = logging.getLogger(__name__)
@@ -148,7 +157,6 @@ def plotly_2D(
     lines: np.ndarray,
     canon: ClassicalConic,
     plot_sun: bool = True,
-    orbit_pos: Optional[np.ndarray] = None,
     sun_xyz: Optional[np.ndarray] = None,
     planet_lines: Optional[np.ndarray] = None,
     planet_id: Optional[np.ndarray] = None,
@@ -156,6 +164,8 @@ def plotly_2D(
     output: Optional[str] = None,
     panel: Optional[PANEL] = None,
     panels: Optional[Tuple[PANEL, PANEL]] = None,
+    special_lines: Optional[np.ndarray] = None,
+    special_canon: Optional[ClassicalConic] = None,
 ):
     """
     Create a 2D (1x2 subplot) interactive Plotly figure of orbits
@@ -170,9 +180,6 @@ def plotly_2D(
 
     plot_sun : bool, optional (default = True)
         Flag to turn on/off plotting the Sun
-
-    orbit_pos : dict of numpy array, optional (default = None)
-        Dictionary of arrays with object positions in each plane+origin combination
 
     sun_xyz : dict of numpy array, optional (default = None)
         Dictionary of arrays with the Sun positions in each plane+origin combination
@@ -195,6 +202,12 @@ def plotly_2D(
 
     panels: str, optional (default = None)
         String containing which orientation to draw two panels of. Must be one of "XY", "XZ", "YZ"
+    
+    special_lines: dict of arrays, option (default = None)
+        Dictionary of arrays with the orbit lines for each special object in each plane+origin combination
+
+    special_canon: ClassicalConic object (default = None)
+        Object with the conic section class instances of each special object and their properties
 
     Returns
     --------
@@ -288,6 +301,7 @@ def plotly_2D(
         z = lines[i, :, 2]
 
         # it may not be best practice to paste unicode symbols here but ¯\_(ツ)_/¯
+        # plotly was weird when i tried to do the direct unicode tag and render that
         hover_text = (
             f"{canon.obj_id[i]}<br>"
             f"e: {canon.e[i]:.4f}<br>"
@@ -330,45 +344,37 @@ def plotly_2D(
                 col=col,
             )
 
-    # -- plot input object epoch position --
-    if orbit_pos is not None:
-        # want to get a hover label with epoch info so first
-        # extract from conic objects
-        mjd = np.asarray(canon.epochMJD_TDB, dtype=float)
-        mjd_str = np.array([f"{m:.5f}" for m in mjd], dtype="U32")
+    # -- plot special orbits (on top of regular orbits) --
+    if special_lines is not None and special_canon is not None:
+        for i in range(special_lines.shape[0]):
+            x = special_lines[i, :, 0]
+            y = special_lines[i, :, 1]
+            z = special_lines[i, :, 2]
 
-        # also good to have it in YYYY MM DD format
-        ymd_str = np.empty(mjd.shape[0], dtype="U10")
-        base = datetime(1858, 11, 17)  # <-- MJD 0
-        for i, mjd in enumerate(mjd):
-            dt = base + timedelta(days=float(mjd))
-            ymd_str[i] = dt.strftime("%Y %b %d")
-
-        # vectorise it by stacking all labels together to add
-        # as one trace into plotly
-        mjd_stack = np.column_stack([mjd_str, ymd_str])
-        hover_text = "%{text}<br>" "@ MJD %{customdata[0]}<br>" "(%{customdata[1]})" "<extra></extra>"
-
-        # loop over however many panels we have
-        for col, p in enumerate(panels_to_show, start=1):
-            xa, ya, _, _, _ = coords_for(
-                p, orbit_pos[:, 0], orbit_pos[:, 1], orbit_pos[:, 2]
-            )  # <-- grab the correct axes x/y coords for whatever plane it is
-            fig.add_trace(
-                go.Scatter(
-                    x=xa,
-                    y=ya,
-                    mode="markers",
-                    marker=dict(size=5, color="rgba(255,255,255,0.9)"),
-                    showlegend=False,
-                    text=np.asarray(canon.obj_id),
-                    customdata=mjd_stack,
-                    hovertemplate=hover_text,
-                    meta={"kind": "epoch"},
-                ),
-                row=1,
-                col=col,
+            hover_text = (
+                f"{special_canon.obj_id[i]}<br>"
+                f"e: {special_canon.e[i]:.4f}<br>"
+                f"i: {np.rad2deg(special_canon.inc[i]):.2f}°<br>"
+                f"Ω: {np.rad2deg(special_canon.node[i]):.2f}°<br>"
+                f"ω: {np.rad2deg(special_canon.argp[i]):.2f}°"
             )
+
+            for col, p in enumerate(panels_to_show, start=1):
+                xa, ya, _, _, _ = coords_for(p, x, y, z)
+                fig.add_trace(
+                    go.Scatter(
+                        x=xa,
+                        y=ya,
+                        mode="lines",
+                        line=dict(color=SPECIAL_COLOUR["night"], width=2.0),
+                        hovertemplate=hover_text + "<extra></extra>",
+                        showlegend=False,
+                        name=str(special_canon.obj_id[i]),
+                        meta={"kind": "Special"},
+                    ),
+                    row=1,
+                    col=col,
+                )
 
     # -- plot the sun --
     if plot_sun:
@@ -441,12 +447,13 @@ def plotly_3D(
     canon: ClassicalConic,
     plot_sun: bool = True,
     show_plane: bool = True,
-    orbit_pos: Optional[np.ndarray] = None,
     planet_lines: Optional[np.ndarray] = None,
     planet_id: Optional[np.ndarray] = None,
     sun_xyz: Optional[np.ndarray] = None,
     return_fig: bool = False,
     output: Optional[str] = None,
+    special_lines: Optional[np.ndarray] = None,
+    special_canon: Optional[ClassicalConic] = None,
 ):
     """
     Create a 3D interactive Plotly figure of orbits
@@ -465,9 +472,6 @@ def plotly_3D(
     show_plane : bool, optional (default = True)
         Flag to turn on/off plotting the reference plane (ecliptic or equatorial)
 
-    orbit_pos : dict of numpy array, optional (default = None)
-        Dictionary of arrays with object positions in each plane+origin combination
-
     planet_lines : dict of arrays, optional (default = None)
         Dictionary of arrays containing planet orbit lines for each planet in each plane+origin
         combination of shape (n_planets, n_points, 3)
@@ -483,6 +487,12 @@ def plotly_3D(
 
     output : str, optional (default = None)
         String containing the html of the figure
+
+    special_lines: dict of arrays, option (default = None)
+        Dictionary of arrays with the orbit lines for each special object in each plane+origin combination
+
+    special_canon: ClassicalConic object (default = None)
+        Object with the conic section class instances of each special object and their properties
 
     Returns
     --------
@@ -531,6 +541,7 @@ def plotly_3D(
         z = lines[i, :, 2]
 
         # it may not be best practice to paste unicode symbols here but ¯\_(ツ)_/¯
+        # plotly was weird when i tried to do the direct unicode tag and render that
         hover_text = (
             f"{canon.obj_id[i]}<br>"
             f"e: {canon.e[i]:.4f}<br>"
@@ -567,39 +578,34 @@ def plotly_3D(
             )
         )
 
-    # -- plot input object epoch position --
-    if orbit_pos is not None:
-        # want to get a hover label with epoch info so first
-        # extract from conic objects
-        mjd = np.asarray(canon.epochMJD_TDB, dtype=float)
-        mjd_str = np.array([f"{m:.5f}" for m in mjd], dtype="U32")
+    # -- plot special orbits (on top of regular orbits) --
+    if special_lines is not None and special_canon is not None:
+        for i in range(special_lines.shape[0]):
+            x = special_lines[i, :, 0]
+            y = special_lines[i, :, 1]
+            z = special_lines[i, :, 2]
 
-        # also good to have it in YYYY MM DD format
-        ymd_str = np.empty(mjd.shape[0], dtype="U10")
-        base = datetime(1858, 11, 17)  # <-- MJD 0
-        for i, mjd in enumerate(mjd):
-            dt = base + timedelta(days=float(mjd))
-            ymd_str[i] = dt.strftime("%Y %b %d")
-
-        # vectorise it by stacking all labels together to add
-        # as one trace into plotly
-        mjd_stack = np.column_stack([mjd_str, ymd_str])
-        hover_text = "%{text}<br>" "@ MJD %{customdata[0]}<br>" "(%{customdata[1]})" "<extra></extra>"
-
-        fig.add_trace(
-            go.Scatter3d(
-                x=orbit_pos[:, 0],
-                y=orbit_pos[:, 1],
-                z=orbit_pos[:, 2],
-                mode="markers",
-                marker=dict(size=3.5, color="rgba(255,255,255,0.9)"),
-                showlegend=False,
-                meta={"kind": "epoch"},
-                text=np.asarray(canon.obj_id),
-                customdata=mjd_stack,
-                hovertemplate=hover_text,
+            hover_text = (
+                f"{special_canon.obj_id[i]}<br>"
+                f"e: {special_canon.e[i]:.4f}<br>"
+                f"i: {np.rad2deg(special_canon.inc[i]):.2f}°<br>"
+                f"Ω: {np.rad2deg(special_canon.node[i]):.2f}°<br>"
+                f"ω: {np.rad2deg(special_canon.argp[i]):.2f}°"
             )
-        )
+
+            fig.add_trace(
+                go.Scatter3d(
+                    x=x,
+                    y=y,
+                    z=z,
+                    mode="lines",
+                    line=dict(color=SPECIAL_COLOUR["night"], width=4),
+                    hovertemplate=hover_text + "<extra></extra>",
+                    showlegend=False,
+                    name=str(special_canon.obj_id[i]),
+                    meta={"kind": "Special"},
+                )
+            )
 
     # -- plot the sun --
     if plot_sun:
@@ -669,7 +675,11 @@ def plotly_3D(
 
 
 # --- make the dash app ---
-def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict[tuple[str, str], "object"]):
+def run_dash_app(
+    fig2d_cache: dict[tuple[str, str], "object"],
+    fig3d_cache: dict[tuple[str, str], "object"],
+    special_ids: Optional[list[str]] = None,
+):
     """
     Create and
     """
@@ -677,8 +687,8 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
     from dash import Dash, dcc, html, Input, Output, State, ctx
     import dash_daq as daq
     import dash_ag_grid as dag
+    import re
     import copy
-    import os
     import threading
     import webbrowser
 
@@ -713,7 +723,10 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
         },
     }
 
-    ORBIT_COLOUR = {"night": "rgba(144,167,209,0.70)", "day": "rgba(30,60,120,0.85)"}
+    ORBIT_COLOUR = {
+        "night": "rgba(144,167,209,0.3)",  # very faint blue-grey
+        "day": "rgba(30,60,120,0.3)",  # very faint dark blue
+    }
 
     # defaults
     night_default = True
@@ -857,13 +870,17 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
                                 max=1.0,
                                 step=0.02,
                                 value=opacity_default,
-                                marks={0.0: "0", 0.5: "0.5", 1.0: "1.0"},
+                                marks={
+                                    0.0: {"label": "0"},
+                                    0.5: {"label": "0.5"},
+                                    1.0: {"label": "1.0"},
+                                },
                                 className="opacity-slider",
                             ),
                             style={"flex": "1 1 auto", "minWidth": "0"},
                         ),
                         html.Button(
-                            "🖌\ufe0e",  # <-- is emoji pasting good coding practice?
+                            "\U0001F3A8",
                             id="plane-colour-button",
                             n_clicks=0,
                             style={
@@ -944,6 +961,12 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
             # our visible object sets
             dcc.Store(id="visible-objids", data=inv_objids),
             dcc.Store(id="visible-planets", data=inv_planets),
+            # per-orbit colour overrides {objid: hex_colour}
+            dcc.Store(id="orbit-colour-map", data={}),
+            # orbit ID targeted by the currently open colour picker
+            dcc.Store(id="orbit-colour-target", data=None),
+            # IDs of "special" orbits (set once at startup, never changes)
+            dcc.Store(id="orbit-special-ids", data=list(special_ids or [])),
             # here's our button to toggle down the settings menu
             html.Button(
                 "⌄",
@@ -1356,12 +1379,26 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
                                             {
                                                 "headerName": "Visible",
                                                 "field": "visible",
-                                                "width": 120,
+                                                "width": 100,
                                                 "filter": True,
+                                            },
+                                            {
+                                                "headerName": "Colour",
+                                                "field": "colour",
+                                                "width": 90,
+                                                "cellStyle": {
+                                                    "function": (
+                                                        "params.value"
+                                                        " ? {backgroundColor: params.value, cursor: 'pointer', borderRadius: '3px'}" 
+                                                        " : {border: '2px dashed rgba(128,128,128,0.5)', cursor: 'pointer', borderRadius: '3px'}" # <-- make a fancy dashed box for colours per object
+                                                    )
+                                                },
+                                                "sortable": False,
                                             },
                                         ],
                                         rowData=[],
                                         defaultColDef={"sortable": True, "resizable": True},
+                                        dangerously_allow_code=True, # <-- this is only because i want to mimic javascript clicking of the colour picker, and we've hardcoded in the function in the app, so no danger really
                                         dashGridOptions={
                                             "rowSelection": "multiple",
                                             "animateRows": False,
@@ -1434,6 +1471,114 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
                                 style={"marginTop": "12px", "display": "flex", "justifyContent": "center"},
                                 children=[
                                     daq.ColorPicker(id="plane-colour", value={"hex": "#F5B277"}, size=220)
+                                ],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+            # orbit colour picker modal
+            html.Div(
+                id="orbit-colour-modal",
+                n_clicks=0,
+                style={
+                    "display": "none",
+                    "position": "fixed",
+                    "inset": 0,
+                    "zIndex": 26000,
+                    "background": "rgba(0,0,0,0.55)",
+                    "backdropFilter": "blur(6px)",
+                    "pointerEvents": "auto",
+                },
+                children=[
+                    html.Div(
+                        id="orbit-colour-card",
+                        n_clicks=0,
+                        style={
+                            "width": "min(520px, 92vw)",
+                            "margin": "12vh auto",
+                            "background": theme0["drawer_bg"],
+                            "border": f"1px solid {theme0['border']}",
+                            "borderRadius": "16px",
+                            "padding": "16px",
+                            "boxSizing": "border-box",
+                        },
+                        children=[
+                            html.Div(
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "justifyContent": "space-between",
+                                },
+                                children=[
+                                    html.Div(
+                                        "Orbit Colour",
+                                        style={"fontSize": "18px", "fontWeight": 700, "color": fg0},
+                                    ),
+                                    html.Button(
+                                        "x",
+                                        id="orbit-colour-close",
+                                        n_clicks=0,
+                                        style={
+                                            "border": "none",
+                                            "background": "transparent",
+                                            "color": fg0,
+                                            "fontSize": "22px",
+                                            "cursor": "pointer",
+                                        },
+                                    ),
+                                ],
+                            ),
+                            html.Div(
+                                style={
+                                    "marginTop": "12px",
+                                    "display": "flex",
+                                    "justifyContent": "center",
+                                },
+                                children=[
+                                    daq.ColorPicker(
+                                        id="orbit-colour-picker",
+                                        value={"hex": "#90A7D1"},
+                                        size=220,
+                                    )
+                                ],
+                            ),
+                            html.Div(
+                                style={
+                                    "marginTop": "12px",
+                                    "display": "flex",
+                                    "justifyContent": "center",
+                                    "gap": "12px",
+                                },
+                                children=[
+                                    html.Button(
+                                        "Apply",
+                                        id="orbit-colour-apply",
+                                        n_clicks=0,
+                                        style={
+                                            "padding": "8px 20px",
+                                            "borderRadius": "10px",
+                                            "border": f"1px solid {theme0['border']}",
+                                            "background": theme0["tab_bg"],
+                                            "color": fg0,
+                                            "fontSize": "16px",
+                                            "cursor": "pointer",
+                                        },
+                                    ),
+                                    html.Button(
+                                        "Reset to default",
+                                        id="orbit-colour-reset",
+                                        n_clicks=0,
+                                        style={
+                                            "padding": "8px 20px",
+                                            "borderRadius": "10px",
+                                            "border": f"1px solid {theme0['border']}",
+                                            "background": theme0["tab_bg"],
+                                            "color": fg0,
+                                            "fontSize": "16px",
+                                            "cursor": "pointer",
+                                        },
+                                    ),
                                 ],
                             ),
                         ],
@@ -1667,10 +1812,16 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
         Output("obj-count", "children"),
         Input("visible-objids", "data"),
         Input("visible-planets", "data"),
+        Input("orbit-colour-map", "data"),
     )
-    def sync_grid_rows(visible_objids: list[str] | None, visible_planets: list[str] | None):
+    def sync_grid_rows(
+        visible_objids: list[str] | None,
+        visible_planets: list[str] | None,
+        orbit_colour_map: dict[str, str] | None,
+    ):
         vis_o = set(visible_objids or [])
         vis_p = set(visible_planets or [])
+        cm = orbit_colour_map or {}
 
         rows = []
         for r in inventory_rows:
@@ -1678,9 +1829,11 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
             name = r["name"]
             if k == "Planet":
                 vis = name in vis_p
+                colour = ""
             else:
                 vis = name in vis_o
-            rows.append({"kind": k, "name": name, "visible": "✓" if vis else ""})
+                colour = cm.get(name, "")
+            rows.append({"kind": k, "name": name, "visible": "✓" if vis else "", "colour": colour})
 
         shown = len(vis_o) + len(vis_p)
         total = len(inv_objids) + len(inv_planets)
@@ -1766,6 +1919,116 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
 
         return sorted(vis_o), sorted(vis_p)
 
+    # open orbit colour picker when a colour-column cell is clicked
+    @app.callback(
+        Output("orbit-colour-modal", "style", allow_duplicate=True),
+        Output("orbit-colour-card", "style"),
+        Output("orbit-colour-picker", "value"),
+        Output("orbit-colour-target", "data"),
+        Input("objects-grid", "cellClicked"),
+        Input("orbit-colour-close", "n_clicks"),
+        Input("theme-toggle", "value"),
+        State("orbit-colour-map", "data"),
+        State("objects-grid", "virtualRowData"),
+        State("orbit-colour-modal", "style"),
+        State("orbit-colour-card", "style"),
+        State("orbit-colour-picker", "value"),
+        State("orbit-colour-target", "data"),
+        prevent_initial_call=True,
+    )
+    def open_orbit_colour_picker(
+        cell_clicked,
+        close_clicks: int | None,
+        night_mode: bool,
+        colour_map: dict[str, str] | None,
+        row_data: list[dict[str, Any]] | None,
+        modal_style: dict[str, Any] | None,
+        card_style: dict[str, Any] | None,
+        picker_value,
+        target: str | None,
+    ):
+        theme = THEME["night"] if night_mode else THEME["day"]
+        ms = dict(modal_style or {})
+        cs = dict(card_style or {})
+        cs["background"] = theme["drawer_bg"]
+        cs["border"] = f"1px solid {theme['border']}"
+        cm = colour_map or {}
+        trig = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
+
+        if trig == "objects-grid":
+            if not cell_clicked or cell_clicked.get("colId") != "colour":
+                raise dash.exceptions.PreventUpdate
+            # cellClicked gives rowIndex but not the row data itself
+            row_index = cell_clicked.get("rowIndex")
+            if row_index is None or not row_data:
+                raise dash.exceptions.PreventUpdate
+            row = row_data[row_index]
+            if row.get("kind") == "Planet" or not row.get("name"):
+                raise dash.exceptions.PreventUpdate
+            obj_id = str(row["name"])
+            current_hex = cm.get(obj_id, "#90A7D1")
+            ms["display"] = "block"
+            return ms, cs, {"hex": current_hex}, obj_id
+
+        if trig == "orbit-colour-close":
+            ms["display"] = "none"
+
+        return ms, cs, picker_value, target
+
+    # close by clicking the backdrop
+    @app.callback(
+        Output("orbit-colour-modal", "style", allow_duplicate=True),
+        Input("orbit-colour-modal", "n_clicks"),
+        Input("orbit-colour-card", "n_clicks"),
+        State("orbit-colour-modal", "style"),
+        prevent_initial_call=True,
+    )
+    def close_orbit_colour_on_backdrop(
+        modal_clicks: int | None, card_clicks: int | None, style: dict[str, Any] | None
+    ):
+        if ctx.triggered_id == "orbit-colour-modal":
+            style = dict(style or {})
+            style["display"] = "none"
+            return style
+        raise dash.exceptions.PreventUpdate
+
+    # apply colour or reset to default for the targeted orbit
+    @app.callback(
+        Output("orbit-colour-map", "data"),
+        Output("orbit-colour-modal", "style", allow_duplicate=True),
+        Input("orbit-colour-apply", "n_clicks"),
+        Input("orbit-colour-reset", "n_clicks"),
+        State("orbit-colour-picker", "value"),
+        State("orbit-colour-target", "data"),
+        State("orbit-colour-map", "data"),
+        State("orbit-colour-modal", "style"),
+        prevent_initial_call=True,
+    )
+    def update_orbit_colour_map(
+        apply_clicks: int | None,
+        reset_clicks: int | None,
+        picker_value,
+        target: str | None,
+        colour_map: dict[str, str] | None,
+        modal_style: dict[str, Any] | None,
+    ):
+        trig = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
+        colour_map = dict(colour_map or {})
+        ms = dict(modal_style or {})
+
+        if trig == "orbit-colour-apply":
+            if target and picker_value and "hex" in picker_value:
+                colour_map[target] = picker_value["hex"]
+            ms["display"] = "none"
+        elif trig == "orbit-colour-reset":
+            if target:
+                colour_map.pop(target, None)
+            ms["display"] = "none"
+        else:
+            raise dash.exceptions.PreventUpdate
+
+        return colour_map, ms
+
     # this section records the zoom/camera state into view-state
     @app.callback(
         Output("view-state", "data"),
@@ -1849,6 +2112,7 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
         Input("panel-right", "value"),
         Input("visible-objids", "data"),
         Input("visible-planets", "data"),
+        Input("orbit-colour-map", "data"),
         State("view-state", "data"),
     )
     def update_orbit_plot(
@@ -1864,6 +2128,7 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
         panel_right: str,
         visible_objids: list[str] | None,
         visible_planets: list[str] | None,
+        orbit_colour_map: dict[str, str] | None,
         view_state: dict[str, object],
     ):
         # set up some figure themings
@@ -1872,7 +2137,10 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
         fg = theme["fg"]
         grid = theme["grid"]
         zero = theme["zero"]
-        orbit_colour = ORBIT_COLOUR["night"] if night_mode else ORBIT_COLOUR["day"]
+        mode_key = "night" if night_mode else "day"
+        orbit_colour = ORBIT_COLOUR[mode_key]
+        special_colour = SPECIAL_COLOUR[mode_key]
+        orbit_colour_dim = ORBIT_COLOUR_DIM[mode_key]["3d" if view_3d else "2d"]
 
         # set a default plot to show first
         origin = "bary" if origin_bary else "helio"
@@ -1887,16 +2155,15 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
             else:
                 fig = copy.deepcopy(fig2d_cache[(origin, plane, "double", panel_left, panel_right)])
 
+        # do we have any special guys?
+        has_special = bool(special_ids) 
+
         for trace in fig.data:
-            # we need to differentiate planets from input objects to make sure
-            # they are coloured properly, so we use their meta tags we set up
-            # earlier to toggle their colours appropriately
-            is_planet = (
-                getattr(trace, "meta", None) is not None
-                and isinstance(trace.meta, dict)
-                and trace.meta.get("kind") == "Planet"
-            )
-            if is_planet:
+            meta = getattr(trace, "meta", None)
+            kind = meta.get("kind") if isinstance(meta, dict) else None
+
+            # planets: colour by name
+            if kind == "Planet":
                 name = str(trace.name)
                 trace.line.color = (
                     PLANET_COLOURS_NIGHT.get(name, "rgba(220,220,220,0.7)")
@@ -1905,14 +2172,51 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
                 )
                 continue
 
-            # every other non-planet is the default colour then
-            if trace.type in ("scatter", "scatter3d") and getattr(trace, "mode", None) == "lines":
-                trace.line.color = orbit_colour
+            if trace.type not in ("scatter", "scatter3d") or getattr(trace, "mode", None) != "lines":
+                continue
 
-            # also colour input object epoch markers differently if day or night mode
-            meta = getattr(trace, "meta", None)
-            if isinstance(meta, dict) and meta.get("kind") == "epoch":
-                trace.marker.color = "rgba(255,255,255,0.9)" if night_mode else "rgba(30,30,30,0.9)"
+            # special orbits: accent colour
+            if kind == "Special":
+                trace.line = dict(
+                    color=special_colour, 
+                    width=5.0 
+                )
+                continue
+
+            # regular orbits: dim if any special orbits exist, else normal
+            if kind not in ("Special", "Planet"):
+                if has_special:
+                    trace.line = dict(
+                        color=orbit_colour_dim,
+                        width=0.5 if view_3d else 1.5
+                    )
+                else:
+                    trace.line = dict(
+                        color=orbit_colour,
+                        width=3.0 if view_3d else 1.5
+                    )
+
+        # apply per-orbit colour overrides on top of the default
+        # for regular orbits in has_special mode, preserve the dim alpha so
+        # the override changes colour without popping the orbit to full opacity
+        if orbit_colour_map:
+            alpha_match = re.search(r",([\d.]+)\)$", orbit_colour_dim) # <-- regex hax to get alpha value from rgba() string
+            dim_alpha = float(alpha_match.group(1)) if alpha_match else 0.2
+
+            for trace in fig.data:
+                if trace.type in ("scatter", "scatter3d") and getattr(trace, "mode", None) == "lines":
+                    meta = getattr(trace, "meta", None)
+                    kind = meta.get("kind") if isinstance(meta, dict) else None
+                    name = str(getattr(trace, "name", ""))
+                    if name in orbit_colour_map:
+                        hex_col = orbit_colour_map[name]
+                        if has_special and kind not in ("Special", "Planet") and hex_col.startswith("#") and len(hex_col) == 7:
+                            r = int(hex_col[1:3], 16)
+                            g = int(hex_col[3:5], 16)
+                            b = int(hex_col[5:7], 16)
+                            trace.line.color = f"rgba({r},{g},{b},{dim_alpha})"
+                        else:
+                            trace.line.color = hex_col
 
         # apply object visibility
         vis_o = set(visible_objids or [])
@@ -1933,15 +2237,6 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
                 name = str(getattr(trace, "name", ""))
                 if name and name != "ref-plane":
                     trace.visible = name in vis_o
-
-            if isinstance(meta, dict) and meta.get("kind") == "epoch":
-                texts = getattr(trace, "text", None)
-                texts_list = [] if texts is None else list(texts)
-
-                base = "rgba(255,255,255,0.9)" if night_mode else "rgba(100,100,100,0.9)"
-                hidden = "rgba(0,0,0,0)"
-
-                trace.marker.color = [base if str(t) in vis_o else hidden for t in texts_list]
 
         # if the view is 3d then set the reference plane opacity+colour
         if view_3d:
@@ -2046,16 +2341,12 @@ def run_dash_app(fig2d_cache: dict[tuple[str, str], "object"], fig3d_cache: dict
     def open_browser():
         webbrowser.open_new("http://127.0.0.1:8050/")
 
-    # this is a reloader that prevents us accidentally opening two tabs
-    # at the same time (this kept happening to me in debugging),
-    # giving the server time to start before the browser visits the url
-    # (see https://stackoverflow.com/questions/9449101/how-to-stop-flask-from-initialising-twice-in-debug-mode?)
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        threading.Timer(1.0, open_browser).start()
+    # give the server a moment to start before opening the browser
+    threading.Timer(1.0, open_browser).start()
 
     # avoid spam in the terminal
     log = logging.getLogger("werkzeug")
     log.setLevel(logging.ERROR)
 
     # now run the server!
-    app.run(debug=False, use_reloader=True)
+    app.run(debug=False, use_reloader=False)

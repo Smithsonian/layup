@@ -20,26 +20,6 @@ def main():
         type=str,
     )
 
-    frame = parser.add_argument_group("Frame arguments")
-    frame.add_argument(
-        "--input-plane",
-        help="reference plane of the input orbit elements",
-        dest="input_plane",
-        type=str,
-        choices=["equatorial", "ecliptic"],
-        required=False,
-        default=None,
-    )
-    frame.add_argument(
-        "--input-origin",
-        help="origin of the input orbit elements",
-        dest="input_origin",
-        type=str,
-        choices=["heliocentric", "barycentric"],
-        required=False,
-        default=None,
-    )
-
     optional = parser.add_argument_group("Optional arguments")
     optional.add_argument(
         "--block-size",
@@ -83,6 +63,14 @@ def main():
         required=False,
     )
     optional.add_argument(
+        "--special",
+        help="optional second orbit file whose orbits are highlighted in a distinct colour (regular orbits are greyed out when this is supplied)",
+        dest="special",
+        type=str,
+        default=None,
+        required=False,
+    )
+    optional.add_argument(
         "--ar-data-file-path",
         dest="ar_data_file_path",
         type=str,
@@ -107,17 +95,18 @@ def execute(args):
     cache_dir = getattr(args, "ar_data_file_path", None)
 
     find_file_or_exit(args.input, "input")
+    if args.special is not None:
+        find_file_or_exit(args.special, "special")
 
     visualize_cli(
         input=args.input,
-        input_plane=args.input_plane,
-        input_origin=args.input_origin,
         num_orbs=args.num_orbs,
         block_size=args.block_size,
         n_points=args.n_points,
         r_max=args.r_max,
         random=args.random,
         cache_dir=cache_dir,
+        special=args.special,
     )
 
 
