@@ -427,9 +427,7 @@ def visualize_notebook(
         special_rows = None
         if isinstance(special, np.ndarray):
             if special.dtype.names is None or "FORMAT" not in special.dtype.names:
-                raise ValueError(
-                    "Special structured array must contain a FORMAT column"
-                )
+                raise ValueError("Special structured array must contain a FORMAT column")
             special_rows = special
             special_format = get_format(special_rows)
             if special_format != orbit_format:

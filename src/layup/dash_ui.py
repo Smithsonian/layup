@@ -36,7 +36,7 @@ SPECIAL_COLOUR = {
 
 ORBIT_COLOUR_DIM = {
     "night": {"3d": "rgba(144,167,209,0.05)", "2d": "rgba(144,167,209,0.20)"},
-    "day":   {"3d": "rgba(30,60,120,0.55)",   "2d": "rgba(30,60,120,0.15)"},
+    "day": {"3d": "rgba(30,60,120,0.55)", "2d": "rgba(30,60,120,0.15)"},
 }
 
 logger = logging.getLogger(__name__)
@@ -202,7 +202,7 @@ def plotly_2D(
 
     panels: str, optional (default = None)
         String containing which orientation to draw two panels of. Must be one of "XY", "XZ", "YZ"
-    
+
     special_lines: dict of arrays, option (default = None)
         Dictionary of arrays with the orbit lines for each special object in each plane+origin combination
 
@@ -880,7 +880,7 @@ def run_dash_app(
                             style={"flex": "1 1 auto", "minWidth": "0"},
                         ),
                         html.Button(
-                            "\U0001F3A8",
+                            "\U0001f3a8",
                             id="plane-colour-button",
                             n_clicks=0,
                             style={
@@ -1389,8 +1389,8 @@ def run_dash_app(
                                                 "cellStyle": {
                                                     "function": (
                                                         "params.value"
-                                                        " ? {backgroundColor: params.value, cursor: 'pointer', borderRadius: '3px'}" 
-                                                        " : {border: '2px dashed rgba(128,128,128,0.5)', cursor: 'pointer', borderRadius: '3px'}" # <-- make a fancy dashed box for colours per object
+                                                        " ? {backgroundColor: params.value, cursor: 'pointer', borderRadius: '3px'}"
+                                                        " : {border: '2px dashed rgba(128,128,128,0.5)', cursor: 'pointer', borderRadius: '3px'}"  # <-- make a fancy dashed box for colours per object
                                                     )
                                                 },
                                                 "sortable": False,
@@ -1398,7 +1398,7 @@ def run_dash_app(
                                         ],
                                         rowData=[],
                                         defaultColDef={"sortable": True, "resizable": True},
-                                        dangerously_allow_code=True, # <-- this is only because i want to mimic javascript clicking of the colour picker, and we've hardcoded in the function in the app, so no danger really
+                                        dangerously_allow_code=True,  # <-- this is only because i want to mimic javascript clicking of the colour picker, and we've hardcoded in the function in the app, so no danger really
                                         dashGridOptions={
                                             "rowSelection": "multiple",
                                             "animateRows": False,
@@ -2156,7 +2156,7 @@ def run_dash_app(
                 fig = copy.deepcopy(fig2d_cache[(origin, plane, "double", panel_left, panel_right)])
 
         # do we have any special guys?
-        has_special = bool(special_ids) 
+        has_special = bool(special_ids)
 
         for trace in fig.data:
             meta = getattr(trace, "meta", None)
@@ -2177,30 +2177,23 @@ def run_dash_app(
 
             # special orbits: accent colour
             if kind == "Special":
-                trace.line = dict(
-                    color=special_colour, 
-                    width=5.0 
-                )
+                trace.line = dict(color=special_colour, width=5.0)
                 continue
 
             # regular orbits: dim if any special orbits exist, else normal
             if kind not in ("Special", "Planet"):
                 if has_special:
-                    trace.line = dict(
-                        color=orbit_colour_dim,
-                        width=0.5 if view_3d else 1.5
-                    )
+                    trace.line = dict(color=orbit_colour_dim, width=0.5 if view_3d else 1.5)
                 else:
-                    trace.line = dict(
-                        color=orbit_colour,
-                        width=3.0 if view_3d else 1.5
-                    )
+                    trace.line = dict(color=orbit_colour, width=3.0 if view_3d else 1.5)
 
         # apply per-orbit colour overrides on top of the default
         # for regular orbits in has_special mode, preserve the dim alpha so
         # the override changes colour without popping the orbit to full opacity
         if orbit_colour_map:
-            alpha_match = re.search(r",([\d.]+)\)$", orbit_colour_dim) # <-- regex hax to get alpha value from rgba() string
+            alpha_match = re.search(
+                r",([\d.]+)\)$", orbit_colour_dim
+            )  # <-- regex hax to get alpha value from rgba() string
             dim_alpha = float(alpha_match.group(1)) if alpha_match else 0.2
 
             for trace in fig.data:
@@ -2210,7 +2203,12 @@ def run_dash_app(
                     name = str(getattr(trace, "name", ""))
                     if name in orbit_colour_map:
                         hex_col = orbit_colour_map[name]
-                        if has_special and kind not in ("Special", "Planet") and hex_col.startswith("#") and len(hex_col) == 7:
+                        if (
+                            has_special
+                            and kind not in ("Special", "Planet")
+                            and hex_col.startswith("#")
+                            and len(hex_col) == 7
+                        ):
                             r = int(hex_col[1:3], 16)
                             g = int(hex_col[3:5], 16)
                             b = int(hex_col[5:7], 16)
