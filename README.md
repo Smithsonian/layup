@@ -33,13 +33,6 @@ pip install -e ".[dev]"
 ```
 to install all of the development packages as well.
 
-### Linux
-If you're running `layup` on a linux distribution, you should add the `layup` root directory to your`$LD_LIBRARY_PATH`, with something like
-```
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:</path/to/layup>
-```
-so that python's dynamic linker can find the `assist` and `rebound` library objects at runtime.
-
 ### Adding new submodule 
 Note that to get the new submodules added in an existing copy of the repo you want to run
 ```
