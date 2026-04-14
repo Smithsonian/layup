@@ -58,5 +58,19 @@ target_link_libraries(_core PRIVATE pybind11::headers ${LIBASSIST_SO} ${LIBREBOU
 # This is passing in the version as a define just as an example
 target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
 
+if(APPLE)
+  set(_LAYUP_RUNTIME_RPATH "@loader_path/..")
+elseif(UNIX)
+  set(_LAYUP_RUNTIME_RPATH "$ORIGIN/..")
+endif()
+
+if(DEFINED _LAYUP_RUNTIME_RPATH)
+  set_target_properties(_core PROPERTIES
+    BUILD_WITH_INSTALL_RPATH ON
+    BUILD_RPATH "${_LAYUP_RUNTIME_RPATH}"
+    INSTALL_RPATH "${_LAYUP_RUNTIME_RPATH}"
+  )
+endif()
+
 # The install directory is the output (wheel) directory
 install(TARGETS _core DESTINATION _layup_cpp)
