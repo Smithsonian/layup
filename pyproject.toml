@@ -60,7 +60,9 @@ dev = [
 [build-system]
 requires = [
     "scikit-build-core>=0.10",
-    "pybind11"
+    "pybind11",
+    "assist",
+    "rebound"
 ]
 build-backend = "scikit_build_core.build"
 
