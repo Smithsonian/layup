@@ -15,24 +15,49 @@ project(
   VERSION ${SKBUILD_PROJECT_VERSION}
   LANGUAGES CXX C)
 
-# Locate site-packages and determine arch-specific extension for the libraries
+# Find platform-specific suffix for shared libraries
 execute_process(
   COMMAND ${PYTHON_EXECUTABLE} -c
-  "import site; print(site.getsitepackages()[0])"
-  OUTPUT_VARIABLE SITE_PACKAGES_PATH
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-execute_process(
-  COMMAND ${PYTHON_EXECUTABLE} -c
-  "import importlib.machinery as m; print(m.EXTENSION_SUFFIXES[0])"
+          "import importlib.machinery as m; print(m.EXTENSION_SUFFIXES[0])"
   OUTPUT_VARIABLE EXT_SUFFIX
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-# Assist and rebound are installed as regular packages, so their library
-# files will end up in site-packages.
-set(LIBASSIST_SO "${SITE_PACKAGES_PATH}/libassist${EXT_SUFFIX}")
-set(LIBREBOUND_SO "${SITE_PACKAGES_PATH}/librebound${EXT_SUFFIX}")
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} -c
+          "import assist, os; print(os.path.dirname(assist.__file__))"
+  OUTPUT_VARIABLE ASSIST_PKG_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE ASSIST_RESULT
+)
+if(NOT ASSIST_RESULT EQUAL 0)
+  message(FATAL_ERROR "Could not find assist package. Is assist installed in the build environment?")
+endif()
+
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} -c
+          "import rebound, os; print(os.path.dirname(rebound.__file__))"
+  OUTPUT_VARIABLE REBOUND_PKG_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE REBOUND_RESULT
+)
+if(NOT REBOUND_RESULT EQUAL 0)
+  message(FATAL_ERROR "Could not find rebound package. Is rebound installed in the build environment?")
+endif()
+
+# libassist.so and librebound.so sit in site-packages, one level up from the package dir
+cmake_path(GET ASSIST_PKG_DIR PARENT_PATH ASSIST_SITE_PACKAGES)
+cmake_path(GET REBOUND_PKG_DIR PARENT_PATH REBOUND_SITE_PACKAGES)
+
+file(GLOB LIBASSIST_SO "${ASSIST_SITE_PACKAGES}/libassist${EXT_SUFFIX}")
+file(GLOB LIBREBOUND_SO "${REBOUND_SITE_PACKAGES}/librebound${EXT_SUFFIX}")
+
+if(NOT LIBASSIST_SO)
+  message(FATAL_ERROR "libassist${EXT_SUFFIX} not found in ${ASSIST_SITE_PACKAGES}")
+endif()
+if(NOT LIBREBOUND_SO)
+  message(FATAL_ERROR "librebound${EXT_SUFFIX} not found in ${REBOUND_SITE_PACKAGES}")
+endif()
 
 execute_process(
   COMMAND cmake
