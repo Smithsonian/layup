@@ -15,17 +15,24 @@ project(
   VERSION ${SKBUILD_PROJECT_VERSION}
   LANGUAGES CXX C)
 
-# This make will compile assist and rebound
+# Locate site-packages and determine arch-specific extension for the libraries
 execute_process(
-  COMMAND make
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src
+  COMMAND ${PYTHON_EXECUTABLE} -c
+  "import site; print(site.getsitepackages()[0])"
+  OUTPUT_VARIABLE SITE_PACKAGES_PATH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} -c
+  "import importlib.machinery as m; print(m.EXTENSION_SUFFIXES[0])"
+  OUTPUT_VARIABLE EXT_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-add_custom_target(
-  symlink_libs
-  ALL COMMAND . ${CMAKE_CURRENT_SOURCE_DIR}/create_lib_links.sh
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
+# Assist and rebound are installed as regular packages, so their library
+# files will end up in site-packages.
+set(LIBASSIST_SO "${SITE_PACKAGES_PATH}/libassist${EXT_SUFFIX}")
+set(LIBREBOUND_SO "${SITE_PACKAGES_PATH}/librebound${EXT_SUFFIX}")
 
 execute_process(
   COMMAND cmake
@@ -34,36 +41,7 @@ execute_process(
 
 include_directories(
   include/eigen
-  include/assist/src
-  include/rebound/src
   include/autodiff
-)
-
-link_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src
-  ${CMAKE_CURRENT_SOURCE_DIR}include/rebound/src
-)
-
-# Discover the assist library after building
-add_library(
-  assist
-  STATIC
-  IMPORTED
-)
-set_target_properties(
-  assist PROPERTIES
-  IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/libassist.so
-)
-
-# Discover the rebound library after building
-add_library(
-  rebound
-  STATIC
-  IMPORTED
-)
-set_target_properties(
-  rebound PROPERTIES
-  IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/librebound.so
 )
 
 # Find the module development requirements (requires FindPython from 3.17 or
@@ -75,10 +53,24 @@ find_package(pybind11 CONFIG REQUIRED)
 # this)
 python_add_library(_core MODULE src/main.cpp WITH_SOABI)
 # link all the required libraries
-target_link_libraries(_core PRIVATE pybind11::headers assist rebound)
+target_link_libraries(_core PRIVATE pybind11::headers ${LIBASSIST_SO} ${LIBREBOUND_SO})
 
 # This is passing in the version as a define just as an example
 target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
+
+if(APPLE)
+  set(_LAYUP_RUNTIME_RPATH "@loader_path/..")
+elseif(UNIX)
+  set(_LAYUP_RUNTIME_RPATH "$ORIGIN/..")
+endif()
+
+if(DEFINED _LAYUP_RUNTIME_RPATH)
+  set_target_properties(_core PROPERTIES
+    BUILD_WITH_INSTALL_RPATH ON
+    BUILD_RPATH "${_LAYUP_RUNTIME_RPATH}"
+    INSTALL_RPATH "${_LAYUP_RUNTIME_RPATH}"
+  )
+endif()
 
 # The install directory is the output (wheel) directory
 install(TARGETS _core DESTINATION _layup_cpp)
