@@ -32,6 +32,7 @@ from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.debiasing import debias, generate_bias_dict
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
+from layup.utilities.herget_iod import herget_with_assist
 
 logger = logging.getLogger(__name__)
 
@@ -415,6 +416,8 @@ def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
 
     if iod.lower() == "gauss":
         solns = do_gauss_iod(observations, seq)
+    elif iod.lower() == "herget":
+        solns = do_herget_iod(observations, seq, args, aux)
     else:
         raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
 
@@ -486,6 +489,8 @@ def _orbitfit(
     sort_array: bool = True,
     weight_data: bool = False,
     iod: str = "gauss",
+    args=None,
+    aux=None
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -617,8 +622,8 @@ def _orbitfit(
 
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
-            if iod.lower() in ["gauss"]:
-                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower())
+            if iod.lower() in ["gauss", "herget"]:
+                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower(), args=args, aux=aux)
             else:
                 res = do_other_fit(iod=iod.lower())
         else:
@@ -659,6 +664,8 @@ def orbitfit(
     debias=False,
     weight_data=False,
     iod="gauss",
+    args=None,
+    aux=None,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -708,6 +715,8 @@ def orbitfit(
         bias_dict=bias_dict,
         weight_data=weight_data,
         iod=iod,
+        args=args,
+        aux=aux,
     )
 
 
@@ -719,6 +728,7 @@ def orbitfit_cli(
     chunk_size: int = 10_000,
     num_workers: int = -1,
     cli_args: Optional[Namespace] = None,
+    aux: any = None
 ):
     """This is the function that is called from the command line
 
@@ -864,6 +874,8 @@ def orbitfit_cli(
             debias=debias,
             weight_data=weight_data,
             iod=iod,
+            args=cli_args,
+            aux=aux,
         )
 
         # Convert the fit_orbits to the preferred output format
