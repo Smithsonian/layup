@@ -87,11 +87,13 @@ if(APPLE)
   set(_LAYUP_RUNTIME_RPATH "@loader_path/..")
 elseif(UNIX)
   set(_LAYUP_RUNTIME_RPATH "$ORIGIN/..")
+else()
+  message(FATAL_ERROR "Can't set _LAYUP_RUNTIME_RPATH, don't recognize OS")
 endif()
 
 if(DEFINED _LAYUP_RUNTIME_RPATH)
   set_target_properties(_core PROPERTIES
-    BUILD_WITH_INSTALL_RPATH ON
+    BUILD_WITH_INSTALL_RPATH OFF # let CMake use BUILD_RPATH in-tree
     BUILD_RPATH "${_LAYUP_RUNTIME_RPATH}"
     INSTALL_RPATH "${_LAYUP_RUNTIME_RPATH}"
   )
@@ -99,3 +101,6 @@ endif()
 
 # The install directory is the output (wheel) directory
 install(TARGETS _core DESTINATION _layup_cpp)
+install(FILES ${LIBASSIST_SO} ${LIBREBOUND_SO}
+  DESTINATION _layup_cpp
+)
