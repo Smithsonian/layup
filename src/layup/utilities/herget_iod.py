@@ -50,9 +50,9 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     solution.state = state
     solution.epoch = obs_1.epoch
     solution.method = "herget"
-    solution.niter = 0
+    solution.niter = iteration
     solution.flag = 0  # Success flag
-    solution.ndof = 0
+    solution.ndof = len(observations)
     solution.csq = 0.0
     solution.cov = [0.01] * 36
 
@@ -71,14 +71,9 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     
     sim.add(x = r_1[0], y = r_1[1], z = r_1[2], vx = vx1, vy =vy1, vz = vz1)
     var = sim.add_variation(testparticle=0)
-    #sim.add(x = r_1[0], y = r_1[1], z = r_1[2], vx = vx1, vy =vy1, vz = vz1)
-    #var2 = sim.add_variation(testparticle=1)
     var.particles[0].xyz = rho_hat_1
-    #var2.particles[0].xyz = -rho_hat_1
     ex = assist.Extras(sim, ephem)
     sim.t = t_1 - ephem.jd_ref
-    times = []
-    rhos = []
     a1, a2, b = np.zeros((3, 2*len(observations)))
 
 
@@ -89,11 +84,10 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
         A = observation.get_a_vec()
         D = observation.get_d_vec()
         
-        r_e = np.array(observation.observer_position)
         t = observation.epoch
-        #sim.t = t_1 - ephem.jd_ref
         sim.integrate(t - ephem.jd_ref)
 
+        r_e = np.array(observation.observer_position)
         r = sim.particles[0].xyz
         r_var = var.particles[0].xyz
         rho = r - r_e
@@ -106,11 +100,7 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
         a1[2*i] = (b[2*i] - np.dot(rho + rho_var, A))
         a1[2*i + 1] = (b[2*i + 1] - np.dot(rho + rho_var, D))
 
-        times.append(t)
-        rhos.append(np.sqrt(sum(np.array(rho)**2)))
     
-    plt.plot(times, a1[1::2], '.')
-    plt.savefig('rho_over_time.png')
 
     # Do the same for rho_n, set up simulation again
     vxn, vyn, vzn = sim.particles[0].vxyz
@@ -121,31 +111,23 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     ex = assist.Extras(sim, ephem)
     sim.t = t_n - ephem.jd_ref
 
-    times = []
-    rhos = []
-    print('going backwards')
+    
     for i, observation in enumerate(observations):
         A = observation.get_a_vec()
         D = observation.get_d_vec()
 
-        r_e = np.array(observation.observer_position)
+        
         t = observation.epoch
         
-        #sim.t = t_n - ephem.jd_ref
         sim.integrate(t - ephem.jd_ref)
-
+        r_e = np.array(observation.observer_position)
         r = sim.particles[0].xyz
         r_var = var.particles[0].xyz
-        #r_var2 = var2.particles[0].xyz
         rho = r - r_e
-        rho_var = r_var #- r_e
-        #rho_var2 = r_var2 - r_e
-        times.append(t)
-        rhos.append(np.sqrt(sum(np.array(rho_var)**2)))
         
         # Add to array
-        a2[2*i] = (b[2*i] - np.dot(rho + rho_var, A))
-        a2[2*i + 1] = (b[2*i + 1] - np.dot(rho + rho_var, D))
+        a2[2*i] = (b[2*i] - np.dot(rho + r_var, A))
+        a2[2*i + 1] = (b[2*i + 1] - np.dot(rho + r_var, D))
 
         
 
@@ -154,7 +136,6 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     sigma_a1squared = sum(a1**2)
     sigma_a2squared = sum(a2**2)
     sigma_a1a2 = sum(a1*a2)
-    print(sum(b), a1[1], a2[1], sigma_a1b, sigma_a2b, sigma_a1squared, sigma_a2squared, sigma_a1a2)
 
     delta_rho1 = (sigma_a1b*sigma_a2squared - sigma_a2b*sigma_a1a2)/(sigma_a1a2**2 - sigma_a1squared*sigma_a2squared)
     delta_rhon = (-delta_rho1*sigma_a1squared - sigma_a1b)/sigma_a1a2
@@ -228,7 +209,6 @@ def find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change):
         diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(sim.particles[0].xyz), np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz))
         vz1 -= diff 
     [vxn, vyn, vzn] = sim.particles[0].vxyz
-    #print('new_pos should be' ,np.array(sim.particles[0].xyz) - diff*np.array(var.particles[0].xyz))
     return vx1, vy1, vz1, vxn, vyn, vzn, np.array(sim.particles[0].xyz)
 
 def find_mag_to_adjust(P, Q, R):
