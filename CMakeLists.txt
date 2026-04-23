@@ -15,17 +15,49 @@ project(
   VERSION ${SKBUILD_PROJECT_VERSION}
   LANGUAGES CXX C)
 
-# This make will compile assist and rebound
+# Find platform-specific suffix for shared libraries
 execute_process(
-  COMMAND make
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src
+  COMMAND ${PYTHON_EXECUTABLE} -c
+          "import importlib.machinery as m; print(m.EXTENSION_SUFFIXES[0])"
+  OUTPUT_VARIABLE EXT_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-add_custom_target(
-  symlink_libs
-  ALL COMMAND . ${CMAKE_CURRENT_SOURCE_DIR}/create_lib_links.sh
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} -c
+          "import assist, os; print(os.path.dirname(assist.__file__))"
+  OUTPUT_VARIABLE ASSIST_PKG_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE ASSIST_RESULT
 )
+if(NOT ASSIST_RESULT EQUAL 0)
+  message(FATAL_ERROR "Could not find assist package. Is assist installed in the build environment?")
+endif()
+
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} -c
+          "import rebound, os; print(os.path.dirname(rebound.__file__))"
+  OUTPUT_VARIABLE REBOUND_PKG_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE REBOUND_RESULT
+)
+if(NOT REBOUND_RESULT EQUAL 0)
+  message(FATAL_ERROR "Could not find rebound package. Is rebound installed in the build environment?")
+endif()
+
+# libassist.so and librebound.so sit in site-packages, one level up from the package dir
+cmake_path(GET ASSIST_PKG_DIR PARENT_PATH ASSIST_SITE_PACKAGES)
+cmake_path(GET REBOUND_PKG_DIR PARENT_PATH REBOUND_SITE_PACKAGES)
+
+file(GLOB LIBASSIST_SO "${ASSIST_SITE_PACKAGES}/libassist${EXT_SUFFIX}")
+file(GLOB LIBREBOUND_SO "${REBOUND_SITE_PACKAGES}/librebound${EXT_SUFFIX}")
+
+if(NOT LIBASSIST_SO)
+  message(FATAL_ERROR "libassist${EXT_SUFFIX} not found in ${ASSIST_SITE_PACKAGES}")
+endif()
+if(NOT LIBREBOUND_SO)
+  message(FATAL_ERROR "librebound${EXT_SUFFIX} not found in ${REBOUND_SITE_PACKAGES}")
+endif()
 
 execute_process(
   COMMAND cmake
@@ -34,36 +66,7 @@ execute_process(
 
 include_directories(
   include/eigen
-  include/assist/src
-  include/rebound/src
   include/autodiff
-)
-
-link_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src
-  ${CMAKE_CURRENT_SOURCE_DIR}include/rebound/src
-)
-
-# Discover the assist library after building
-add_library(
-  assist
-  STATIC
-  IMPORTED
-)
-set_target_properties(
-  assist PROPERTIES
-  IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/libassist.so
-)
-
-# Discover the rebound library after building
-add_library(
-  rebound
-  STATIC
-  IMPORTED
-)
-set_target_properties(
-  rebound PROPERTIES
-  IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/include/assist/src/librebound.so
 )
 
 # Find the module development requirements (requires FindPython from 3.17 or
@@ -75,10 +78,29 @@ find_package(pybind11 CONFIG REQUIRED)
 # this)
 python_add_library(_core MODULE src/main.cpp WITH_SOABI)
 # link all the required libraries
-target_link_libraries(_core PRIVATE pybind11::headers assist rebound)
+target_link_libraries(_core PRIVATE pybind11::headers ${LIBASSIST_SO} ${LIBREBOUND_SO})
 
 # This is passing in the version as a define just as an example
 target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
 
+if(APPLE)
+  set(_LAYUP_RUNTIME_RPATH "@loader_path/..")
+elseif(UNIX)
+  set(_LAYUP_RUNTIME_RPATH "$ORIGIN/..")
+else()
+  message(FATAL_ERROR "Can't set _LAYUP_RUNTIME_RPATH, don't recognize OS")
+endif()
+
+if(DEFINED _LAYUP_RUNTIME_RPATH)
+  set_target_properties(_core PROPERTIES
+    BUILD_WITH_INSTALL_RPATH OFF # let CMake use BUILD_RPATH in-tree
+    BUILD_RPATH "${_LAYUP_RUNTIME_RPATH}"
+    INSTALL_RPATH "${_LAYUP_RUNTIME_RPATH}"
+  )
+endif()
+
 # The install directory is the output (wheel) directory
 install(TARGETS _core DESTINATION _layup_cpp)
+install(FILES ${LIBASSIST_SO} ${LIBREBOUND_SO}
+  DESTINATION _layup_cpp
+)
