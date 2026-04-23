@@ -368,13 +368,8 @@ def do_herget_iod(observations, seq, args, aux):
     """
     # Get gauss solution, using the first, middle, and last observation
     # of the primary sequence
-    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
+    solns = herget_with_assist(observations, seq, 0.001, args=args, aux=aux)
 
-    logger.debug(f"Sequence indexs passed to Herget: {idx0}, {idx2}")
-    print(dir(observations[0]))
-    solns = herget_with_assist(observations, seq, 0.0000001, args=args, aux=aux)
-    for attr in ["cov", "csq", "epoch", "flag", "method", "ndof", "niter", "state"]:
-        print(attr, getattr(solns[0], attr))
     return solns
 
 

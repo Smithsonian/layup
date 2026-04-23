@@ -44,18 +44,33 @@ namespace orbit_fit
     Eigen::Vector3d a_vec_from_rho_hat(const Eigen::Vector3d &rho_hat)
     {
         Eigen::Vector3d a_vec;
-        a_vec.x() = rho_hat.z();
-        a_vec.y() = 0.0;
-        a_vec.z() = -rho_hat.x();
+        double alpha = atan2(rho_hat.y(), rho_hat.x());
+        double delta = asin(rho_hat.z());
+        double ca = cos(alpha);
+        double sa = sin(alpha);
+        double cd = cos(delta);
+        double sd = sin(delta);
+
+        a_vec.x() = -sa;
+        a_vec.y() =  ca;
+        a_vec.z() = 0.0;
         return a_vec;
     }
+
 
     Eigen::Vector3d d_vec_from_rho_hat(const Eigen::Vector3d &rho_hat)
     {
         Eigen::Vector3d d_vec;
-        d_vec.x() = -rho_hat.x() * rho_hat.y();
-        d_vec.y() = rho_hat.x() * rho_hat.x() + rho_hat.z() * rho_hat.z();
-        d_vec.z() = -rho_hat.z() * rho_hat.y();
+        double alpha = atan2(rho_hat.y(), rho_hat.x());
+        double delta = asin(rho_hat.z());
+        double ca = cos(alpha);
+        double sa = sin(alpha);
+        double cd = cos(delta);
+        double sd = sin(delta);
+
+        d_vec.x() = -sd * ca;
+        d_vec.y() = -sd * sa;
+        d_vec.z() =  cd;
         return d_vec;
     }
     struct AstrometryObservation
