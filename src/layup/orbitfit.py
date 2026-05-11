@@ -349,7 +349,46 @@ def do_gauss_iod(observations, seq):
     return solns
 
 
-def do_fit(observations, seq, cache_dir, iod="gauss"):
+def _bk_route_r_AU(solns):
+    """Estimate r from Gauss IOD's first solution, for the BK auto-dispatch.
+    Returns 0.0 if no solution is available."""
+    if not solns:
+        return 0.0
+    s0 = solns[0]
+    sx, sy, sz = s0.state[0], s0.state[1], s0.state[2]
+    return float((sx * sx + sy * sy + sz * sz) ** 0.5)
+
+
+# Module-level cache: whether bk_orbitfit's ephem has been loaded for
+# the given cache_dir. set_ephem itself is idempotent on liborbfit's
+# side but reopens the kernel files; this cache avoids the cost.
+_bk_ephem_cache_dir = None
+
+
+def _ensure_bk_ephem(cache_dir) -> bool:
+    """Lazily load BK's ASSIST kernels. Returns True if ready, False on error."""
+    global _bk_ephem_cache_dir
+    if _bk_ephem_cache_dir == cache_dir:
+        return True
+    try:
+        from layup import bk_orbitfit
+    except Exception as e:
+        logger.warning(f"bk_orbitfit not importable: {e}")
+        return False
+    try:
+        bk_orbitfit.set_ephem(
+            os.path.join(str(cache_dir), "linux_p1550p2650.440"),
+            os.path.join(str(cache_dir), "sb441-n16.bsp"))
+    except Exception as e:
+        logger.warning(f"BK ephem load failed for cache_dir={cache_dir}: {e}")
+        return False
+    _bk_ephem_cache_dir = cache_dir
+    return True
+
+
+def do_fit(observations, seq, cache_dir, iod="gauss",
+           engine: Literal["auto", "cartesian", "bk"] = "cartesian",
+           bk_threshold_AU: float = 10.0):
     """Carry out an orbit fit to the observations in a
     series of steps.  A list of lists of observation indices
     specifies the order in which the fit proceeds.
@@ -396,6 +435,35 @@ def do_fit(observations, seq, cache_dir, iod="gauss"):
         x = FitResult()
         x.flag = 5
         return x
+
+    # Engine dispatch. BK (Bernstein-Khushalani) is well-conditioned
+    # for distant short-arc objects (it parameterizes in tangent-plane
+    # coords and uses a variational Jacobian); Cartesian-LM is better
+    # for inner-SS / NEO-like targets. Route based on the Gauss IOD's
+    # first-solution heliocentric distance.
+    chosen_engine = engine
+    if chosen_engine == "auto":
+        r_iod = _bk_route_r_AU(solns)
+        chosen_engine = "bk" if r_iod >= bk_threshold_AU else "cartesian"
+        logger.debug(f"do_fit auto-dispatch: Gauss r={r_iod:.3f} AU, "
+                     f"threshold={bk_threshold_AU} AU -> {chosen_engine}")
+
+    if chosen_engine == "bk":
+        if _ensure_bk_ephem(cache_dir):
+            from layup import bk_orbitfit
+            try:
+                x = bk_orbitfit.do_bk_fit(observations)
+            except Exception as e:
+                logger.warning(f"BK fit raised {e}; falling back to Cartesian")
+                chosen_engine = "cartesian"
+            else:
+                if x.flag == 0:
+                    return x
+                logger.debug(f"BK fit returned flag={x.flag}; "
+                             f"falling back to Cartesian path")
+                chosen_engine = "cartesian"
+        else:
+            chosen_engine = "cartesian"
 
     assist_ephem = get_ephem(cache_dir)
 
