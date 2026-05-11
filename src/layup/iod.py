@@ -32,6 +32,7 @@ implementation through a class hierarchy.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Callable, Optional, Sequence
 
 from layup.routines import FitResult, Observation, gauss
@@ -41,6 +42,24 @@ logger = logging.getLogger(__name__)
 GMtotal = 0.0002963092748799319
 AU_M = 149597870700
 SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
+
+# Default bounds for the cheap physical-feasibility filter. We
+# deliberately *don't* check bound-orbit energy here: Gauss's velocity
+# component can be wildly wrong (5-10× circular) for a seed whose
+# *position* is correct, and LM walks those into convergence reliably.
+# Throwing them out would silently kill the right root in cases like
+# the 41 AU classical KBO where Gauss returns a hyperbolic-looking
+# velocity but the right geometry.
+_MIN_R_AU = 0.05      # interior to Mercury — almost certainly unphysical
+_MAX_R_AU = 1000.0    # well past the Kuiper-belt range we typically care about
+
+# Geocentric distance below which we treat a candidate as a close-Earth-
+# approach risk: full ASSIST integration will get stuck on the close
+# encounter (and a 2-body workaround would silently mishandle the real
+# physics of NEO close passes — those exist and need their own solution
+# eventually). For now the prefilter just passes such candidates through
+# to LM unchanged; LM may also be slow on them, which is a known issue.
+_CLOSE_EARTH_AU = 0.1
 
 
 # An IOD method takes (observations, seq) and returns either a list of
@@ -96,3 +115,176 @@ def gauss_iod(observations, seq):
 
 
 register_iod("gauss", gauss_iod)
+
+
+# ----------------------------------------------------------------------- #
+# Candidate filter (held-out angular residual).                           #
+# ----------------------------------------------------------------------- #
+
+def _passes_physical_bounds(candidate,
+                            min_r_au: float = _MIN_R_AU,
+                            max_r_au: float = _MAX_R_AU) -> bool:
+    """Cheap algebraic feasibility check on an IOD candidate state.
+
+    Rejects candidates with non-positive r² or |r| outside [min, max]
+    AU. Deliberately does *not* reject hyperbolic-looking velocities:
+    Gauss's velocity can be wildly wrong even for the correct
+    geometric root, and LM walks those to convergence routinely.
+    """
+    sx, sy, sz = candidate.state[0], candidate.state[1], candidate.state[2]
+    r2 = sx * sx + sy * sy + sz * sz
+    if r2 <= 0.0:
+        return False
+    r = math.sqrt(r2)
+    if r < min_r_au or r > max_r_au:
+        return False
+    return True
+
+
+def _predict_rho_hat(ephem, state, state_epoch, obs):
+    """Propagate `state` to `obs.epoch` via full ASSIST and return the
+    predicted apparent unit direction (no light-time correction; coarse
+    filter only).
+    """
+    import rebound, assist
+    import numpy as np
+
+    sim = rebound.Simulation()
+    sim.t = float(state_epoch) - ephem.jd_ref
+    sim.add(x=state[0], y=state[1], z=state[2],
+            vx=state[3], vy=state[4], vz=state[5])
+    extras = assist.Extras(sim, ephem)
+    extras.integrate_or_interpolate(float(obs.epoch) - ephem.jd_ref)
+    p = sim.particles[0]
+    rx = p.x - obs.observer_position[0]
+    ry = p.y - obs.observer_position[1]
+    rz = p.z - obs.observer_position[2]
+    rho = math.sqrt(rx * rx + ry * ry + rz * rz)
+    return np.array([rx / rho, ry / rho, rz / rho])
+
+
+def _inertial_min_geocentric_AU(state, state_epoch, observations) -> float:
+    """Smallest |candidate - observer| over the observation arc, treating
+    candidate motion as inertial (position + velocity·Δt).
+
+    Used to detect candidates whose trajectory passes close to Earth (or
+    the ground observer); full ASSIST integration would then spend most
+    of its time resolving the close encounter. Inertial-extrapolation is
+    OK for the detection (we just need an order of magnitude); the actual
+    close approach with gravity could be different.
+    """
+    min_d2 = float("inf")
+    sx, sy, sz, vx, vy, vz = (state[i] for i in range(6))
+    for obs in observations:
+        dt = float(obs.epoch) - float(state_epoch)
+        px = sx + vx * dt
+        py = sy + vy * dt
+        pz = sz + vz * dt
+        ox, oy, oz = obs.observer_position
+        dx = px - ox; dy = py - oy; dz = pz - oz
+        d2 = dx * dx + dy * dy + dz * dz
+        if d2 < min_d2:
+            min_d2 = d2
+    return math.sqrt(min_d2)
+
+
+def filter_candidates_by_residual(
+    candidates,
+    observations,
+    ephem,
+    threshold_sigma: float = 1000.0,
+    min_obs_for_filter: int = 4,
+    close_earth_AU: float = _CLOSE_EARTH_AU,
+):
+    """Drop IOD candidates whose predicted positions miss the observations
+    by more than `threshold_sigma` times the per-axis astrometric σ.
+
+    The right Gauss root predicts the observations within a few σ; phantom
+    roots are typically off by 10⁵-10⁶ σ. A loose threshold (1000σ
+    default) keeps the right root in every realistic case while throwing
+    out the obviously-wrong ones before LM ever runs on them.
+
+    Candidates whose inertial trajectory passes within `close_earth_AU`
+    of the observer at any obs time are passed through unfiltered. Full
+    ASSIST integration gets stuck on close Earth encounters (tens of
+    seconds per propagation), and replacing it with a 2-body
+    approximation would silently mishandle the real physics of NEO close
+    passes — those are valid science targets that need a different
+    solution. Until that solution exists, we just skip the filter for
+    such candidates and let LM handle them (slowly, on the same close
+    encounters, but that's a separate known issue).
+
+    Parameters
+    ----------
+    candidates : list[FitResult]
+        Output of an IOD method (states + epoch filled in).
+    observations : sequence[Observation]
+        Full observation list; we evaluate the candidate against every
+        one of them.
+    ephem : assist.Ephem
+        The Python ASSIST ephemeris handle (e.g.
+        `assist.Ephem(planets_path, sb_path)`). Not the C struct from
+        layup.routines.get_ephem.
+    threshold_sigma : float
+        Reject candidates whose angular residual exceeds this multiple
+        of the per-observation σ on any observation.
+    min_obs_for_filter : int
+        Bypass the filter (return all candidates that pass the physical
+        bounds) when there are fewer than this many observations.
+    close_earth_AU : float
+        Pass-through threshold for the close-Earth-approach check
+        described above.
+
+    Returns
+    -------
+    list[FitResult]
+        Filtered list. If every candidate fails the residual test, the
+        list of physical-bound-passing candidates is returned instead —
+        we'd rather hand a bad seed to LM than no seed at all.
+    """
+    import numpy as np
+
+    physical = [c for c in candidates if _passes_physical_bounds(c)]
+    if not physical:
+        # Nothing passes even the cheap test — surface the original
+        # list so the picker decides.
+        return list(candidates)
+
+    if len(observations) < min_obs_for_filter:
+        # Not enough leverage; rely on physical bounds only.
+        return physical
+
+    survivors = []
+    for c in physical:
+        # Close-Earth-approach pass-through: avoid both the integrator
+        # blowup and a silently-wrong 2-body shortcut.
+        min_geo = _inertial_min_geocentric_AU(c.state, c.epoch, observations)
+        if min_geo < close_earth_AU:
+            survivors.append(c)
+            continue
+
+        ok = True
+        for obs in observations:
+            try:
+                pred = _predict_rho_hat(ephem, c.state, c.epoch, obs)
+            except Exception:
+                # ASSIST refused to integrate (e.g. state walked outside
+                # the kernel time range). Treat as a failed candidate.
+                ok = False
+                break
+            actual = np.asarray(obs.rho_hat).flatten()
+            cos_sep = float(np.clip(pred @ actual, -1.0, 1.0))
+            sep_rad = math.acos(cos_sep)
+            sigma_ra  = float(obs.ra_unc  if obs.ra_unc  is not None else 1.0 / 206265)
+            sigma_dec = float(obs.dec_unc if obs.dec_unc is not None else 1.0 / 206265)
+            sigma = max(sigma_ra, sigma_dec)
+            if sep_rad > threshold_sigma * sigma:
+                ok = False
+                break
+        if ok:
+            survivors.append(c)
+
+    if not survivors:
+        # Don't reject everything — fall back to physically-OK candidates.
+        return physical
+    return survivors

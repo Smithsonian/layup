@@ -18,7 +18,7 @@ from layup.routines import (
     run_from_vector_with_initial_guess,
 )
 from layup.convert import convert
-from layup.iod import get_iod, iod_methods
+from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
@@ -342,6 +342,35 @@ _PICKER_MIN_R_HELIO_AU = 0.3        # reject roots with r < this as unphysical
 _PICKER_SCREEN_ITER_MAX = 80        # cheap LM budget for the first pass
 _PICKER_FULL_ITER_MAX   = 100       # full LM budget for the fallback pass
 
+_PREFILTER_THRESHOLD_SIGMA = 1000.0  # held-out residual filter cutoff
+
+
+# Cache of the Python-side assist.Ephem handle. The C-side get_ephem()
+# from layup.routines returns the C struct; the Python residual filter
+# needs the rebound/assist Python wrapper instead, so we cache one per
+# cache_dir.
+_assist_python_ephem_cache: dict = {}
+
+
+def _get_python_ephem(cache_dir):
+    """Lazy-load and cache the Python-side assist.Ephem for the filter."""
+    key = str(cache_dir)
+    if key in _assist_python_ephem_cache:
+        return _assist_python_ephem_cache[key]
+    try:
+        import assist
+    except ImportError:
+        return None
+    try:
+        eph = assist.Ephem(
+            os.path.join(key, "linux_p1550p2650.440"),
+            os.path.join(key, "sb441-n16.bsp"))
+    except Exception as e:
+        logger.warning(f"assist.Ephem load failed for {cache_dir}: {e}")
+        return None
+    _assist_python_ephem_cache[key] = eph
+    return eph
+
 
 def _pick_best_root(candidates, min_r_au):
     """Pick the best converged candidate from a list of LM results.
@@ -367,7 +396,8 @@ def _pick_best_root(candidates, min_r_au):
 def do_fit(observations, seq, cache_dir, iod="gauss",
            screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
            full_iter_max: int = _PICKER_FULL_ITER_MAX,
-           min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU):
+           min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
+           prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA):
     """Carry out an orbit fit to a list of observations.
 
     Pipeline:
@@ -417,6 +447,23 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
         x = FitResult()
         x.flag = 5
         return x
+
+    # Pre-filter the IOD candidates by predicted-vs-observed residual
+    # on every observation. The right Gauss root predicts the full
+    # observation set within a few σ; phantom roots typically miss by
+    # 10⁵+ σ. Throwing those out before any LM iteration runs cuts
+    # the picker loop down to 1-2 LM fits per case in the common
+    # case (vs up to 8 brute-force LMs). Loose threshold (default
+    # 1000σ) so the right root is never rejected.
+    py_ephem = _get_python_ephem(cache_dir)
+    if py_ephem is not None and len(solns) > 1:
+        before = len(solns)
+        solns = filter_candidates_by_residual(
+            solns, observations, py_ephem,
+            threshold_sigma=prefilter_threshold_sigma)
+        if len(solns) < before:
+            logger.debug(f"IOD pre-filter: kept {len(solns)}/{before} "
+                         f"candidates at {prefilter_threshold_sigma}σ")
 
     assist_ephem = get_ephem(cache_dir)
 
