@@ -22,8 +22,12 @@ dependencies = [
     "pooch",
     "tqdm",
     "sorcha @ git+https://github.com/dirac-institute/sorcha.git",
+    "assist",
+    "rebound",
+    "pybind11",
     "jax",
-    "scipy"
+    "scipy",
+    "pytest"
 ]
 
 [project.scripts]
@@ -56,9 +60,14 @@ dev = [
 [build-system]
 requires = [
     "scikit-build-core>=0.10",
-    "pybind11"
+    "pybind11",
+    "assist",
+    "rebound"
 ]
 build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+wheel.packages = ["src/layup", "src/layup_cmdline"]
 
 [tool.setuptools_scm]
 write_to = "src/layup/_version.py"
@@ -124,3 +133,6 @@ ignore = [
 
 [tool.coverage.run]
 omit=["src/layup/_version.py"]
+
+[tool.pdm.scripts]
+test = "pytest {args}"

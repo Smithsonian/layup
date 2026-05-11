@@ -41,5 +41,4 @@ jobs:
         pip list
     - name: Run unit tests with pytest
       run: |
-        export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH
         python -m pytest -n auto
