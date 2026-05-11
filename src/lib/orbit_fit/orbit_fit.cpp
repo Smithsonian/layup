@@ -708,7 +708,10 @@ namespace orbit_fit
         return ephem;
     }
 
-    FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
+    FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem,
+                                                  FitResult initial_guess,
+                                                  std::vector<Observation> &detections,
+                                                  size_t iter_max = 100)
     {
         int success = 1;
         size_t iters;
@@ -718,8 +721,6 @@ namespace orbit_fit
         std::vector<residuals> resid_vec(detections.size());
         std::vector<partials> partials_vec(detections.size());
 
-        // Make these parameters flexible.
-        size_t iter_max = 100;
         double eps = 1e-12;
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
@@ -788,9 +789,16 @@ namespace orbit_fit
         py::class_<assist_ephem>(m, "assist_ephem");
         m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Core orbit fit function.)pbdoc");
         m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");
-        m.def("run_from_vector_with_initial_guess", &orbit_fit::run_from_vector_with_initial_guess, R"pbdoc(
-                Takes an assist_ephem object, a vector of observations and an initial guess
-                and runs orbit fit.
+        m.def("run_from_vector_with_initial_guess",
+              &orbit_fit::run_from_vector_with_initial_guess,
+              py::arg("ephem"), py::arg("initial_guess"),
+              py::arg("detections"), py::arg("iter_max") = 100,
+              R"pbdoc(
+                Takes an assist_ephem object, a vector of observations, an
+                initial guess, and (optionally) a cap on LM iterations
+                (`iter_max`, default 100), and runs orbit fit. Reducing
+                iter_max gives a cheap screening pass for use in
+                multi-candidate IOD picker loops.
             )pbdoc");
     }
 #endif /* Py_PYTHON_H */
