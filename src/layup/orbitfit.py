@@ -17,6 +17,11 @@ from layup.routines import (
     get_ephem,
     run_from_vector_with_initial_guess,
 )
+try:
+    from layup.routines import get_ias15_min_dt, set_ias15_min_dt
+except ImportError:  # extension not rebuilt yet
+    get_ias15_min_dt = lambda: 0.0
+    set_ias15_min_dt = lambda v: None
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
@@ -344,6 +349,18 @@ _PICKER_FULL_ITER_MAX   = 100       # full LM budget for the fallback pass
 
 _PREFILTER_THRESHOLD_SIGMA = 1000.0  # held-out residual filter cutoff
 
+# IAS15 step-size floor used during the multi-root picker. Without a
+# floor, LM grinds for minutes on phantom Gauss roots whose trajectories
+# pass close to Earth (the integrator chases ever-smaller steps to
+# resolve the close encounter). 1e-3 days (~86 s) gives 100-1000×
+# speedup on those cases with zero detectable change in the final
+# orbit on well-behaved cases (verified on diagnostic/scan). Real
+# close-Earth-approach asteroids would see a few arcsec accuracy loss
+# during the encounter itself, but observations are essentially never
+# taken at closest approach, so the LM fit is unaffected. Set to 0 to
+# disable.
+_PICKER_IAS15_MIN_DT = 1e-3
+
 
 # Cache of the Python-side assist.Ephem handle. The C-side get_ephem()
 # from layup.routines returns the C struct; the Python residual filter
@@ -397,7 +414,8 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
            screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
            full_iter_max: int = _PICKER_FULL_ITER_MAX,
            min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
-           prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA):
+           prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
+           picker_ias15_min_dt: float = _PICKER_IAS15_MIN_DT):
     """Carry out an orbit fit to a list of observations.
 
     Pipeline:
@@ -473,20 +491,33 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
     # cheap tier. Gauss's polynomial gives up to 8 real roots; historic
     # do_fit committed to solns[0] (largest r), which is often a
     # phantom outer-SS solution for NEO-like targets.
+    #
+    # During this loop we push an IAS15 min-dt floor so phantom roots
+    # whose trajectories pass close to Earth can't tie up the
+    # integrator for minutes (100-1000× wallclock blowup observed on
+    # diagnostic/scan; no measurable accuracy change on well-behaved
+    # orbits). The setting is restored on every exit path.
+    saved_min_dt = get_ias15_min_dt()
+    if picker_ias15_min_dt > 0:
+        set_ias15_min_dt(picker_ias15_min_dt)
+
     obs = [observations[i] for i in seq[0]]
-    candidates = [
-        run_from_vector_with_initial_guess(assist_ephem, soln, obs,
-                                           screen_iter_max)
-        for soln in solns
-    ]
-    x = _pick_best_root(candidates, min_r_helio_AU)
-    if x is None:
+    try:
         candidates = [
             run_from_vector_with_initial_guess(assist_ephem, soln, obs,
-                                               full_iter_max)
+                                               screen_iter_max)
             for soln in solns
         ]
         x = _pick_best_root(candidates, min_r_helio_AU)
+        if x is None:
+            candidates = [
+                run_from_vector_with_initial_guess(assist_ephem, soln, obs,
+                                                   full_iter_max)
+                for soln in solns
+            ]
+            x = _pick_best_root(candidates, min_r_helio_AU)
+    finally:
+        set_ias15_min_dt(saved_min_dt)
 
     if x is None:
         # Still no convergence — surface the least-bad attempt so the

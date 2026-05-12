@@ -54,6 +54,39 @@
 
 #include "orbit_fit.h"
 #include "../gauss/gauss.cpp"
+
+extern "C" {
+#include "rebound.h"
+}
+
+namespace orbit_fit
+{
+    // Optional floor on the IAS15 adaptive step size, in days. When > 0,
+    // every freshly-created REBOUND sim has its ri_ias15.min_dt set to
+    // this value so the integrator stops shrinking its step below the
+    // floor during close encounters. The trade-off is accuracy:
+    // truncating IAS15's adaptive control during a real close
+    // encounter introduces error in the encounter geometry, but for
+    // the LM-picker use case this is acceptable — a wildly-wrong
+    // Gauss root sent through a close approach just needs to report
+    // "big residual," not a precise integration.
+    //
+    // Default 0 means "no floor" (historical behavior). Setting
+    // 1e-3 days (≈86 s) bounds the worst-case LM iteration to
+    // O(arc_days / 1e-3) integrator steps, which kills the hours-long
+    // grinds on phantom inner-SS roots and costs <a few arcsec on
+    // real well-behaved orbits.
+    static double g_ias15_min_dt_days = 0.0;
+
+    inline void set_ias15_min_dt(double v) { g_ias15_min_dt_days = v; }
+    inline double get_ias15_min_dt(void)   { return g_ias15_min_dt_days; }
+
+    static inline void apply_ias15_min_dt(struct reb_simulation *r) {
+        if (g_ias15_min_dt_days > 0.0)
+            r->ri_ias15.min_dt = g_ias15_min_dt_days;
+    }
+}
+
 #include "predict.cpp"
 
 using std::cout;
@@ -295,6 +328,7 @@ namespace orbit_fit
 
         // Pass in this simulation stuff to keep it flexible
         struct reb_simulation *r = reb_simulation_create();
+        apply_ias15_min_dt(r);
         struct assist_extras *ax = assist_attach(r, ephem);
 
         // 0. Set initial time, relative to ephem->jd_ref
@@ -800,6 +834,17 @@ namespace orbit_fit
                 iter_max gives a cheap screening pass for use in
                 multi-candidate IOD picker loops.
             )pbdoc");
+        m.def("set_ias15_min_dt", &orbit_fit::set_ias15_min_dt,
+              py::arg("days"),
+              R"pbdoc(
+                Set a floor on IAS15's adaptive step size in days. Default
+                0 = no floor. A typical safe value is 1e-3 (~86 s): bounds
+                worst-case LM-iteration wall time on phantom IOD roots
+                whose trajectories pass close to Earth, at the cost of a
+                few arcsec of accuracy in real close encounters.
+            )pbdoc");
+        m.def("get_ias15_min_dt", &orbit_fit::get_ias15_min_dt,
+              R"pbdoc(Current IAS15 min-dt floor in days (0 = off).)pbdoc");
     }
 #endif /* Py_PYTHON_H */
 
