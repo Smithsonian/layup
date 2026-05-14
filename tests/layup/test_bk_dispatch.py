@@ -18,22 +18,25 @@ from layup import orbitfit
 from layup.routines import Observation
 
 
-# liborbfit.so may live in the repo root via create_lib_links.sh, or be
-# pointed at by LIBORBFIT_PATH. If neither is present, skip these tests.
+# The BK path needs the `liborbfit` Python package importable AND
+# liborbfit.so loadable (via LIBORBFIT_PATH or the wrapper's default
+# search).  We force the load here by calling set_jacobian_mode,
+# which exercises the ctypes binding without doing any real work.
+# If anything fails, skip rather than error so CI on machines without
+# the BK build is unaffected.
 def _liborbfit_available() -> bool:
-    candidates = []
-    if "LIBORBFIT_PATH" in os.environ:
-        candidates.append(Path(os.environ["LIBORBFIT_PATH"]))
-    here = Path(__file__).resolve().parent
-    repo_root = here.parent.parent
-    candidates.append(repo_root / "liborbfit.so")
-    candidates.append(repo_root / "src" / "liborbfit.so")
-    return any(c.exists() for c in candidates)
+    try:
+        import liborbfit
+        liborbfit.set_jacobian_mode(liborbfit.JACOBIAN_VARIATIONAL)
+        return True
+    except (ImportError, OSError, RuntimeError):
+        return False
 
 
 pytestmark = pytest.mark.skipif(
     not _liborbfit_available(),
-    reason="liborbfit.so not available (run create_lib_links.sh)")
+    reason="liborbfit not available (clone+build it and set "
+           "LIBORBFIT_PATH + PYTHONPATH)")
 
 
 # Truth-data fixtures live in claude_layup/diagnostic/scan/. The
