@@ -378,7 +378,8 @@ def _ensure_bk_ephem(cache_dir) -> bool:
     try:
         bk_orbitfit.set_ephem(
             os.path.join(str(cache_dir), "linux_p1550p2650.440"),
-            os.path.join(str(cache_dir), "sb441-n16.bsp"))
+            os.path.join(str(cache_dir), "sb441-n16.bsp"),
+        )
     except Exception as e:
         logger.warning(f"BK ephem load failed for cache_dir={cache_dir}: {e}")
         return False
@@ -386,9 +387,14 @@ def _ensure_bk_ephem(cache_dir) -> bool:
     return True
 
 
-def do_fit(observations, seq, cache_dir, iod="gauss",
-           engine: Literal["auto", "cartesian", "bk"] = "cartesian",
-           bk_threshold_AU: float = 10.0):
+def do_fit(
+    observations,
+    seq,
+    cache_dir,
+    iod="gauss",
+    engine: Literal["auto", "cartesian", "bk"] = "cartesian",
+    bk_threshold_AU: float = 10.0,
+):
     """Carry out an orbit fit to the observations in a
     series of steps.  A list of lists of observation indices
     specifies the order in which the fit proceeds.
@@ -445,12 +451,15 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
     if chosen_engine == "auto":
         r_iod = _bk_route_r_AU(solns)
         chosen_engine = "bk" if r_iod >= bk_threshold_AU else "cartesian"
-        logger.debug(f"do_fit auto-dispatch: Gauss r={r_iod:.3f} AU, "
-                     f"threshold={bk_threshold_AU} AU -> {chosen_engine}")
+        logger.debug(
+            f"do_fit auto-dispatch: Gauss r={r_iod:.3f} AU, "
+            f"threshold={bk_threshold_AU} AU -> {chosen_engine}"
+        )
 
     if chosen_engine == "bk":
         if _ensure_bk_ephem(cache_dir):
             from layup import bk_orbitfit
+
             try:
                 x = bk_orbitfit.do_bk_fit(observations)
             except Exception as e:
@@ -459,8 +468,7 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
             else:
                 if x.flag == 0:
                     return x
-                logger.debug(f"BK fit returned flag={x.flag}; "
-                             f"falling back to Cartesian path")
+                logger.debug(f"BK fit returned flag={x.flag}; " f"falling back to Cartesian path")
                 chosen_engine = "cartesian"
         else:
             chosen_engine = "cartesian"

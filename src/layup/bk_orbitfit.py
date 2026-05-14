@@ -50,11 +50,12 @@ try:
         set_ephem as _set_ephem,
         do_bk_fit as _do_bk_fit,
     )
+
     _LIBORBFIT_OK = True
 except ImportError:  # pragma: no cover — let callers see the failure
     _LiborbfitObs = None  # type: ignore
-    _set_ephem    = None  # type: ignore
-    _do_bk_fit    = None  # type: ignore
+    _set_ephem = None  # type: ignore
+    _do_bk_fit = None  # type: ignore
     _LIBORBFIT_OK = False
 
 # layup's pybind11-bound FitResult, the same type returned by the
@@ -73,14 +74,15 @@ ARCSEC = 1.0 / 206265.0
 # Public entry points                                                         #
 # --------------------------------------------------------------------------- #
 
-def set_ephem(planets_path: str | os.PathLike,
-              asteroids_path: str | os.PathLike) -> None:
+
+def set_ephem(planets_path: str | os.PathLike, asteroids_path: str | os.PathLike) -> None:
     """Load the ASSIST kernels once per process; pass-through to
     liborbfit.set_ephem."""
     if not _LIBORBFIT_OK:
         raise RuntimeError(
             "liborbfit Python package not importable; install it and "
-            "ensure both LIBORBFIT_PATH and PYTHONPATH point at the build.")
+            "ensure both LIBORBFIT_PATH and PYTHONPATH point at the build."
+        )
     _set_ephem(planets_path, asteroids_path)
 
 
@@ -89,8 +91,7 @@ def do_bk_fit(observations: Sequence[Any]) -> "FitResult":
     layup FitResult.  See module docstring for the FitResult.flag
     convention."""
     if FitResult is None:
-        raise RuntimeError(
-            "_layup_cpp._core.FitResult is not importable; build layup first.")
+        raise RuntimeError("_layup_cpp._core.FitResult is not importable; build layup first.")
     if not _LIBORBFIT_OK:
         return _failed_result(flag=3)
     obs = _build_obs(observations)
@@ -108,9 +109,7 @@ def compute_r_au(observations: Sequence[Any]) -> float | None:
         return None
     if len(observations) < 3:
         return None
-    o0, o1, o2 = (observations[0],
-                  observations[len(observations) // 2],
-                  observations[-1])
+    o0, o1, o2 = (observations[0], observations[len(observations) // 2], observations[-1])
     try:
         solns = _gauss(o0, o1, o2)
     except Exception:
@@ -125,6 +124,7 @@ def compute_r_au(observations: Sequence[Any]) -> float | None:
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
 
+
 def _radec_from_rho(rho: np.ndarray) -> tuple[float, float]:
     """Unit direction vector (ICRS-equatorial) -> (ra, dec) radians."""
     rx, ry, rz = rho[0], rho[1], rho[2]
@@ -137,32 +137,33 @@ def _build_obs(observations: Sequence[Any]) -> list:
     """Convert layup Observation list to liborbfit Observation list."""
     out = []
     for o in observations:
-        rho = (o.rho_hat if isinstance(o.rho_hat, np.ndarray)
-               else np.asarray(o.rho_hat))
+        rho = o.rho_hat if isinstance(o.rho_hat, np.ndarray) else np.asarray(o.rho_hat)
         ra, dec = _radec_from_rho(rho.reshape(-1))
-        out.append(_LiborbfitObs(
-            jd_tdb=float(o.epoch),
-            ra=ra,
-            dec=dec,
-            sigma_ra =float(o.ra_unc  if o.ra_unc  is not None else ARCSEC),
-            sigma_dec=float(o.dec_unc if o.dec_unc is not None else ARCSEC),
-            xe=float(o.observer_position[0]),
-            ye=float(o.observer_position[1]),
-            ze=float(o.observer_position[2]),
-        ))
+        out.append(
+            _LiborbfitObs(
+                jd_tdb=float(o.epoch),
+                ra=ra,
+                dec=dec,
+                sigma_ra=float(o.ra_unc if o.ra_unc is not None else ARCSEC),
+                sigma_dec=float(o.dec_unc if o.dec_unc is not None else ARCSEC),
+                xe=float(o.observer_position[0]),
+                ye=float(o.observer_position[1]),
+                ze=float(o.observer_position[2]),
+            )
+        )
     return out
 
 
 def _failed_result(flag: int) -> "FitResult":
     res = FitResult()
     res.method = "BK"
-    res.niter  = 0
-    res.flag   = flag
-    res.csq    = float("nan")
-    res.ndof   = 0
-    res.epoch  = 0.0
-    res.state  = [0.0] * 6
-    res.cov    = [0.0] * 36
+    res.niter = 0
+    res.flag = flag
+    res.csq = float("nan")
+    res.ndof = 0
+    res.epoch = 0.0
+    res.state = [0.0] * 6
+    res.cov = [0.0] * 36
     return res
 
 
@@ -170,22 +171,22 @@ def _to_layup_result(r) -> "FitResult":
     """Pack a liborbfit BKFitResult into a layup FitResult."""
     res = FitResult()
     res.method = "BK"
-    res.niter  = 0  # liborbfit doesn't currently report iteration count
+    res.niter = 0  # liborbfit doesn't currently report iteration count
 
     if r.flag != 0:
-        res.flag  = 1
-        res.csq   = float("nan")
-        res.ndof  = 0
+        res.flag = 1
+        res.csq = float("nan")
+        res.ndof = 0
         res.epoch = 0.0
         res.state = [0.0] * 6
-        res.cov   = [0.0] * 36
+        res.cov = [0.0] * 36
         return res
 
     state, _J, cov_cart = r.to_cartesian()
-    res.flag  = 0
-    res.csq   = float(r.chisq)
-    res.ndof  = int(r.dof)
+    res.flag = 0
+    res.csq = float(r.chisq)
+    res.ndof = int(r.dof)
     res.epoch = float(r.jd0)
     res.state = [float(x) for x in state]
-    res.cov   = [float(x) for x in cov_cart.reshape(-1)]
+    res.cov = [float(x) for x in cov_cart.reshape(-1)]
     return res

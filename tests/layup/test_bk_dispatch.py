@@ -27,6 +27,7 @@ from layup.routines import Observation
 def _liborbfit_available() -> bool:
     try:
         import liborbfit
+
         liborbfit.set_jacobian_mode(liborbfit.JACOBIAN_VARIATIONAL)
         return True
     except (ImportError, OSError, RuntimeError):
@@ -35,15 +36,14 @@ def _liborbfit_available() -> bool:
 
 pytestmark = pytest.mark.skipif(
     not _liborbfit_available(),
-    reason="liborbfit not available (clone+build it and set "
-           "LIBORBFIT_PATH + PYTHONPATH)")
+    reason="liborbfit not available (clone+build it and set " "LIBORBFIT_PATH + PYTHONPATH)",
+)
 
 
 # Truth-data fixtures live in claude_layup/diagnostic/scan/. The
 # pre-bundled tests/data tree doesn't carry them. Tests skip gracefully
 # if the diagnostic harness isn't present.
-DIAGNOSTIC_SCAN = (Path(__file__).resolve().parent.parent.parent.parent
-                   / "diagnostic" / "scan" / "truth")
+DIAGNOSTIC_SCAN = Path(__file__).resolve().parent.parent.parent.parent / "diagnostic" / "scan" / "truth"
 
 
 def _have_truth(name: str) -> bool:
@@ -60,8 +60,9 @@ def _build_obs(name: str):
             float(r["dec"]) * np.pi / 180.0,
             float(r["jd_tdb"]),
             list(r["observer_state_AU"]),
-            [0.0, 0.0, 0.0])
-        o.ra_unc  = sigma_rad
+            [0.0, 0.0, 0.0],
+        )
+        o.ra_unc = sigma_rad
         o.dec_unc = sigma_rad
         obs.append(o)
     return obs
@@ -70,8 +71,9 @@ def _build_obs(name: str):
 CACHE = os.path.expanduser("~/Library/Caches/layup")
 
 
-@pytest.mark.skipif(not _have_truth("classical_42AU_arc_010.00d"),
-                    reason="diagnostic/scan dataset not present")
+@pytest.mark.skipif(
+    not _have_truth("classical_42AU_arc_010.00d"), reason="diagnostic/scan dataset not present"
+)
 def test_auto_routes_to_bk_for_distant():
     """A 42 AU classical KBO should auto-dispatch to BK."""
     obs = _build_obs("classical_42AU_arc_010.00d")
@@ -81,8 +83,9 @@ def test_auto_routes_to_bk_for_distant():
     assert fit.method == "BK"
 
 
-@pytest.mark.skipif(not _have_truth("mainbelt_2.5AU_arc_007.00d"),
-                    reason="diagnostic/scan dataset not present")
+@pytest.mark.skipif(
+    not _have_truth("mainbelt_2.5AU_arc_007.00d"), reason="diagnostic/scan dataset not present"
+)
 def test_auto_routes_to_cartesian_for_mainbelt():
     """A 2.5 AU mainbelt object should auto-dispatch to Cartesian-LM."""
     obs = _build_obs("mainbelt_2.5AU_arc_007.00d")
@@ -92,8 +95,9 @@ def test_auto_routes_to_cartesian_for_mainbelt():
     assert fit.method != "BK"
 
 
-@pytest.mark.skipif(not _have_truth("classical_42AU_arc_010.00d"),
-                    reason="diagnostic/scan dataset not present")
+@pytest.mark.skipif(
+    not _have_truth("classical_42AU_arc_010.00d"), reason="diagnostic/scan dataset not present"
+)
 def test_explicit_engine_bk():
     """Forcing engine='bk' produces a BK result regardless of r."""
     obs = _build_obs("classical_42AU_arc_010.00d")
@@ -103,8 +107,9 @@ def test_explicit_engine_bk():
     assert fit.method == "BK"
 
 
-@pytest.mark.skipif(not _have_truth("classical_42AU_arc_010.00d"),
-                    reason="diagnostic/scan dataset not present")
+@pytest.mark.skipif(
+    not _have_truth("classical_42AU_arc_010.00d"), reason="diagnostic/scan dataset not present"
+)
 def test_explicit_engine_cartesian():
     """engine='cartesian' bypasses the dispatch and uses the original LM path."""
     obs = _build_obs("classical_42AU_arc_010.00d")
@@ -114,13 +119,13 @@ def test_explicit_engine_cartesian():
     assert fit.method != "BK"
 
 
-@pytest.mark.skipif(not _have_truth("classical_42AU_arc_010.00d"),
-                    reason="diagnostic/scan dataset not present")
+@pytest.mark.skipif(
+    not _have_truth("classical_42AU_arc_010.00d"), reason="diagnostic/scan dataset not present"
+)
 def test_threshold_pushes_to_cartesian():
     """A very high threshold forces auto to pick Cartesian even for distant targets."""
     obs = _build_obs("classical_42AU_arc_010.00d")
     seq = [list(range(len(obs)))]
-    fit = orbitfit.do_fit(obs, seq, CACHE, iod="gauss",
-                          engine="auto", bk_threshold_AU=1000.0)
+    fit = orbitfit.do_fit(obs, seq, CACHE, iod="gauss", engine="auto", bk_threshold_AU=1000.0)
     assert fit.flag == 0
     assert fit.method != "BK"
