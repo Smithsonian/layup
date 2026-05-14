@@ -17,6 +17,7 @@ from layup.routines import (
     get_ephem,
     run_from_vector_with_initial_guess,
 )
+
 try:
     from layup.routines import get_ias15_min_dt, set_ias15_min_dt
 except ImportError:  # extension not rebuilt yet
@@ -343,9 +344,9 @@ def do_gauss_iod(observations, seq):
 # Multi-root picker tuning. Both knobs are exposed to do_fit() callers
 # in case downstream code wants to override them, but the defaults are
 # what worked best on the diagnostic/scan and neo_scan datasets.
-_PICKER_MIN_R_HELIO_AU = 0.3        # reject roots with r < this as unphysical
-_PICKER_SCREEN_ITER_MAX = 80        # cheap LM budget for the first pass
-_PICKER_FULL_ITER_MAX   = 100       # full LM budget for the fallback pass
+_PICKER_MIN_R_HELIO_AU = 0.3  # reject roots with r < this as unphysical
+_PICKER_SCREEN_ITER_MAX = 80  # cheap LM budget for the first pass
+_PICKER_FULL_ITER_MAX = 100  # full LM budget for the fallback pass
 
 _PREFILTER_THRESHOLD_SIGMA = 1000.0  # held-out residual filter cutoff
 
@@ -379,9 +380,7 @@ def _get_python_ephem(cache_dir):
     except ImportError:
         return None
     try:
-        eph = assist.Ephem(
-            os.path.join(key, "linux_p1550p2650.440"),
-            os.path.join(key, "sb441-n16.bsp"))
+        eph = assist.Ephem(os.path.join(key, "linux_p1550p2650.440"), os.path.join(key, "sb441-n16.bsp"))
     except Exception as e:
         logger.warning(f"assist.Ephem load failed for {cache_dir}: {e}")
         return None
@@ -403,19 +402,22 @@ def _pick_best_root(candidates, min_r_au):
     converged = [c for c in candidates if c.flag == 0]
     if not converged:
         return None
-    sane = [c for c in converged
-            if (c.state[0] ** 2 + c.state[1] ** 2 + c.state[2] ** 2)
-            > min_r_au ** 2]
+    sane = [c for c in converged if (c.state[0] ** 2 + c.state[1] ** 2 + c.state[2] ** 2) > min_r_au**2]
     pool = sane if sane else converged
     return min(pool, key=lambda c: c.csq)
 
 
-def do_fit(observations, seq, cache_dir, iod="gauss",
-           screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
-           full_iter_max: int = _PICKER_FULL_ITER_MAX,
-           min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
-           prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
-           picker_ias15_min_dt: float = _PICKER_IAS15_MIN_DT):
+def do_fit(
+    observations,
+    seq,
+    cache_dir,
+    iod="gauss",
+    screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
+    full_iter_max: int = _PICKER_FULL_ITER_MAX,
+    min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
+    prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
+    picker_ias15_min_dt: float = _PICKER_IAS15_MIN_DT,
+):
     """Carry out an orbit fit to a list of observations.
 
     Pipeline:
@@ -455,8 +457,7 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
     try:
         iod_func = get_iod(iod) if isinstance(iod, str) else iod
     except ValueError as e:
-        raise ValueError(
-            f"{e} Use iod.register_iod to add a new method.")
+        raise ValueError(f"{e} Use iod.register_iod to add a new method.")
     solns = iod_func(observations, seq)
 
     # If the selected iod fails, surface a sentinel.
@@ -477,11 +478,12 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
     if py_ephem is not None and len(solns) > 1:
         before = len(solns)
         solns = filter_candidates_by_residual(
-            solns, observations, py_ephem,
-            threshold_sigma=prefilter_threshold_sigma)
+            solns, observations, py_ephem, threshold_sigma=prefilter_threshold_sigma
+        )
         if len(solns) < before:
-            logger.debug(f"IOD pre-filter: kept {len(solns)}/{before} "
-                         f"candidates at {prefilter_threshold_sigma}σ")
+            logger.debug(
+                f"IOD pre-filter: kept {len(solns)}/{before} " f"candidates at {prefilter_threshold_sigma}σ"
+            )
 
     assist_ephem = get_ephem(cache_dir)
 
@@ -504,16 +506,12 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
     obs = [observations[i] for i in seq[0]]
     try:
         candidates = [
-            run_from_vector_with_initial_guess(assist_ephem, soln, obs,
-                                               screen_iter_max)
-            for soln in solns
+            run_from_vector_with_initial_guess(assist_ephem, soln, obs, screen_iter_max) for soln in solns
         ]
         x = _pick_best_root(candidates, min_r_helio_AU)
         if x is None:
             candidates = [
-                run_from_vector_with_initial_guess(assist_ephem, soln, obs,
-                                                   full_iter_max)
-                for soln in solns
+                run_from_vector_with_initial_guess(assist_ephem, soln, obs, full_iter_max) for soln in solns
             ]
             x = _pick_best_root(candidates, min_r_helio_AU)
     finally:
@@ -524,8 +522,8 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
         # caller has *something* to inspect, with a flag they can detect.
         x = min(candidates, key=lambda c: c.csq)
         logger.debug(
-            f"Primary interval: no root converged "
-            f"(best csq={x.csq:.3g}, n_roots={len(candidates)})")
+            f"Primary interval: no root converged " f"(best csq={x.csq:.3g}, n_roots={len(candidates)})"
+        )
         x.flag = 3
         return x
 
@@ -539,8 +537,7 @@ def do_fit(observations, seq, cache_dir, iod="gauss",
         x = solns[0]
         for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
-            logger.debug(f"Incremental fit segment {i} of {len(seq)} "
-                         f"(n_obs={len(obs)})")
+            logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
             x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
             if x.flag != 0:
                 x.flag = 4

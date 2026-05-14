@@ -50,8 +50,8 @@ SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
 # Throwing them out would silently kill the right root in cases like
 # the 41 AU classical KBO where Gauss returns a hyperbolic-looking
 # velocity but the right geometry.
-_MIN_R_AU = 0.05      # interior to Mercury — almost certainly unphysical
-_MAX_R_AU = 1000.0    # well past the Kuiper-belt range we typically care about
+_MIN_R_AU = 0.05  # interior to Mercury — almost certainly unphysical
+_MAX_R_AU = 1000.0  # well past the Kuiper-belt range we typically care about
 
 # Geocentric distance below which we treat a candidate as a close-Earth-
 # approach risk: full ASSIST integration will get stuck on the close
@@ -64,8 +64,7 @@ _CLOSE_EARTH_AU = 0.1
 
 # An IOD method takes (observations, seq) and returns either a list of
 # candidate seed orbits or None.
-IODCallable = Callable[[Sequence[Observation], Sequence[Sequence[int]]],
-                       Optional[list]]
+IODCallable = Callable[[Sequence[Observation], Sequence[Sequence[int]]], Optional[list]]
 
 
 # Module-level registry, name -> callable. Populated below.
@@ -81,9 +80,7 @@ def get_iod(name: str) -> IODCallable:
     """Look up an IOD method by name. Raises ValueError if unknown."""
     key = name.lower()
     if key not in _REGISTRY:
-        raise ValueError(
-            f"Unknown IOD method {name!r}. "
-            f"Registered methods: {sorted(_REGISTRY)}")
+        raise ValueError(f"Unknown IOD method {name!r}. " f"Registered methods: {sorted(_REGISTRY)}")
     return _REGISTRY[key]
 
 
@@ -95,6 +92,7 @@ def iod_methods() -> list[str]:
 # ----------------------------------------------------------------------- #
 # Built-in: Gauss's method.                                               #
 # ----------------------------------------------------------------------- #
+
 
 def gauss_iod(observations, seq):
     """Gauss's method on the first/middle/last observation of seq[0].
@@ -108,9 +106,7 @@ def gauss_iod(observations, seq):
     idx1 = seq[0][len(seq[0]) // 2]
     idx2 = seq[0][-1]
     logger.debug(f"gauss_iod: indices {idx0}, {idx1}, {idx2}")
-    solns = gauss(GMtotal,
-                  observations[idx0], observations[idx1], observations[idx2],
-                  0.0001, SPEED_OF_LIGHT)
+    solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
     return solns
 
 
@@ -121,9 +117,8 @@ register_iod("gauss", gauss_iod)
 # Candidate filter (held-out angular residual).                           #
 # ----------------------------------------------------------------------- #
 
-def _passes_physical_bounds(candidate,
-                            min_r_au: float = _MIN_R_AU,
-                            max_r_au: float = _MAX_R_AU) -> bool:
+
+def _passes_physical_bounds(candidate, min_r_au: float = _MIN_R_AU, max_r_au: float = _MAX_R_AU) -> bool:
     """Cheap algebraic feasibility check on an IOD candidate state.
 
     Rejects candidates with non-positive r² or |r| outside [min, max]
@@ -151,8 +146,7 @@ def _predict_rho_hat(ephem, state, state_epoch, obs):
 
     sim = rebound.Simulation()
     sim.t = float(state_epoch) - ephem.jd_ref
-    sim.add(x=state[0], y=state[1], z=state[2],
-            vx=state[3], vy=state[4], vz=state[5])
+    sim.add(x=state[0], y=state[1], z=state[2], vx=state[3], vy=state[4], vz=state[5])
     extras = assist.Extras(sim, ephem)
     extras.integrate_or_interpolate(float(obs.epoch) - ephem.jd_ref)
     p = sim.particles[0]
@@ -181,7 +175,9 @@ def _inertial_min_geocentric_AU(state, state_epoch, observations) -> float:
         py = sy + vy * dt
         pz = sz + vz * dt
         ox, oy, oz = obs.observer_position
-        dx = px - ox; dy = py - oy; dz = pz - oz
+        dx = px - ox
+        dy = py - oy
+        dz = pz - oz
         d2 = dx * dx + dy * dy + dz * dz
         if d2 < min_d2:
             min_d2 = d2
@@ -275,7 +271,7 @@ def filter_candidates_by_residual(
             actual = np.asarray(obs.rho_hat).flatten()
             cos_sep = float(np.clip(pred @ actual, -1.0, 1.0))
             sep_rad = math.acos(cos_sep)
-            sigma_ra  = float(obs.ra_unc  if obs.ra_unc  is not None else 1.0 / 206265)
+            sigma_ra = float(obs.ra_unc if obs.ra_unc is not None else 1.0 / 206265)
             sigma_dec = float(obs.dec_unc if obs.dec_unc is not None else 1.0 / 206265)
             sigma = max(sigma_ra, sigma_dec)
             if sep_rad > threshold_sigma * sigma:
