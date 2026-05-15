@@ -53,6 +53,7 @@
 #include <optional>
 
 #include "orbit_fit.h"
+#include "bk_basis.cpp"
 #include "../gauss/gauss.cpp"
 #include "predict.cpp"
 
