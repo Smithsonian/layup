@@ -61,11 +61,21 @@ namespace orbit_fit
         const BKState &bk, const BKFiducial &fid);
 
     // Variance of the bound-orbit gdot prior:
-    //   sigma_gdot^2 = gamma^2 * (2 * mu * gamma^3 - adot^2 - bdot^2)
-    // Returns +infinity when the tangential rates already exceed escape
-    // (the right-hand side would be non-positive), signalling "no prior."
-    // The caller's precision is 1 / sigma_gdot_sq, so +inf -> 0 precision
-    // -> no contribution, which is the correct behavior.
+    //   sigma_gdot^2 = gamma^2 * (2 mu gamma^3 - |adot rho_hat_alpha + bdot rho_hat_beta|^2)
+    //
+    // The tangential-velocity term in the energy bound depends on the gnomonic
+    // tangent-vector norms at (alpha, beta), so the exact form expands to
+    //   sigma_gdot^2 = gamma^2 * (2 mu gamma^3 -
+    //                            [adot^2 (1+beta^2)
+    //                             - 2 adot bdot alpha beta
+    //                             + bdot^2 (1+alpha^2)] / s^4)
+    // where s^2 = 1 + alpha^2 + beta^2.  At the fiducial direction (alpha = beta = 0)
+    // this reduces to the familiar gamma^2 (2 mu gamma^3 - adot^2 - bdot^2).
+    //
+    // Returns +infinity when the tangential rates already exceed escape (the
+    // right-hand side would be non-positive), signalling "no prior."  The
+    // caller's precision is 1 / sigma_gdot_sq, so +inf -> 0 precision ->
+    // no contribution, which is the correct behavior.
     double sigma_gdot_sq(const BKState &bk, double mu);
 
 } // namespace orbit_fit

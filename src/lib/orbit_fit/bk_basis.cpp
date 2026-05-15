@@ -1,14 +1,23 @@
 // Bernstein-Khushalani parameterization primitives for the layup-internal
 // universal BK fitter (feat/bk-everywhere).
 //
-// Pure C++/Eigen.  No ASSIST, REBOUND, or pybind11 dependencies, so this
-// translation unit can be tested in isolation.  The design and math
-// derivation live in the project memory file bk_everywhere_design.md.
+// The math layer is pure C++/Eigen -- no ASSIST or REBOUND dependencies --
+// so this translation unit can be reasoned about and tested in isolation
+// of the dynamics path.  pybind11 bindings at the bottom expose the
+// primitives to Python so Layer 1 tests (round-trip, finite-difference
+// Jacobian, mixed-partial symmetry, etc.) can run via pytest.  The design
+// and math derivation live in the project memory file
+// bk_everywhere_design.md.
 
 #include "bk_basis.h"
 
 #include <cmath>
 #include <limits>
+#include <sstream>
+
+#include <pybind11/pybind11.h>
+#include <pybind11/eigen.h>
+#include <pybind11/stl.h>
 
 namespace orbit_fit
 {
@@ -198,9 +207,30 @@ namespace orbit_fit
 
     double sigma_gdot_sq(const BKState &bk, double mu)
     {
+        // Bound-orbit constraint: 0.5 |v|^2 <= mu / |r| = mu * gamma.
+        // Substituting |v|^2 = gdot^2 / gamma^4 + |adot rho_hat_alpha + bdot rho_hat_beta|^2 / gamma^2
+        // (cross-terms with rho_hat vanish since rho_hat_alpha, rho_hat_beta are tangent to rho_hat),
+        //
+        //   gdot^2 <= gamma^2 * (2 mu gamma^3 - |adot rho_hat_alpha + bdot rho_hat_beta|^2)
+        //
+        // The tangential term expands via
+        //   |rho_hat_alpha|^2 = (1+beta^2)/s^4,  |rho_hat_beta|^2 = (1+alpha^2)/s^4,
+        //   rho_hat_alpha . rho_hat_beta       = -alpha*beta/s^4,
+        // so
+        //   |adot rho_hat_alpha + bdot rho_hat_beta|^2 =
+        //       [adot^2 (1+beta^2) - 2 adot bdot alpha beta + bdot^2 (1+alpha^2)] / s^4 .
+        // At alpha = beta = 0 (the fiducial direction) this reduces to adot^2 + bdot^2.
+        const double alpha = bk.alpha;
+        const double beta = bk.beta;
         const double gamma = bk.gamma;
-        const double rhs = 2.0 * mu * gamma * gamma * gamma
-                           - bk.adot * bk.adot - bk.bdot * bk.bdot;
+        const double adot = bk.adot;
+        const double bdot = bk.bdot;
+        const double s_sq = 1.0 + alpha * alpha + beta * beta;
+        const double s4 = s_sq * s_sq;
+        const double v_tan_sq = (adot * adot * (1.0 + beta * beta)
+                                 - 2.0 * adot * bdot * alpha * beta
+                                 + bdot * bdot * (1.0 + alpha * alpha)) / s4;
+        const double rhs = 2.0 * mu * gamma * gamma * gamma - v_tan_sq;
         if (rhs <= 0.0)
         {
             // Tangential rates already exceed escape velocity for this
@@ -208,6 +238,57 @@ namespace orbit_fit
             return std::numeric_limits<double>::infinity();
         }
         return gamma * gamma * rhs;
+    }
+
+    static void bk_basis_bindings(pybind11::module &m)
+    {
+        namespace py = pybind11;
+
+        py::class_<BKState>(m, "BKState")
+            .def(py::init<>())
+            .def(py::init([](double alpha, double beta, double gamma,
+                             double adot, double bdot, double gdot)
+                          {
+                BKState bk;
+                bk.alpha = alpha; bk.beta = beta; bk.gamma = gamma;
+                bk.adot = adot;   bk.bdot = bdot; bk.gdot = gdot;
+                return bk; }),
+                 py::arg("alpha") = 0.0, py::arg("beta") = 0.0, py::arg("gamma") = 0.0,
+                 py::arg("adot") = 0.0, py::arg("bdot") = 0.0, py::arg("gdot") = 0.0)
+            .def_readwrite("alpha", &BKState::alpha)
+            .def_readwrite("beta", &BKState::beta)
+            .def_readwrite("gamma", &BKState::gamma)
+            .def_readwrite("adot", &BKState::adot)
+            .def_readwrite("bdot", &BKState::bdot)
+            .def_readwrite("gdot", &BKState::gdot)
+            .def("__repr__", [](const BKState &b)
+                 {
+                std::ostringstream s;
+                s << "<BKState alpha=" << b.alpha << " beta=" << b.beta
+                  << " gamma=" << b.gamma << " adot=" << b.adot
+                  << " bdot=" << b.bdot << " gdot=" << b.gdot << ">";
+                return s.str(); });
+
+        py::class_<BKFiducial>(m, "BKFiducial")
+            .def(py::init<>())
+            .def_readwrite("n0", &BKFiducial::n0)
+            .def_readwrite("a", &BKFiducial::a)
+            .def_readwrite("b", &BKFiducial::b);
+
+        m.def("bk_choose_fiducial", &choose_fiducial, py::arg("rho_hats"),
+              "Construct a BKFiducial frame from a list of unit line-of-sight vectors.");
+        m.def("bk_to_cartesian", &bk_to_cartesian,
+              py::arg("bk"), py::arg("fid"),
+              "Forward transform: BK state -> 6-vector of barycentric Cartesian (r, v).");
+        m.def("cartesian_to_bk", &cartesian_to_bk,
+              py::arg("cart"), py::arg("fid"),
+              "Inverse transform: 6-vector barycentric Cartesian -> BK state.");
+        m.def("dcart_dbk", &dcart_dbk,
+              py::arg("bk"), py::arg("fid"),
+              "6x6 Jacobian d(r, v) / d(alpha, beta, gamma, adot, bdot, gdot).");
+        m.def("sigma_gdot_sq", &sigma_gdot_sq,
+              py::arg("bk"), py::arg("mu"),
+              "Variance of the bound-orbit energy prior on gdot.");
     }
 
 } // namespace orbit_fit
