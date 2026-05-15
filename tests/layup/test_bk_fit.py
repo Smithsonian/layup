@@ -249,3 +249,52 @@ def test_bk_and_cartesian_fits_agree(name, state, arc_days, nobs):
         atol=1e-9,
         err_msg=f"[{name}] BK and Cartesian fits disagree at convergence",
     )
+
+
+# ---------------------------------------------------------------------------
+# Engine dispatch through orbitfit._run_fit
+# ---------------------------------------------------------------------------
+
+
+def test_run_fit_dispatch_cartesian():
+    """orbitfit._run_fit(engine='cartesian') matches direct
+    run_from_vector_with_initial_guess."""
+    from layup.orbitfit import _run_fit
+
+    ephem = get_ephem(CACHE)
+    state = [3.0, 0.0, 0.0, 0.0, 0.0102, 0.001]
+    epoch = 2460000.5
+    obs = _generate_synthetic_observations(ephem, state, epoch, np.linspace(epoch - 30, epoch + 30, 12))
+    seed = _seed_from_state(state, epoch)
+
+    via_dispatch = _run_fit(ephem, seed, obs, "cartesian")
+    direct = run_from_vector_with_initial_guess(ephem, seed, obs)
+    np.testing.assert_array_equal(via_dispatch.state, direct.state)
+    assert via_dispatch.method == direct.method
+
+
+def test_run_fit_dispatch_bk_native():
+    """orbitfit._run_fit(engine='bk_native') matches direct
+    run_bk_native_fit with MU_SUN."""
+    from layup.orbitfit import _MU_SUN, _run_fit
+
+    ephem = get_ephem(CACHE)
+    state = [3.0, 0.0, 0.0, 0.0, 0.0102, 0.001]
+    epoch = 2460000.5
+    obs = _generate_synthetic_observations(ephem, state, epoch, np.linspace(epoch - 30, epoch + 30, 12))
+    seed = _seed_from_state(state, epoch)
+
+    via_dispatch = _run_fit(ephem, seed, obs, "bk_native")
+    direct = run_bk_native_fit(ephem, seed, obs, _MU_SUN)
+    np.testing.assert_array_equal(via_dispatch.state, direct.state)
+    assert via_dispatch.method == "bk_native"
+
+
+def test_run_fit_dispatch_unknown_engine_raises():
+    """An unrecognized engine name raises ValueError."""
+    from layup.orbitfit import _run_fit
+
+    ephem = get_ephem(CACHE)
+    seed = _seed_from_state([3.0, 0.0, 0.0, 0.0, 0.01, 0.0], 2460000.5)
+    with pytest.raises(ValueError, match="Unknown engine"):
+        _run_fit(ephem, seed, [], "not_an_engine")
