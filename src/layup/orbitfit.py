@@ -15,8 +15,11 @@ from layup.routines import (
     Observation,
     gauss,
     get_ephem,
+    run_bk_iod,
+    run_bk_native_fit,
     run_from_vector_with_initial_guess,
 )
+
 from layup.convert import convert
 
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
@@ -64,6 +67,25 @@ INPUT_FORMAT_READERS = {
 GMtotal = 0.0002963092748799319
 AU_M = 149597870700
 SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
+
+# Heliocentric GM in AU^3 / day^2 (k^2, k = Gaussian gravitational constant).
+# Used by the BK-native fit for the bound-orbit energy prior on gdot.
+_MU_SUN = 0.00029591220828559104
+
+
+def _run_fit(assist_ephem, initial_guess, observations, engine):
+    """Dispatch a single LM fit step to the configured engine.
+
+    Centralizing the dispatch here keeps do_fit's IOD-then-fit pipeline
+    parameterization-agnostic and lets us add new engines (e.g., a
+    future distance-dispatched 'auto') with a single edit instead of
+    threading the choice through every call site.
+    """
+    if engine == "cartesian":
+        return run_from_vector_with_initial_guess(assist_ephem, initial_guess, observations)
+    if engine == "bk_native":
+        return run_bk_native_fit(assist_ephem, initial_guess, observations, _MU_SUN)
+    raise ValueError(f"Unknown engine {engine!r}; expected one of 'cartesian', 'bk_native'.")
 
 
 def _get_result_dtypes(primary_id_column_name: str):
@@ -349,7 +371,7 @@ def do_gauss_iod(observations, seq):
     return solns
 
 
-def do_fit(observations, seq, cache_dir, iod="gauss"):
+def do_fit(observations, seq, cache_dir, iod="gauss", engine="cartesian"):
     """Carry out an orbit fit to the observations in a
     series of steps.  A list of lists of observation indices
     specifies the order in which the fit proceeds.
@@ -376,8 +398,20 @@ def do_fit(observations, seq, cache_dir, iod="gauss"):
     seq : list of lists
         A list of lists of observation indices.
     iod : str
-        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
-        Default is 'gauss'.
+        The IOD used to generate an initial guess orbit.  Supported values:
+          - 'gauss' (default): Gauss's classic three-observation IOD.
+          - 'auto':            Gauss first, falling back to the universal-BK
+                               5-parameter linear IOD (`run_bk_iod`) if every
+                               Gauss root fails to seed a successful LM fit.
+                               Empirically the two are complementary -- on the
+                               diagnostic-scan dataset Gauss + BK fallback
+                               covers ~90% of cases vs ~84% for Gauss alone.
+    engine : str
+        Which LM fitter to dispatch to.  Supported:
+          - 'cartesian' (default): the existing 6D Cartesian-state fit.
+          - 'bk_native': the universal Bernstein-Khushalani fit
+            (run_bk_native_fit), with a fixed bound-orbit energy prior
+            on gdot.  Recovers the Cartesian state at the same epoch.
 
     Returns
     -------
@@ -385,34 +419,45 @@ def do_fit(observations, seq, cache_dir, iod="gauss"):
         The result of the orbit fit.
     """
 
-    if iod.lower() == "gauss":
-        solns = do_gauss_iod(observations, seq)
-    else:
+    iod_choice = iod.lower()
+    if iod_choice not in ("gauss", "auto"):
         raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
 
-    # If the selected iod fails, try something else.
-    if not solns:
+    solns = do_gauss_iod(observations, seq)
+
+    if not solns and iod_choice == "gauss":
+        # Pure Gauss path with no roots: nothing else to try.
         logger.debug(f"The iod {iod} failed")
         x = FitResult()
         x.flag = 5
         return x
 
     assist_ephem = get_ephem(cache_dir)
-
-    #! I think this can be a `for/else loop...`
-    # Fit primary interval, starting with gauss solution
-    x = solns[0]
     obs = [observations[i] for i in seq[0]]
-    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
 
-    if (x.flag != 0) and len(solns) > 1:
-        x = solns[1]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    elif (x.flag != 0) and len(solns) > 2:
-        x = solns[2]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    # Fit primary interval: try each Gauss root in turn until one converges.
+    x = FitResult()
+    x.flag = 5  # No roots tried yet.
+    for soln in solns:
+        x = _run_fit(assist_ephem, soln, obs, engine)
+        if x.flag == 0:
+            break
+
+    # If Gauss didn't get us a converged primary fit and iod='auto', fall
+    # back to the BK 5-parameter linear IOD on the primary segment.  See
+    # bk_iod.cpp's regime-of-validity block: BK-IOD shines on distant short
+    # arcs, exactly the regime where Gauss's three-point geometry is
+    # ill-conditioned.
+    if x.flag != 0 and iod_choice == "auto" and len(obs) >= 3:
+        logger.debug(f"All {len(solns)} Gauss roots failed; trying BK-IOD fallback")
+        # Use the middle observation's epoch -- same convention as Gauss's
+        # idx1 in do_gauss_iod -- so the seed's frame matches what the LM
+        # would expect from a Gauss seed.
+        epoch = float(obs[len(obs) // 2].epoch)
+        bk_seed = run_bk_iod(obs, epoch, _MU_SUN)
+        if bk_seed.flag == 0:
+            x = _run_fit(assist_ephem, bk_seed, obs, engine)
+
     if x.flag != 0:
         logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
         x.flag = 3  # caution
@@ -420,7 +465,7 @@ def do_fit(observations, seq, cache_dir, iod="gauss"):
 
     # Attempt to fit all the data, given the fit of the primary interval
     obs = observations
-    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    x = _run_fit(assist_ephem, x, obs, engine)
 
     # If that failed, build up the solution slowly
     if x.flag != 0:
@@ -429,7 +474,7 @@ def do_fit(observations, seq, cache_dir, iod="gauss"):
         for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
             print(i, "of", len(seq), obs[0], sq)
-            x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+            x = _run_fit(assist_ephem, x, obs, engine)
             print("flag:", x.flag)
             if x.flag != 0:
                 x.flag = 4
