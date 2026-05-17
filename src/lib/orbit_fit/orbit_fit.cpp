@@ -791,6 +791,12 @@ namespace orbit_fit
 // included at the top of orbit_fit.cpp.
 #include "bk_fit.cpp"
 
+// Universal-BK 5-parameter linear IOD.  Same inlining rationale as
+// bk_fit.cpp above -- inlined inside `namespace orbit_fit` so that
+// Observation, FitResult, SPEED_OF_LIGHT, and the bk_basis primitives
+// are all in scope.
+#include "bk_iod.cpp"
+
 #ifdef Py_PYTHON_H
     static void orbit_fit_bindings(py::module &m)
     {
