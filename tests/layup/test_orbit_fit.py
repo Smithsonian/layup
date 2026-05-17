@@ -250,6 +250,7 @@ def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
             self.g = g  # Command line argument for initial guesses file
             self.output_orbit_format = ("BCART_EQ",)
             self.iod = "bad_iod"
+            self.engine = "cartesian"
 
     with pytest.raises(ValueError) as e:
         # Now run the orbit_fit cli with overwrite set to True
@@ -295,3 +296,38 @@ def test_orbitfit_does_not_report_success_with_nan_state():
             assert row["flag"] != 0, "fit reported success (flag == 0) with a NaN state"
         if row["flag"] == 0:
             assert not nan, "fit reported success (flag == 0) with a NaN state"
+
+
+def test_orbit_fit_cli_raises_with_unknown_engine(tmpdir):
+    """The CLI's --engine flag is validated by argparse choices, but the
+    Python-level orbitfit_cli also accepts a cli_args.engine attribute;
+    if a caller passes an unrecognized engine value, the dispatch in
+    _run_fit raises ValueError at fit time."""
+    os.chdir(tmpdir)
+    guess_file_stem = "test_guess"
+    test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
+
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.ar_data_file_path = None
+            self.primary_id_column_name = "provID"
+            self.separate_flagged = False
+            self.force = False
+            self.debias = False
+            self.weight_data = False
+            self.g = g
+            self.output_orbit_format = ("BCART_EQ",)
+            self.iod = "gauss"
+            self.engine = "not_an_engine"
+
+    with pytest.raises(ValueError) as e:
+        orbitfit_cli(
+            input=test_input_filepath,
+            input_file_format="ADES_csv",
+            output_file_stem=guess_file_stem,
+            output_file_format="csv",
+            chunk_size=10_000,
+            num_workers=1,
+            cli_args=FakeCliArgs(),
+        )
+        assert "Unknown engine" in str(e.value)
