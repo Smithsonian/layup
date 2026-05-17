@@ -16,7 +16,8 @@
 //
 //   t_i = (obs_jd_i - (r_obs_i . n0) / c) - epoch           // light-time corrected dt
 //   X_i = r_obs_i . a,   Y_i = r_obs_i . b                  // observer in BK tangent plane
-//   x_obs_i = rho_hat_i . a,   y_obs_i = rho_hat_i . b      // observation in BK tangent plane
+//   x_obs_i = (rho_hat_i . a) / (rho_hat_i . n0)            // observation, gnomonic
+//   y_obs_i = (rho_hat_i . b) / (rho_hat_i . n0)
 //
 //   x_obs_i = alpha + adot * t_i - gamma * X_i
 //   y_obs_i = beta  + bdot * t_i - gamma * Y_i
@@ -25,6 +26,40 @@
 // orbit energy constraint (sigma_gdot_sq, also matching prelim_fit's
 // covar[5][5] = 0.1 * (2 pi)^2 * gamma^3 convention up to a small
 // numerical factor).
+//
+// ---------------------------------------------------------------------------
+// REGIME OF VALIDITY
+// ---------------------------------------------------------------------------
+//
+// The model omits the perspective denominator 1 / (1 - gamma * ze), where
+// ze = r_obs . n0 is the observer's projection onto the line of sight.
+// For a fixed observer (e.g., Earth at ~1 AU) the omitted factor scales as
+//   |gamma * ze|  ~  (1 / r_helio) * 1 AU
+// which becomes O(1) for inner-solar-system objects and is small only for
+// distant ones.  Empirically, BK-IOD's heliocentric-position accuracy on
+// the diagnostic-scan dataset is (best window across arc lengths):
+//
+//   population      best arc   best drift / r_helio
+//   --------------  --------   --------------------
+//   mainbelt 2.5AU      1 d              1.9%   <- BUT 2d+ catastrophically fails
+//   mainbelt 3.5AU      1 d              0.9%   <- BUT 2d+ catastrophically fails
+//   centaur 15 AU     0.5 d              2.5%
+//   centaur 25 AU     0.5 d              0.4%
+//   classical 42 AU    10 d              2.1%
+//   scattered 70 AU     7 d              0.5%
+//   sednoid 80 AU      10 d              1.0%
+//
+// Practical guidance:
+//   * Distant objects (centaurs and TNOs):  BK-IOD is excellent.
+//     Sub-percent on heliocentric distance at well-chosen arc lengths.
+//     Sweet spot moves to longer arcs (5-30 d) as distance increases.
+//   * Mainbelt and closer:  BK is essentially outside its regime of
+//     validity; only the narrow 1-day window gives a usable answer.
+//     Use Gauss IOD for these objects.
+//
+// In all cases, BK-IOD is intended as a SEED for the full BK or
+// Cartesian LM fit, not as a final orbit.  The LM cleans up the
+// O(gamma*ze) perspective bias as part of its convergence.
 
 FitResult run_bk_iod(
     std::vector<Observation> &observations,
