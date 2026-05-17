@@ -33,7 +33,6 @@ from layup.routines import (
     sigma_gdot_sq,
 )
 
-
 # GM_sun in AU^3 / day^2 (Gaussian gravitational constant squared).
 MU_SUN = 0.00029591220828559104
 
@@ -69,6 +68,7 @@ def _bk_from_tuple(t):
 # Round-trip Cartesian <-> BK
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("case", _BK_CASES)
 def test_round_trip_bk_to_cart_to_bk(case):
     """BK -> Cartesian -> BK recovers the input to machine precision."""
@@ -80,8 +80,9 @@ def test_round_trip_bk_to_cart_to_bk(case):
     for name in ("alpha", "beta", "gamma", "adot", "bdot", "gdot"):
         original = getattr(bk, name)
         recovered = getattr(bk_back, name)
-        np.testing.assert_allclose(recovered, original, rtol=1e-12, atol=1e-15,
-                                   err_msg=f"BK.{name} not recovered through round-trip")
+        np.testing.assert_allclose(
+            recovered, original, rtol=1e-12, atol=1e-15, err_msg=f"BK.{name} not recovered through round-trip"
+        )
 
 
 @pytest.mark.parametrize("case", _BK_CASES)
@@ -99,6 +100,7 @@ def test_round_trip_cart_to_bk_to_cart(case):
 # ---------------------------------------------------------------------------
 # Analytic dcart_dbk vs finite-difference
 # ---------------------------------------------------------------------------
+
 
 def _bk_perturb(bk: BKState, idx: int, delta: float) -> BKState:
     names = ("alpha", "beta", "gamma", "adot", "bdot", "gdot")
@@ -130,7 +132,8 @@ def test_dcart_dbk_matches_finite_difference(case):
     scale = np.maximum(np.abs(J_analytic), np.abs(J_fd))
     scale = np.where(scale > 0, scale, 1.0)
     np.testing.assert_array_less(
-        np.abs(J_analytic - J_fd) / scale, 1e-5,
+        np.abs(J_analytic - J_fd) / scale,
+        1e-5,
         err_msg="Analytic dcart_dbk disagrees with finite-difference",
     )
 
@@ -138,6 +141,7 @@ def test_dcart_dbk_matches_finite_difference(case):
 # ---------------------------------------------------------------------------
 # Mixed-partial symmetry of the second-derivative cross-terms
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("case", _BK_CASES)
 def test_mixed_partial_symmetry_via_finite_difference(case):
@@ -164,6 +168,7 @@ def test_mixed_partial_symmetry_via_finite_difference(case):
 # ---------------------------------------------------------------------------
 # Fiducial-direction gauge invariance
 # ---------------------------------------------------------------------------
+
 
 def test_fiducial_gauge_invariance():
     """Two valid n0 choices give the same physical Cartesian orbit."""
@@ -193,6 +198,7 @@ def test_fiducial_gauge_invariance():
 # ---------------------------------------------------------------------------
 # Special-case forms at alpha = beta = 0 (the fiducial direction)
 # ---------------------------------------------------------------------------
+
 
 def test_special_case_at_fiducial():
     """At alpha = beta = 0, rho_hat = n0, rho_hat_alpha = a, rho_hat_beta = b."""
@@ -237,6 +243,7 @@ def test_jacobian_at_fiducial():
 # sigma_gdot_sq vs Cartesian-side energy-bound calculation
 # ---------------------------------------------------------------------------
 
+
 def test_sigma_gdot_sq_consistent_with_energy_bound():
     """sigma_gdot_sq matches the Cartesian-side bound on |gdot|^2 for a bound orbit.
 
@@ -249,16 +256,16 @@ def test_sigma_gdot_sq_consistent_with_energy_bound():
     fid = _make_fiducial(rng)
     # Pick (alpha, beta, gamma, adot, bdot) such that the orbit is bound for
     # at least some gdot range.
-    bk = BKState(alpha=0.05, beta=-0.03, gamma=1.0 / 40.0,
-                 adot=4e-5, bdot=-3e-5, gdot=0.0)
+    bk = BKState(alpha=0.05, beta=-0.03, gamma=1.0 / 40.0, adot=4e-5, bdot=-3e-5, gdot=0.0)
     sigma_sq = sigma_gdot_sq(bk, MU_SUN)
 
     # The bound-orbit constraint -> |v|^2 <= 2 * mu * gamma.  At the BK state
     # with gdot pinned to +sqrt(sigma_sq), the orbit should be exactly at the
     # boundary (|v|^2 == 2 * mu * gamma).
     assert sigma_sq > 0.0 and np.isfinite(sigma_sq)
-    bk_at_boundary = BKState(alpha=bk.alpha, beta=bk.beta, gamma=bk.gamma,
-                             adot=bk.adot, bdot=bk.bdot, gdot=np.sqrt(sigma_sq))
+    bk_at_boundary = BKState(
+        alpha=bk.alpha, beta=bk.beta, gamma=bk.gamma, adot=bk.adot, bdot=bk.bdot, gdot=np.sqrt(sigma_sq)
+    )
     cart = np.asarray(bk_to_cartesian(bk_at_boundary, fid)).flatten()
     r_norm = np.linalg.norm(cart[:3])
     v_norm_sq = np.dot(cart[3:], cart[3:])
@@ -270,6 +277,5 @@ def test_sigma_gdot_sq_consistent_with_energy_bound():
 def test_sigma_gdot_sq_returns_inf_for_hyperbolic_tangentials():
     """When tangential rates already exceed escape velocity, sigma_gdot_sq
     signals 'no prior' by returning +infinity."""
-    bk = BKState(alpha=0.0, beta=0.0, gamma=1.0 / 50.0,
-                 adot=1e-3, bdot=1e-3, gdot=0.0)  # huge rates at 50 AU
+    bk = BKState(alpha=0.0, beta=0.0, gamma=1.0 / 50.0, adot=1e-3, bdot=1e-3, gdot=0.0)  # huge rates at 50 AU
     assert np.isinf(sigma_gdot_sq(bk, MU_SUN))
