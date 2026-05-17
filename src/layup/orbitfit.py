@@ -485,6 +485,7 @@ def _orbitfit(
     sort_array: bool = True,
     weight_data: bool = False,
     iod: str = "gauss",
+    engine: str = "cartesian",
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -617,7 +618,13 @@ def _orbitfit(
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
             if iod.lower() in ["gauss"]:
-                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower())
+                res = do_fit(
+                    observations=observations,
+                    seq=sequence,
+                    cache_dir=kernels_loc,
+                    iod=iod.lower(),
+                    engine=engine,
+                )
             else:
                 res = do_other_fit(iod=iod.lower())
         else:
@@ -658,6 +665,7 @@ def orbitfit(
     debias=False,
     weight_data=False,
     iod="gauss",
+    engine="cartesian",
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -707,6 +715,7 @@ def orbitfit(
         bias_dict=bias_dict,
         weight_data=weight_data,
         iod=iod,
+        engine=engine,
     )
 
 
@@ -746,6 +755,7 @@ def orbitfit_cli(
         weight_data = cli_args.weight_data
         output_orbit_format = cli_args.output_orbit_format
         iod = cli_args.iod
+        engine = getattr(cli_args, "engine", "cartesian")
     else:
         cache_dir = None
         debias = False
@@ -753,6 +763,7 @@ def orbitfit_cli(
         weight_data = False
         output_orbit_format = "COM"  # Default output orbit format.
         iod = "gauss"
+        engine = "cartesian"
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -863,6 +874,7 @@ def orbitfit_cli(
             debias=debias,
             weight_data=weight_data,
             iod=iod,
+            engine=engine,
         )
 
         # Convert the fit_orbits to the preferred output format
