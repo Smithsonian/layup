@@ -30,7 +30,7 @@ dependencies = [
     "plotly",
     "dash",
     "dash-daq",
-    "dash-ag-grid"
+    "dash-ag-grid",
     "pytest"
 ]
 
