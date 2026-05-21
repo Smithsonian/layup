@@ -88,6 +88,7 @@ namespace orbit_fit
 
         // Pass in this simulation stuff to keep it flexible
         struct reb_simulation *r = reb_simulation_create();
+        apply_ias15_min_dt(r);
         struct assist_extras *ax = assist_attach(r, ephem);
 
         // 0. Set initial time, relative to ephem->jd_ref
