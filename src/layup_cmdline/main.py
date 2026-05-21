@@ -29,7 +29,7 @@ def main():
         sys.exit(1)
 
     # Set up the argument parser with epilog text
-    description = "layup survey simulator suite."
+    description = "Awesome layup survey simulator suite."
     epilog_text = (
         "These are the most common layup verbs:\n\n"
         "   bootstrap      Download datafiles required to run layup\n"

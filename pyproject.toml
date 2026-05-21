@@ -22,12 +22,16 @@ dependencies = [
     "pooch",
     "tqdm",
     "sorcha @ git+https://github.com/dirac-institute/sorcha.git",
+    "assist",
+    "rebound",
+    "pybind11",
     "jax",
     "scipy",
     "plotly",
     "dash",
     "dash-daq",
     "dash-ag-grid"
+    "pytest"
 ]
 
 [project.scripts]
@@ -49,7 +53,7 @@ layup-log = "layup_cmdline.log:main"
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
 dev = [
-    "black==25.9.0", # Used for static linting of files
+    "black==26.1.0", # Used for static linting of files
     "jupyter", # Clears output from Jupyter notebooks
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
@@ -60,9 +64,14 @@ dev = [
 [build-system]
 requires = [
     "scikit-build-core>=0.10",
-    "pybind11"
+    "pybind11",
+    "assist",
+    "rebound"
 ]
 build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+wheel.packages = ["src/layup", "src/layup_cmdline"]
 
 [tool.setuptools_scm]
 write_to = "src/layup/_version.py"
@@ -128,3 +137,6 @@ ignore = [
 
 [tool.coverage.run]
 omit=["src/layup/_version.py"]
+
+[tool.pdm.scripts]
+test = "pytest {args}"

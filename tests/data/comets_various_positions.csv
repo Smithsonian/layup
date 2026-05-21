@@ -1,0 +1,5 @@
+ObjID,FORMAT,q,e,inc,node,argPeri,epochMJD_TDB,t_p_MJD_TDB,expected_step
+close_outward,COM,0.061,1.0,73.8,206.59,208.98,8616,8100.03,-1
+close_inward,COM,2.04,0.9944,154.26,86.89,330.88,11708,115850.83,-1
+far_outward,COM,1.027,0.9988,38.7,242.43,24.5,12306,-212195.16,-1
+far_inward,COM,0.061,1.0,73.8,206.59,208.98,8616,288607.03,1

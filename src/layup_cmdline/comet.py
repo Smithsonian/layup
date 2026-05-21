@@ -92,6 +92,12 @@ def main():
         default="ObjID",
         required=False,
     )
+    optional.add_argument(
+        "-cf",
+        "--code-format",
+        action="store_true",
+        help="Outputs inv_a0 in units of 10e-6 au, in line with the CODE database",
+    )
     args = parser.parse_args()
 
     return execute(args)
@@ -149,6 +155,7 @@ def execute(args):
         chunk_size=args.chunk,
         num_workers=args.n,
         cli_args=args,
+        aux=configs.auxiliary,
     )
 
 
