@@ -1,0 +1,137 @@
+/* --- layout ---*/
+/*
+remove the browser defaults and force full view
+*/
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
+  overflow: hidden;  /* <-- no page scrolling! */
+}
+
+/*
+because we have multiple wrapper divs around react, we must explicitly
+say to fill the view or the plots won't size correctly 
+*/
+#react-entry-point,
+#react-entry-point > div,
+#_dash-app-content {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+
+/* --- themes --- */
+/* 
+dark theme stuff, allows us to just swap the class on the container
+when we toggle the theme button
+*/
+.theme-dark {
+  --bg: #000000;
+  --fg: #ffffff;
+  --muted: rgba(255,255,255,0.82);
+  --grid: rgba(255,255,255,0.08);
+  --rail: rgba(255,255,255,0.20);
+  --track: rgba(255,255,255,0.35);
+  --handle: rgba(255,255,255,0.85);
+}
+
+/* 
+light theme stuff, same as dark theme but inverted basically
+*/
+.theme-light {
+  --bg: #ffffff;
+  --fg: #111111;
+  --muted: rgba(0,0,0,0.75);
+  --grid: rgba(0,0,0,0.10);
+  --rail: rgba(0,0,0,0.15);
+  --track: rgba(0,0,0,0.30);
+  --handle: rgba(0,0,0,0.70);
+}
+
+
+/* --- styling --- */
+/*
+this is the "shell" of the app behind the figure and controls, and 
+because the plotly backgrounds are transparent, /this/ is the colour
+*/
+.app-shell {
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100vh;
+}
+
+/*
+raise the plotly modebar with the camera controls and save plot button
+avove the controls drawer so it remains clickable
+*/
+.js-plotly-plot .plotly .modebar {
+  z-index: 6000 !important;
+}
+
+/* slider stuff */
+/*
+newer dash replaced rc-slider internals with its own stuff, the old 
+classes no longer exist. the new classes are .dash-slider-* and they're
+all driven by --Dash-Fill-Interactive-Strong, which makes them purple 
+for some reason. we override each piece to follow the active theme instead
+*/
+.dash-slider-track {
+  background-color: var(--rail, rgba(255,255,255,0.20)) !important; /* <-- inactive portion */
+}
+
+.dash-slider-range {
+  background-color: var(--track, rgba(255,255,255,0.35)) !important; /* <-- active portion */
+}
+
+.dash-slider-thumb {
+  background-color: var(--bg, #000000) !important; /* <-- handle fill */
+  border-color: var(--handle, rgba(255,255,255,0.85)) !important; /* <-- handle outline */
+  box-shadow: none !important;
+}
+
+.dash-slider-thumb:focus,
+.dash-slider-thumb:hover,
+.dash-slider-thumb:active {
+  background-color: var(--bg, #000000) !important;
+  border-color: var(--handle, rgba(255,255,255,0.85)) !important;
+  outline: 2px solid var(--handle, rgba(255,255,255,0.85)) !important;
+  box-shadow: none !important;
+}
+
+.dash-slider-mark {
+  color: rgba(255,255,255,0.82) !important; /* <-- tick labels, white in both themes */
+}
+
+/* drawer / controls stuff */
+/*
+same as slider, just make the text follow the active theme 
+*/
+#controls-drawer {
+  color: var(--fg);
+}
+
+
+/* --- latex font --- */
+/*
+i couldn't find an exact latex (computer modern) font sheet, so 
+i'm using the next closest thing i could find
+*/
+.toggle-label {
+  font-family: "KaTeX_Main", "Latin Modern Roman", "Computer Modern", serif;
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0.1px;
+  color: var(--fg);
+  opacity: 0.9;
+}
+
+/*
+in theory this should apply the font across the entire app so everything
+is consistent - in practice plotly renders plots without seeing the 
+style sheet. what can ya do ¯\_(ツ)_/¯
+*/
+#app-shell, #app-shell * {
+  font-family: "KaTeX_Main", "Latin Modern Roman", "Computer Modern", serif;
+}
