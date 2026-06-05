@@ -13,9 +13,11 @@ layup's epoch-selection logic don't change, the recovered states should
 remain stable.
 
 Empirically, layup recovers each tested object's barycentric position
-to ~10-200 km out of an ~3 x 10^8 km distance, i.e. relative agreement
-of ~1e-7.  The test tolerance is set well above the observed accuracy
-to be robust to minor numerical drift.
+to a relative agreement of ~4e-7 (and velocity to ~6e-7) against JPL --
+i.e. ~20-200 km out of an ~3 x 10^8 km distance.  The tests assert a
+*relative* tolerance (drift normalised by the reference magnitude), set
+a few times above the observed agreement so a benign numerical drift
+doesn't flag a regression.
 """
 
 from __future__ import annotations
@@ -65,22 +67,23 @@ def _orbitfit_one(prov_id: str):
     return orbitfit(data, cache_dir=CACHE)
 
 
-# Per-object tolerances.  All tested objects are mainbelt at 2-3 AU; layup
-# recovers each to ~1e-6 AU in position and ~1e-9 AU/day in velocity against
-# JPL.  Tolerances chosen well above that so a benign numerical drift
-# doesn't flag a regression.
+# Per-object relative tolerances (drift / |reference|).  All tested objects
+# are mainbelt at 2-3 AU; layup recovers each to ~4e-7 in relative position
+# and ~6e-7 in relative velocity against JPL.  Tolerances are a few times
+# above the observed agreement so a benign numerical drift doesn't flag a
+# regression, while staying ~5x tighter than the previous absolute bound.
 @pytest.mark.parametrize(
-    "prov_id, pos_tol_AU, vel_tol_AU_per_day",
+    "prov_id, pos_rtol, vel_rtol",
     [
         # 27-year arc, 587 obs -- best constrained.
-        ("119839", 1e-5, 1e-7),
+        ("119839", 1e-6, 2e-6),
         # 117 obs, shorter arc.
-        ("742428", 1e-5, 1e-7),
+        ("742428", 1e-6, 2e-6),
         # 109 obs, shorter arc.
-        ("609631", 1e-5, 1e-7),
+        ("609631", 1e-6, 2e-6),
     ],
 )
-def test_orbitfit_matches_jpl_on_real_mpc_data(prov_id, pos_tol_AU, vel_tol_AU_per_day):
+def test_orbitfit_matches_jpl_on_real_mpc_data(prov_id, pos_rtol, vel_rtol):
     """Orbitfit on real MPC astrometry recovers the JPL reference state
     at the same epoch within tight tolerances."""
     references = _load_jpl_references()
@@ -112,11 +115,10 @@ def test_orbitfit_matches_jpl_on_real_mpc_data(prov_id, pos_tol_AU, vel_tol_AU_p
     )
 
     ref_state = np.asarray(ref["state_au_au_per_day"])
-    pos_drift = np.linalg.norm(fit_state[:3] - ref_state[:3])
-    vel_drift = np.linalg.norm(fit_state[3:] - ref_state[3:])
-    assert (
-        pos_drift < pos_tol_AU
-    ), f"[{prov_id}] position drift {pos_drift:.3e} AU > tolerance {pos_tol_AU:.0e} AU"
-    assert (
-        vel_drift < vel_tol_AU_per_day
-    ), f"[{prov_id}] velocity drift {vel_drift:.3e} AU/d > tolerance {vel_tol_AU_per_day:.0e} AU/d"
+    # Relative drift: position/velocity error normalised by the reference
+    # magnitude (cf. Hanno's PR review -- the meaningful quantity is the
+    # fractional agreement, not an absolute AU bound).
+    pos_rel = np.linalg.norm(fit_state[:3] - ref_state[:3]) / np.linalg.norm(ref_state[:3])
+    vel_rel = np.linalg.norm(fit_state[3:] - ref_state[3:]) / np.linalg.norm(ref_state[3:])
+    assert pos_rel < pos_rtol, f"[{prov_id}] relative position drift {pos_rel:.2e} > tolerance {pos_rtol:.0e}"
+    assert vel_rel < vel_rtol, f"[{prov_id}] relative velocity drift {vel_rel:.2e} > tolerance {vel_rtol:.0e}"
