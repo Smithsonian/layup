@@ -90,6 +90,7 @@ namespace orbit_fit
         struct reb_simulation *r = reb_simulation_create();
         apply_ias15_min_dt(r);
         struct assist_extras *ax = assist_attach(r, ephem);
+        apply_ias15_adaptive_mode(r);  // after attach: ASSIST forces mode 1
 
         // 0. Set initial time, relative to ephem->jd_ref
         r->t = epoch - ephem->jd_ref;

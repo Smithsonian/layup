@@ -85,6 +85,28 @@ namespace orbit_fit
         if (g_ias15_min_dt_days > 0.0)
             r->ri_ias15.min_dt = g_ias15_min_dt_days;
     }
+
+    // Optional override of IAS15's adaptive step-size controller.
+    // assist_attach() forces ri_ias15.adaptive_mode = 1 (the legacy
+    // controller); setting this global to a non-negative value
+    // overrides it on every freshly-attached sim. adaptive_mode = 2 is
+    // the newer (Pham, Rein & Spiegel 2024) controller, which Hanno
+    // Rein suggested (PR 324 review) may handle close-Earth encounters
+    // more gracefully than the min-dt floor. Because assist_attach sets
+    // the legacy value, apply_ias15_adaptive_mode() must run *after*
+    // assist_attach, not before like apply_ias15_min_dt.
+    //
+    // Default -1 means "leave ASSIST's choice untouched" (no behavior
+    // change for existing callers).
+    static int g_ias15_adaptive_mode = -1;
+
+    inline void set_ias15_adaptive_mode(int m) { g_ias15_adaptive_mode = m; }
+    inline int  get_ias15_adaptive_mode(void)  { return g_ias15_adaptive_mode; }
+
+    static inline void apply_ias15_adaptive_mode(struct reb_simulation *r) {
+        if (g_ias15_adaptive_mode >= 0)
+            r->ri_ias15.adaptive_mode = g_ias15_adaptive_mode;
+    }
 }
 
 #include "predict.cpp"
@@ -330,6 +352,7 @@ namespace orbit_fit
         struct reb_simulation *r = reb_simulation_create();
         apply_ias15_min_dt(r);
         struct assist_extras *ax = assist_attach(r, ephem);
+        apply_ias15_adaptive_mode(r);  // after attach: ASSIST forces mode 1
 
         // 0. Set initial time, relative to ephem->jd_ref
         r->t = epoch - ephem->jd_ref;
@@ -845,6 +868,16 @@ namespace orbit_fit
             )pbdoc");
         m.def("get_ias15_min_dt", &orbit_fit::get_ias15_min_dt,
               R"pbdoc(Current IAS15 min-dt floor in days (0 = off).)pbdoc");
+        m.def("set_ias15_adaptive_mode", &orbit_fit::set_ias15_adaptive_mode,
+              py::arg("mode"),
+              R"pbdoc(
+                Override IAS15's adaptive step-size controller. -1 (default)
+                leaves ASSIST's choice, which is the legacy mode 1. Set 2 to
+                use the newer (Pham, Rein & Spiegel 2024) controller. Applied
+                after assist_attach, which forces mode 1.
+            )pbdoc");
+        m.def("get_ias15_adaptive_mode", &orbit_fit::get_ias15_adaptive_mode,
+              R"pbdoc(Current IAS15 adaptive_mode override (-1 = ASSIST default).)pbdoc");
     }
 #endif /* Py_PYTHON_H */
 
