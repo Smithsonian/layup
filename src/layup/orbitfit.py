@@ -19,10 +19,13 @@ from layup.routines import (
 )
 
 try:
-    from layup.routines import get_ias15_min_dt, set_ias15_min_dt
+    from layup.routines import (
+        get_ias15_adaptive_mode,
+        set_ias15_adaptive_mode,
+    )
 except ImportError:  # extension not rebuilt yet
-    get_ias15_min_dt = lambda: 0.0
-    set_ias15_min_dt = lambda v: None
+    get_ias15_adaptive_mode = lambda: -1
+    set_ias15_adaptive_mode = lambda m: None
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
@@ -350,17 +353,18 @@ _PICKER_FULL_ITER_MAX = 100  # full LM budget for the fallback pass
 
 _PREFILTER_THRESHOLD_SIGMA = 1000.0  # held-out residual filter cutoff
 
-# IAS15 step-size floor used during the multi-root picker. Without a
-# floor, LM grinds for minutes on phantom Gauss roots whose trajectories
-# pass close to Earth (the integrator chases ever-smaller steps to
-# resolve the close encounter). 1e-3 days (~86 s) gives 100-1000×
-# speedup on those cases with zero detectable change in the final
-# orbit on well-behaved cases (verified on diagnostic/scan). Real
-# close-Earth-approach asteroids would see a few arcsec accuracy loss
-# during the encounter itself, but observations are essentially never
-# taken at closest approach, so the LM fit is unaffected. Set to 0 to
-# disable.
-_PICKER_IAS15_MIN_DT = 1e-3
+# IAS15 adaptive-step controller used during the multi-root picker.
+# With the legacy controller (mode 1), LM grinds for minutes on phantom
+# Gauss roots whose trajectories pass close to Earth (the integrator
+# chases ever-smaller steps to resolve the close encounter — 100-1000×
+# wallclock blowup observed on diagnostic/scan). The newer (Pham, Rein
+# & Spiegel 2024) controller, mode 2, steps through those encounters
+# efficiently: it brings the same pathological cases from >120 s to
+# sub-second with the identical recovered orbit, and unlike a step-size
+# floor it is a better controller rather than a truncation, so it costs
+# no accuracy on genuine close-Earth encounters. Set to -1 to leave
+# ASSIST's default (legacy mode 1).
+_PICKER_IAS15_ADAPTIVE_MODE = 2
 
 
 # Cache of the Python-side assist.Ephem handle. The C-side get_ephem()
@@ -416,7 +420,7 @@ def do_fit(
     full_iter_max: int = _PICKER_FULL_ITER_MAX,
     min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
     prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
-    picker_ias15_min_dt: float = _PICKER_IAS15_MIN_DT,
+    picker_ias15_adaptive_mode: int = _PICKER_IAS15_ADAPTIVE_MODE,
 ):
     """Carry out an orbit fit to a list of observations.
 
@@ -494,14 +498,15 @@ def do_fit(
     # do_fit committed to solns[0] (largest r), which is often a
     # phantom outer-SS solution for NEO-like targets.
     #
-    # During this loop we push an IAS15 min-dt floor so phantom roots
+    # During this loop we select IAS15 adaptive_mode=2 so phantom roots
     # whose trajectories pass close to Earth can't tie up the
     # integrator for minutes (100-1000× wallclock blowup observed on
-    # diagnostic/scan; no measurable accuracy change on well-behaved
-    # orbits). The setting is restored on every exit path.
-    saved_min_dt = get_ias15_min_dt()
-    if picker_ias15_min_dt > 0:
-        set_ias15_min_dt(picker_ias15_min_dt)
+    # diagnostic/scan with the legacy controller). The newer controller
+    # steps through close encounters efficiently with no accuracy cost.
+    # The setting is restored on every exit path.
+    saved_mode = get_ias15_adaptive_mode()
+    if picker_ias15_adaptive_mode >= 0:
+        set_ias15_adaptive_mode(picker_ias15_adaptive_mode)
 
     obs = [observations[i] for i in seq[0]]
     try:
@@ -515,7 +520,7 @@ def do_fit(
             ]
             x = _pick_best_root(candidates, min_r_helio_AU)
     finally:
-        set_ias15_min_dt(saved_min_dt)
+        set_ias15_adaptive_mode(saved_mode)
 
     if x is None:
         # Still no convergence — surface the least-bad attempt so the
