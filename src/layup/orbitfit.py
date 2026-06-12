@@ -346,7 +346,7 @@ def do_gauss_iod(observations, seq):
     idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
     logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
     solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
-
+    print(solns[0].niter)
     return solns
 
 
@@ -368,8 +368,8 @@ def do_herget_iod(observations, seq, args, aux):
     """
     # Get gauss solution, using the first, middle, and last observation
     # of the primary sequence
-    solns = herget_with_assist(observations, seq, 0.001, args=args, aux=aux)
-
+    solns = herget_with_assist(observations, seq, 0.01, args=args, aux=aux)
+    print(solns[0].niter)
     return solns
 
 

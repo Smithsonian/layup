@@ -28,10 +28,12 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     rho_n = 30 # this is the magnitude of rho, direction given by rho_hat, initial guess is 30au
     t_n = obs_n.epoch
     r_n = r_e_n + rho_n*rho_hat_n
+
+    
     iteration = 0
     delta_rho1 = tolerance + 1
     delta_rhon = tolerance + 1
-    while (delta_rho1 + delta_rhon) / 2 > tolerance and iteration < max_iterations:
+    while (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance and iteration < max_iterations:
         
         delta_rho1, delta_rhon, x_1, y_1, z_1, vx1, vy1, vz1 = find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n)
         
@@ -76,8 +78,7 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     sim.t = t_1 - ephem.jd_ref
     a1, a2, b = np.zeros((3, 2*len(observations)))
 
-
-    print('going forward')
+    # For each observation, integrate to that time and find the residuals
     for i, observation in enumerate(observations):
 
         # For this observation, get A and D
@@ -111,7 +112,7 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     ex = assist.Extras(sim, ephem)
     sim.t = t_n - ephem.jd_ref
 
-    
+    # Find residuals for each observation
     for i, observation in enumerate(observations):
         A = observation.get_a_vec()
         D = observation.get_d_vec()
@@ -166,6 +167,7 @@ def find_velocity(t1, tn, r_1, r_n, tolerance, args, aux):
     ephem, _, _ = create_assist_ephemeris(args, aux)
     pos = r_n + abs(tolerance) + 100
     
+    # Find new values for vx, vy and vz in turn
     while abs(np.sqrt(sum(r_n**2)) - np.sqrt(sum(pos**2))) > tolerance:
         vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'x')
         vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'y')
