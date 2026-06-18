@@ -166,6 +166,14 @@ def test_apply_comet(tmpdir):
         get_test_filepath("code_LPCs.csv"), "csv", primary_id_column_name="ObjID"
     ).read_rows()
 
+    # Each comet is a ~300-year backward ASSIST integration out to 250 AU
+    # (~0.7 s/comet), so the full 369-object catalogue takes ~4 minutes.  For CI,
+    # exercise a representative subset by default; set LAYUP_SLOW_TESTS=1 to run
+    # the whole catalogue.  (The deep-time integration also approaches the JPL
+    # ephemeris floor -- see ASSIST_ephemeris_time_bounds notes.)
+    if not os.environ.get("LAYUP_SLOW_TESTS"):
+        data = data[:12]
+
     class FakeCliArgs:
         def __init__(self, g=None):
             self.primary_id_column_name = "ObjID"
