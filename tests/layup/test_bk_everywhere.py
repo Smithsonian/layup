@@ -1,22 +1,17 @@
 """Layer 3 engine-sweep tests for the universal BK fitter.
 
 Drives both engine='cartesian' and engine='bk_native' against the
-diagnostic/scan dataset (outside the repo, at
-``~/Dropbox/claude_layup/diagnostic/scan/truth/``) so the design
-memory's prediction -- ``bk_native`` matches Cartesian across regimes
-and shines on distant short arcs -- can be validated against real
-ASSIST-integrated truth.
+diagnostic-scan truth set (shipped in-repo under
+``tests/data/bk_scan_truth/``) so the design memory's prediction --
+``bk_native`` matches Cartesian across regimes and shines on distant
+short arcs -- can be validated against real ASSIST-integrated truth.
 
-These tests skip cleanly when either the ASSIST ephemeris or the
-diagnostic scan data is unavailable, so machines without either
-setup are unaffected.
+These tests skip cleanly when the ASSIST ephemeris is unavailable
+(see `_bk_guards`), so machines that haven't run `layup bootstrap`
+are unaffected.
 """
 
 from __future__ import annotations
-
-import json
-import os
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -30,37 +25,32 @@ from layup.routines import (
     run_from_vector_with_initial_guess,
 )
 
+from _bk_guards import (
+    EPHEM_CACHE,
+    diagnostic_case_names,
+    load_diagnostic_case,
+    requires_diagnostic,
+    requires_ephem,
+)
+
 # ---------------------------------------------------------------------------
 # Environment guards
 # ---------------------------------------------------------------------------
 
-CACHE = os.path.expanduser("~/Library/Caches/layup")
-EPHEM_PLANETS = os.path.join(CACHE, "linux_p1550p2650.440")
-EPHEM_SMALLBODIES = os.path.join(CACHE, "sb441-n16.bsp")
-EPHEM_AVAILABLE = os.path.exists(EPHEM_PLANETS) and os.path.exists(EPHEM_SMALLBODIES)
+# Directory passed to get_ephem(); str() preserves the pre-refactor type.
+CACHE = str(EPHEM_CACHE)
 
-DIAGNOSTIC_SCAN = Path("~/Dropbox/claude_layup/diagnostic/scan/truth").expanduser()
-DIAGNOSTIC_AVAILABLE = DIAGNOSTIC_SCAN.is_dir()
-
-pytestmark = pytest.mark.skipif(
-    not (EPHEM_AVAILABLE and DIAGNOSTIC_AVAILABLE),
-    reason=(
-        f"Skipping Layer 3 BK-everywhere tests: "
-        f"ephem at {CACHE} = {EPHEM_AVAILABLE}, "
-        f"diagnostic scan at {DIAGNOSTIC_SCAN} = {DIAGNOSTIC_AVAILABLE}."
-    ),
-)
+# Both gates apply: the fits need the ASSIST ephemeris, the assertions need
+# the diagnostic-scan truth set.  The latter now ships in-repo, so in practice
+# only `requires_ephem` skips (on machines without `layup bootstrap`).
+pytestmark = [requires_ephem, requires_diagnostic]
 
 
 # ---------------------------------------------------------------------------
 # Helpers for loading and converting diagnostic-scan cases
 # ---------------------------------------------------------------------------
 
-
-def _load_case(name: str) -> dict:
-    """Load a diagnostic-scan case by stem (e.g., 'classical_42AU_arc_007.00d')."""
-    with open(DIAGNOSTIC_SCAN / f"{name}.json") as f:
-        return json.load(f)
+_load_case = load_diagnostic_case
 
 
 def _build_observations(case: dict) -> list:
@@ -218,7 +208,7 @@ def sweep_cases_from_diagnostic(case_names=None) -> list:
     invoked by pytest collection.
     """
     if case_names is None:
-        case_names = sorted(p.stem for p in DIAGNOSTIC_SCAN.glob("*.json"))
+        case_names = diagnostic_case_names()
     ephem = get_ephem(CACHE)
     rows = []
     for name in case_names:

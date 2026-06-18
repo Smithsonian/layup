@@ -6,13 +6,13 @@ between the two engines is the parameterization + the energy prior on
 gdot, isolating any disagreement to the BK-specific code path.
 
 Tests skip when the ASSIST ephemeris files aren't available, so CI on
-machines without `~/Library/Caches/layup/{linux_p1550p2650.440,
-sb441-n16.bsp}` is unaffected.
+machines that haven't run `layup bootstrap` is unaffected.  The
+ephemeris location is resolved the same way the library resolves it
+(`pooch.os_cache`), so the guard is correct on macOS and Linux alike --
+see `_bk_guards`.
 """
 
 from __future__ import annotations
-
-import os
 
 import numpy as np
 import pytest
@@ -26,18 +26,16 @@ from layup.routines import (
     run_from_vector_with_initial_guess,
 )
 
-CACHE = os.path.expanduser("~/Library/Caches/layup")
-EPHEM_PLANETS = os.path.join(CACHE, "linux_p1550p2650.440")
-EPHEM_SMALLBODIES = os.path.join(CACHE, "sb441-n16.bsp")
-EPHEM_AVAILABLE = os.path.exists(EPHEM_PLANETS) and os.path.exists(EPHEM_SMALLBODIES)
+from _bk_guards import EPHEM_CACHE, requires_ephem
+
+# Directory passed to get_ephem(); the library joins the ephemeris filenames
+# onto it.  str() preserves the original (pre-refactor) argument type.
+CACHE = str(EPHEM_CACHE)
 
 # GM_sun in AU^3 / day^2.
 MU_SUN = 0.00029591220828559104
 
-pytestmark = pytest.mark.skipif(
-    not EPHEM_AVAILABLE,
-    reason=f"ASSIST ephemeris missing at {CACHE}; skipping BK-fit Layer 2 tests.",
-)
+pytestmark = requires_ephem
 
 
 # ---------------------------------------------------------------------------
