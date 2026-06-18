@@ -18,10 +18,6 @@ Test layers:
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -33,13 +29,15 @@ from layup.routines import (
     run_bk_native_fit,
 )
 
-CACHE = os.path.expanduser("~/Library/Caches/layup")
-EPHEM_PLANETS = os.path.join(CACHE, "linux_p1550p2650.440")
-EPHEM_SMALLBODIES = os.path.join(CACHE, "sb441-n16.bsp")
-EPHEM_AVAILABLE = os.path.exists(EPHEM_PLANETS) and os.path.exists(EPHEM_SMALLBODIES)
+from _bk_guards import (
+    DIAGNOSTIC_AVAILABLE,
+    EPHEM_AVAILABLE,
+    EPHEM_CACHE,
+    load_diagnostic_case,
+)
 
-DIAGNOSTIC_SCAN = Path("~/Dropbox/claude_layup/diagnostic/scan/truth").expanduser()
-DIAGNOSTIC_AVAILABLE = DIAGNOSTIC_SCAN.is_dir()
+# Directory passed to get_ephem(); str() preserves the pre-refactor type.
+CACHE = str(EPHEM_CACHE)
 
 MU_SUN = 0.00029591220828559104
 
@@ -73,13 +71,11 @@ def test_run_bk_iod_too_few_obs():
 
 pytestmark_diagnostic = pytest.mark.skipif(
     not (EPHEM_AVAILABLE and DIAGNOSTIC_AVAILABLE),
-    reason="Need both ephemeris and diagnostic scan data.",
+    reason="Need both the ASSIST ephemeris and the in-repo diagnostic-scan truth set.",
 )
 
 
-def _load_diagnostic_case(name):
-    with open(DIAGNOSTIC_SCAN / f"{name}.json") as f:
-        return json.load(f)
+_load_diagnostic_case = load_diagnostic_case
 
 
 def _build_observations_from_case(case):
