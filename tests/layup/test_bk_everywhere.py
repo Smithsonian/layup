@@ -1,8 +1,8 @@
 """Layer 3 engine-sweep tests for the universal BK fitter.
 
 Drives both engine='cartesian' and engine='bk_native' against the
-diagnostic-scan truth set (shipped in-repo under
-``tests/data/bk_scan_truth/``) so the design memory's prediction --
+diagnostic-scan truth set (shipped in-repo as the consolidated
+``tests/data/bk_scan_truth.json``) so the design memory's prediction --
 ``bk_native`` matches Cartesian across regimes and shines on distant
 short arcs -- can be validated against real ASSIST-integrated truth.
 
