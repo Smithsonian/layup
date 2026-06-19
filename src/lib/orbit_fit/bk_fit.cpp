@@ -80,8 +80,13 @@ FitResult run_bk_native_fit(
     std::vector<partials> partials_vec(detections.size());
 
     // ----- LM loop -----
-    // Same initial lambda and accept threshold as the Cartesian fit
-    // (orbit_fit at orbit_fit.cpp L553).
+    // Initial Marquardt damping and accept threshold are copied verbatim
+    // from the Cartesian fitter (orbit_fit at orbit_fit.cpp L553) so the two
+    // engines ramp damping identically.  Both numbers are empirical: the
+    // 206265^2 factor is (arcsec-per-radian)^2, which puts lambda on the
+    // scale of the chi^2 curvature when residuals are measured in radians,
+    // and the /1000 starting offset and the 0.1 gain-ratio accept threshold
+    // were tuned for the Cartesian fit's convergence and reused as-is.
     double lambda = (206265.0 * 206265.0) / 1000.0;
     const double rho_accept = 0.1;
     double chi2_prev = HUGE_VAL;

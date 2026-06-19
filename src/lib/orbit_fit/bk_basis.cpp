@@ -26,15 +26,23 @@ namespace orbit_fit
     {
         // Internal cached quantities at the BK position (alpha, beta).
         //
-        //   p = n0 + alpha*a + beta*b
-        //   s_sq = 1 + alpha^2 + beta^2 = |p|^2
-        //   rho_hat = p / sqrt(s_sq)
+        // p, n0, a, b, rho_hat, rho_hat_alpha and rho_hat_beta are all
+        // 3-vectors in the ICRS frame.  (n0, a, b) is the right-handed
+        // orthonormal fiducial basis (struct BKFiducial in bk_basis.h):
+        // n0 is the fiducial line-of-sight direction and (a, b) span its
+        // tangent plane.  (alpha, beta) are the gnomonic tangent-plane
+        // coordinates of the object's line-of-sight direction in that basis.
+        //
+        //   p             = n0 + alpha*a + beta*b     (unnormalized LOS dir)
+        //   s_sq          = 1 + alpha^2 + beta^2 = |p|^2
+        //   rho_hat       = p / sqrt(s_sq)            (unit LOS direction)
         //   rho_hat_alpha = (a - (a . rho_hat) * rho_hat) / sqrt(s_sq)
         //   rho_hat_beta  = (b - (b . rho_hat) * rho_hat) / sqrt(s_sq)
         //
-        // rho_hat_alpha and rho_hat_beta are the gnomonic-projection tangent
-        // vectors at rho_hat; they are NOT unit length in general (they
-        // scale as 1/sqrt(s_sq) times the projection of a/b onto T_{rho_hat}).
+        // rho_hat_alpha and rho_hat_beta are d(rho_hat)/d(alpha) and
+        // d(rho_hat)/d(beta) -- the gnomonic-projection tangent vectors at
+        // rho_hat.  They are NOT unit length in general (they scale as
+        // 1/sqrt(s_sq) times the projection of a/b onto T_{rho_hat}).
         struct RhoFrame
         {
             double s_sq;
@@ -92,6 +100,22 @@ namespace orbit_fit
         const double inv_g2 = inv_g * inv_g;
 
         const Eigen::Vector3d r = inv_g * f.rho_hat;
+
+        // v is the exact time-derivative of r = rho_hat / gamma.  Using the
+        // chain rule d(rho_hat)/dt = adot*rho_hat_alpha + bdot*rho_hat_beta
+        // and d(1/gamma)/dt = -gdot/gamma^2:
+        //
+        //   v = (1/gamma) d(rho_hat)/dt + d(1/gamma)/dt * rho_hat
+        //     = (1/gamma)(adot*rho_hat_alpha + bdot*rho_hat_beta)
+        //       - (gdot/gamma^2) rho_hat
+        //
+        // Dimensional check (lengths [L], time [T]): gamma ~ 1/[L], so
+        // 1/gamma ~ [L]; rho_hat_alpha/beta are dimensionless and adot,bdot
+        // ~ 1/[T], so term 1 ~ [L]/[T].  gdot ~ 1/([L][T]) and 1/gamma^2 ~
+        // [L]^2, so term 2 ~ [L]/[T] as well -- both are velocities.  The
+        // magnitudes look unusual only because rho_hat_alpha/beta are
+        // deliberately not unit length (see RhoFrame above), not because the
+        // units are inconsistent.
         const Eigen::Vector3d v = inv_g * (bk.adot * f.rho_hat_alpha + bk.bdot * f.rho_hat_beta)
                                   - bk.gdot * inv_g2 * f.rho_hat;
 
