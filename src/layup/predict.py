@@ -404,9 +404,9 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
                     pred.rho[0],
                     pred.rho[1],
                     pred.rho[2],
-                    pred.obs_cov[0],
-                    pred.obs_cov[2],
-                    pred.obs_cov[1],
+                    pred.obs_cov[0],  # obs_cov_xx = (0, 0)
+                    pred.obs_cov[3],  # obs_cov_yy = (1, 1)
+                    pred.obs_cov[1],  # obs_cov_xy = (0, 1)
                     0.0,
                     0.0,
                     0.0,

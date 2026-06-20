@@ -339,3 +339,123 @@ def test_get_onsky_data_output(tmpdir):
         "phase_deg",
     ]:
         np.allclose(results[column], expected[column])
+
+
+def _prep_for_fit(obs, observatory):
+    """Append the ``et`` column and observer barycentric state that the
+    per-object ``_orbitfit`` worker expects (normally added by ``orbitfit``)."""
+    import numpy.lib.recfunctions as rfn
+    import spiceypy as spice
+
+    et = np.array([spice.str2et(row["obsTime"]) for row in obs], dtype="<f8")
+    obs = rfn.append_fields(obs, "et", et, usemask=False, asrecarray=True)
+    pos_vel = observatory.obscodes_to_barycentric(obs)
+    return rfn.merge_arrays([obs, pos_vel], flatten=True, asrecarray=True, usemask=False)
+
+
+def test_predict_observational_covariance_matches_refit_scatter():
+    """Issue #278: Monte-Carlo validation of predict's observational covariance.
+
+    Fit an orbit, predict to an epoch to obtain the on-sky (tangent-plane)
+    covariance, then repeatedly perturb the observations by their assumed 1"
+    uncertainty, refit, and re-predict. If the orbit covariance and its
+    projection to RA/Dec are correct, the scatter of the predicted positions
+    must be consistent with the predicted observational covariance: the squared
+    Mahalanobis distances follow a chi-square distribution with 2 degrees of
+    freedom, so their mean is ~2.
+
+    This is the scatter.c-style check from Bernstein & Khushalani. It is a
+    regression guard for the obs_cov_yy indexing bug, which set the Dec variance
+    to the RA/Dec off-diagonal term and so under-estimated the minor-axis
+    uncertainty by an order of magnitude.
+    """
+    import spiceypy as spice
+    from layup.orbitfit import _orbitfit
+    from layup.predict import _predict
+    from layup.utilities.data_processing_utilities import (
+        LayupObservatory,
+        layup_furnish_spiceypy,
+    )
+
+    DEG = np.pi / 180.0
+    ARCSEC = DEG / 3600.0
+    STATE_COLS = ["x", "y", "z", "xdot", "ydot", "zdot"]
+    OBSCODE = "704"
+    N_TRIALS = 100
+    SIGMA = 1.0 * ARCSEC  # matches the fitter's default per-observation uncertainty
+
+    layup_furnish_spiceypy(None)
+    observatory = LayupObservatory(cache_dir=None)
+
+    obs = CSVDataReader(
+        get_test_filepath("1_random_mpc_ADES_provIDs_no_sats_micro.csv"),
+        "csv",
+        primary_id_column_name="provID",
+    ).read_rows()
+    # The et column and observer state depend only on obsTime/station, so they
+    # are invariant under the RA/Dec perturbation and can be computed once.
+    base = _prep_for_fit(obs, observatory)
+
+    def fit(data):
+        return np.atleast_1d(_orbitfit(data, cache_dir=None, primary_id_column_name="provID"))
+
+    # Nominal fit + prediction at the fit epoch.
+    fit0 = fit(base)
+    assert fit0["flag"][0] == 0, "nominal fit did not converge"
+    t_pred = fit0["epochMJD_TDB"][0] + 2400000.5  # MJD TDB -> JD TDB
+    et = spice.str2et(f"jd {t_pred} tdb")
+    obs_state = np.atleast_1d(
+        observatory.obscodes_to_barycentric(np.array([(OBSCODE, et)], dtype=[("stn", "<U10"), ("et", "<f8")]))
+    )
+
+    def predict_at(fit_row):
+        return _predict(fit_row, obs_state, [t_pred], None, "provID")
+
+    pred0 = predict_at(fit0)
+    ra0, dec0 = pred0["ra_deg"][0], pred0["dec_deg"][0]
+    cos_dec0 = np.cos(dec0 * DEG)
+    # Predicted 2x2 tangent-plane covariance (radians^2), in the (RA*cos(dec), Dec) basis.
+    cov_pred = np.array(
+        [
+            [pred0["obs_cov_xx"][0], pred0["obs_cov_xy"][0]],
+            [pred0["obs_cov_xy"][0], pred0["obs_cov_yy"][0]],
+        ]
+    )
+    # The bug made the Dec variance equal to the off-diagonal term.
+    assert cov_pred[1, 1] != cov_pred[0, 1], "obs_cov_yy must not equal obs_cov_xy"
+    cov_inv = np.linalg.inv(cov_pred)
+
+    # Monte-Carlo: perturb each observation by SIGMA on the sky (RA scaled by
+    # 1/cos(dec) so the great-circle displacement is SIGMA), refit, re-predict.
+    rng = np.random.default_rng(12345)
+    cos_dec_obs = np.cos(base["dec"] * DEG)
+    offsets = []
+    mahalanobis = []
+    for _ in range(N_TRIALS):
+        trial = base.copy()
+        trial["dec"] = base["dec"] + rng.normal(0.0, SIGMA, len(base)) / DEG
+        trial["ra"] = base["ra"] + rng.normal(0.0, SIGMA, len(base)) / DEG / cos_dec_obs
+        trial_fit = fit(trial)
+        if trial_fit["flag"][0] != 0:
+            continue
+        pred = predict_at(trial_fit)
+        d_a = (pred["ra_deg"][0] - ra0) * DEG * cos_dec0  # tangent-plane east (rad)
+        d_d = (pred["dec_deg"][0] - dec0) * DEG  # tangent-plane north (rad)
+        offsets.append((d_a, d_d))
+        mahalanobis.append(np.array([d_a, d_d]) @ cov_inv @ np.array([d_a, d_d]))
+
+    mahalanobis = np.array(mahalanobis)
+    offsets = np.array(offsets)
+    assert len(mahalanobis) > 0.9 * N_TRIALS, "too many Monte-Carlo refits failed"
+
+    # Squared Mahalanobis distances ~ chi^2(2); mean ~ 2. Generous band tolerates
+    # Monte-Carlo noise and mild fit non-linearity, but rejects the ~10x
+    # under-estimate produced by the obs_cov_yy bug (which gave mean ~13).
+    assert 1.0 < mahalanobis.mean() < 4.0, f"mean Mahalanobis^2 = {mahalanobis.mean():.2f}"
+
+    # The empirical per-axis scatter must agree with the predicted covariance to
+    # within a factor of ~2 (the bug under-predicted the Dec variance by ~10x).
+    cov_emp = np.cov(offsets.T)
+    for k, axis in enumerate(("RA", "Dec")):
+        ratio = cov_emp[k, k] / cov_pred[k, k]
+        assert 0.4 < ratio < 2.5, f"{axis} variance ratio empirical/predicted = {ratio:.2f}"
