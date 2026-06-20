@@ -299,6 +299,41 @@ def test_moving_observatory_coordinate_cache():
             observatory.populate_observatory(obscode, et, row_inconsistent)
 
 
+def test_fixed_observatory_with_zero_parallax_constant():
+    """Regression test for issue #286.
+
+    Observatories whose parallax constants are legitimately 0.0 must still be
+    treated as fixed-position observatories. The previous truthiness check
+    treated a 0.0 Longitude/cos/sin as "no position", which routed these codes
+    to the moving-observatory path and raised "invalid coordinates" for plain
+    MPC input that carries no per-observation position.
+    """
+    observatory = LayupObservatory()
+
+    # Codes that have parallax-constant keys (possibly 0.0) must resolve to a
+    # finite fixed position. The geocenter codes resolve to (0, 0, 0).
+    fixed_with_zero = {
+        "000": None,  # Greenwich: Longitude == 0.0
+        "782": None,  # Quito (equatorial): sin == 0.0
+        "500": (0.0, 0.0, 0.0),  # Geocentric: Longitude == cos == sin == 0.0
+        "244": (0.0, 0.0, 0.0),  # Geocentric Occultation Observation
+        "248": (0.0, 0.0, 0.0),  # Hipparcos
+    }
+    for obscode, expected in fixed_with_zero.items():
+        coords = observatory.ObservatoryXYZ.get(obscode)
+        assert coords is not None
+        assert None not in coords, f"{obscode} wrongly treated as having no fixed position"
+        assert not np.isnan(np.asarray(coords, dtype=float)).any()
+        if expected is not None:
+            assert np.allclose(coords, expected)
+
+    # Codes with no parallax-constant keys (roving observer, space telescopes)
+    # must still report no fixed position so they take the ADES-position path.
+    for obscode in ("247", "C51", "C57", "250"):
+        coords = observatory.ObservatoryXYZ.get(obscode)
+        assert coords == (None, None, None)
+
+
 def test_get_format():
     """Test that the get_format function works for a small CSV file."""
     input_file = get_test_filepath("BCOM.csv")
