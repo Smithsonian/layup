@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_equal
 
@@ -9,6 +10,14 @@ from layup.utilities.data_processing_utilities import has_cov_columns
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
+from layup.utilities.orbit_conversion import (
+    covariance_keplerian_xyz,
+    universal_cartesian,
+    universal_keplerian,
+)
+
+# Standard gravitational parameter of the Sun, AU^3 / day^2.
+_GM_SUN = 0.00029591220828559
 
 
 def create_argparse_object():
@@ -318,3 +327,28 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
                 output_data_BCOM[column_name],
                 err_msg=f"Column {column_name} not equal with dtype {input_data_BCOM[column_name].dtype}",
             )
+
+
+def test_keplerian_covariance_finite_for_hyperbolic_orbit():
+    """Regression for #288: converting a hyperbolic orbit (e>1, a<0) to KEP/BKEP
+    must produce a finite covariance.
+
+    universal_keplerian computed the mean motion as sqrt(mu / a**3); for a < 0
+    that is the square root of a negative number -> NaN, which poisoned the KEP
+    covariance Jacobian and produced an all-NaN covariance matrix.  The mean
+    motion is now sqrt(mu / |a|**3), real for hyperbolic orbits.
+    """
+    epoch = 60000.0
+    # Build a hyperbolic Cartesian state from elements (q = 1.2 AU, e = 1.4).
+    state = np.asarray(
+        universal_cartesian(_GM_SUN, 1.2, 1.4, 0.3, 0.5, 0.8, epoch - 30.0, epoch),
+        dtype=float,
+    )
+    a, e = (float(v) for v in universal_keplerian(_GM_SUN, *state, epoch)[:2])
+    assert a < 0.0 and e > 1.0  # premise: genuinely hyperbolic
+
+    rng = np.random.default_rng(0)
+    A = rng.normal(size=(6, 6)) * 1e-5
+    cov_xyz = A @ A.T + np.eye(6) * 1e-11  # a symmetric positive-definite Cartesian covariance
+    cov_kep = np.asarray(covariance_keplerian_xyz(_GM_SUN, *state, epoch, cov_xyz))
+    assert np.all(np.isfinite(cov_kep)), "hyperbolic KEP covariance contains NaN/inf"
