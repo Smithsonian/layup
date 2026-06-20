@@ -204,7 +204,10 @@ FitResult run_bk_native_fit(
 
     const size_t ndof = detections.size() * 2 - 6;
     const double thresh = 10.0;
-    if ((result.csq / (double)ndof) > thresh)
+    // ndof == 0 (exactly 3 detections -> 6 equations for 6 parameters) is an
+    // exactly-determined fit: reduced chi2 is undefined (csq/0), so skip the
+    // quality gate instead of dividing by zero and flagging on inf/nan.
+    if (ndof > 0 && (result.csq / (double)ndof) > thresh)
     {
         result.flag = 2;  // "converged" but chi2/dof is too large
     }

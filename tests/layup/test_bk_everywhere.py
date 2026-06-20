@@ -195,6 +195,30 @@ def test_engine_sweep_produces_method_strings():
     assert bk_res.method == "bk_native"
 
 
+# A 3-observation BK fit is exactly determined: ndof = 2*3 - 6 = 0.  These
+# well-conditioned short-arc cases converge, so they exercise the ndof == 0
+# branch of the reduced-chi2 quality gate.
+_NDOF_ZERO_CASES = ["mainbelt_2.5AU_arc_000.04d", "mainbelt_3.5AU_arc_000.04d"]
+
+
+@pytest.mark.parametrize("case_name", _NDOF_ZERO_CASES)
+def test_bk_native_ndof_zero_not_spuriously_flagged(case_name):
+    """Regression: with exactly 3 observations ndof == 0, so reduced chi2
+    (csq / ndof) is csq / 0.  A converged fit with csq > 0 must keep flag 0,
+    not be downgraded to flag 2 by an inf comparison -- the gate is skipped
+    when ndof == 0."""
+    ephem = get_ephem(CACHE)
+    case = _load_case(case_name)
+    obs = _build_observations(case)
+    assert len(obs) == 3  # guards the premise: this really is the ndof==0 case
+    seed = _truth_seed(case)
+
+    result = run_bk_native_fit(ephem, seed, obs, _MU_SUN)
+    assert result.ndof == 0
+    assert result.csq > 0.0  # noisy obs -> nonzero residual, so csq/0 would be +inf
+    assert result.flag == 0, f"ndof==0 fit spuriously flagged {result.flag} (csq={result.csq})"
+
+
 # ---------------------------------------------------------------------------
 # Diagnostic helper (not a test) -- used by sweep harness scripts.
 # ---------------------------------------------------------------------------
