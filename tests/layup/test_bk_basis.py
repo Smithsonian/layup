@@ -98,6 +98,46 @@ def test_round_trip_cart_to_bk_to_cart(case):
 
 
 # ---------------------------------------------------------------------------
+# Cartesian velocity is the exact time-derivative of the Cartesian position
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("case", _BK_CASES)
+def test_velocity_is_time_derivative_of_position(case):
+    """The Cartesian velocity from bk_to_cartesian is dr/dt along the BK motion.
+
+    Along the instantaneous BK trajectory the angular coordinates advance at
+    their rates: alpha(t) = alpha + adot*t, beta(t) = beta + bdot*t,
+    gamma(t) = gamma + gdot*t. Central-differencing the *position* part of
+    bk_to_cartesian along that motion must reproduce the *velocity* part, since
+    v is by construction d/dt of r = rho_hat(alpha, beta) / gamma.
+
+    This pins down that v is a genuine velocity (AU/day) and not a quantity
+    with anomalous units -- independent of the round-trip and Jacobian tests.
+    The unusual-looking magnitudes of the intermediate rho_hat_alpha/beta terms
+    are expected: those tangent vectors are deliberately not unit length.
+    """
+    rng = np.random.default_rng(seed=2024)
+    fid = _make_fiducial(rng)
+    alpha, beta, gamma, adot, bdot, gdot = case
+    v_analytic = np.asarray(bk_to_cartesian(_bk_from_tuple(case), fid)).flatten()[3:]
+
+    def position(t):
+        state = BKState(alpha + adot * t, beta + bdot * t, gamma + gdot * t, adot, bdot, gdot)
+        return np.asarray(bk_to_cartesian(state, fid)).flatten()[:3]
+
+    dt = 1e-4
+    v_fd = (position(dt) - position(-dt)) / (2.0 * dt)
+    np.testing.assert_allclose(
+        v_analytic,
+        v_fd,
+        rtol=1e-6,
+        atol=1e-12,
+        err_msg="Cartesian velocity is not the time-derivative of the Cartesian position",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Analytic dcart_dbk vs finite-difference
 # ---------------------------------------------------------------------------
 
