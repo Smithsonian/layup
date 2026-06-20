@@ -11,6 +11,7 @@ from layup.utilities.data_processing_utilities import (
     has_cov_columns,
     parse_fit_result,
     process_data,
+    skyplane_cov_to_radec_cov,
 )
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
@@ -560,3 +561,42 @@ def test_parse_fit_result_missing_some_cov_columns():
         assert len(fit_result.cov) == 36
         assert np.all(np.array(fit_result.cov[:-1]) != 0.0)
         assert fit_result.cov[-1] == 0.0
+
+
+def test_skyplane_cov_to_radec_cov():
+    """The sky-plane covariance is already an on-sky (great-circle) covariance,
+    so the error ellipse is the eigen-decomposition of the 2x2 matrix with no
+    cos(dec) scaling. Regression test for the previous version, which scaled by
+    cos(dec) with dec in degrees and was called with obs_cov_yy and obs_cov_xy
+    swapped.
+    """
+    rad_to_arcsec = (180.0 / np.pi) * 3600.0
+
+    # Axis-aligned covariance, major axis along Dec (yy > xx): PA points North (0 deg).
+    a, b, pa = skyplane_cov_to_radec_cov(np.array([1e-12]), np.array([0.0]), np.array([4e-12]))
+    assert np.isclose(a[0], np.sqrt(4e-12) * rad_to_arcsec)
+    assert np.isclose(b[0], np.sqrt(1e-12) * rad_to_arcsec)
+    assert np.isclose(pa[0] % 180.0, 0.0)
+
+    # Axis-aligned covariance, major axis along RA (xx > yy): PA points East (90 deg).
+    a, b, pa = skyplane_cov_to_radec_cov(np.array([4e-12]), np.array([0.0]), np.array([1e-12]))
+    assert np.isclose(a[0], np.sqrt(4e-12) * rad_to_arcsec)
+    assert np.isclose(pa[0] % 180.0, 90.0)
+
+    # Isotropic covariance: a circle, a == b.
+    a, b, _ = skyplane_cov_to_radec_cov(np.array([2e-12]), np.array([0.0]), np.array([2e-12]))
+    assert np.isclose(a[0], b[0])
+
+    # General positive-definite case must match the eigenvalues of the 2x2,
+    # independent of any RA/Dec (no cos(dec) dependence in the signature).
+    rng = np.random.default_rng(0)
+    for _ in range(10):
+        m = rng.normal(size=(2, 2))
+        cov = m @ m.T * 1e-12  # symmetric positive-definite, radians^2
+        a, b, _ = skyplane_cov_to_radec_cov(
+            np.array([cov[0, 0]]), np.array([cov[0, 1]]), np.array([cov[1, 1]])
+        )
+        eigvals = np.linalg.eigvalsh(cov)
+        assert np.isclose(a[0], np.sqrt(eigvals[1]) * rad_to_arcsec)
+        assert np.isclose(b[0], np.sqrt(eigvals[0]) * rad_to_arcsec)
+        assert a[0] >= b[0] > 0.0

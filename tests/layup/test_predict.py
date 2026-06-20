@@ -181,6 +181,19 @@ def test_predict_output(tmpdir):
     # variance to the RA/Dec off-diagonal term (obs_cov_yy == obs_cov_xy).
     assert np.all(yy != xy)
 
+    # The error-ellipse columns must be the eigen-decomposition of that 2x2:
+    # semi-major >= semi-minor > 0 and semi-major^2 = larger eigenvalue. This
+    # guards the skyplane_cov_to_radec_cov call (previously passed obs_cov_yy
+    # and obs_cov_xy in the wrong order and scaled by cos(dec) in degrees).
+    a_arcsec = output_data["a_arcsec"]
+    b_arcsec = output_data["b_arcsec"]
+    assert np.all(np.isfinite(a_arcsec)) and np.all(np.isfinite(b_arcsec))
+    assert np.all(a_arcsec >= b_arcsec)
+    assert np.all(b_arcsec > 0.0)
+    rad_to_arcsec = (180.0 / np.pi) * 3600.0
+    lambda_major = 0.5 * (xx + yy + np.sqrt((xx - yy) ** 2 + (2.0 * xy) ** 2))
+    assert np.allclose(a_arcsec, np.sqrt(lambda_major) * rad_to_arcsec)
+
     # Testing the output of the sexagesimal conversion separately
 
     result = subprocess.run(

@@ -418,11 +418,9 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     # Only calculate covariances if covaraiances are in the input file
     if "cov_0_0" in data.dtype.names:
         results["a_arcsec"], results["b_arcsec"], results["PA_deg"] = skyplane_cov_to_radec_cov(
-            results["ra_deg"],
-            results["dec_deg"],
             results["obs_cov_xx"],
-            results["obs_cov_yy"],
             results["obs_cov_xy"],
+            results["obs_cov_yy"],
         )
 
     return results
