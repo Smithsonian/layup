@@ -162,11 +162,24 @@ def test_predict_output(tmpdir):
     assert np.allclose(output_data["rho_y"], known_data["rho_y"])
     assert np.allclose(output_data["rho_z"], known_data["rho_z"])
 
-    # ~ Leaving these commented out until the covariance calculation is solidified
-    # assert np.allclose(output_data["obs_cov0"], known_data["obs_cov0"])
-    # assert np.allclose(output_data["obs_cov1"], known_data["obs_cov1"])
-    # assert np.allclose(output_data["obs_cov2"], known_data["obs_cov2"])
-    # assert np.allclose(output_data["obs_cov3"], known_data["obs_cov3"])
+    # holman.csv carries a non-zero orbit covariance, so predict must report a
+    # valid 2x2 sky-plane covariance. We check physical properties rather than
+    # golden values: the covariance varies at the ~1e-7 level across platforms,
+    # and the propagated covariance has no independent reference in the repo.
+    # (The full numerical validation lives in
+    # test_predict_observational_covariance_matches_refit_scatter.)
+    xx = output_data["obs_cov_xx"]
+    yy = output_data["obs_cov_yy"]
+    xy = output_data["obs_cov_xy"]
+    # All entries finite.
+    assert np.all(np.isfinite(xx)) and np.all(np.isfinite(yy)) and np.all(np.isfinite(xy))
+    # Positive variances and a positive-definite 2x2 (positive determinant).
+    assert np.all(xx > 0.0)
+    assert np.all(yy > 0.0)
+    assert np.all(xx * yy - xy * xy > 0.0)
+    # Regression guard for the obs_cov_yy indexing bug, which set the Dec
+    # variance to the RA/Dec off-diagonal term (obs_cov_yy == obs_cov_xy).
+    assert np.all(yy != xy)
 
     # Testing the output of the sexagesimal conversion separately
 
