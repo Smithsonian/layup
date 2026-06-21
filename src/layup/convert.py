@@ -45,6 +45,19 @@ degree_columns = {
     "KEP": ["inc", "node", "argPeri", "ma"],
 }
 
+# Ordered 6-element state for each format; the index of an element here is also
+# its row/column index in the 6x6 covariance. Used to scale the covariance of
+# the degree columns when their values are converted from radians to degrees.
+element_order = {
+    "BCART": ["x", "y", "z", "xdot", "ydot", "zdot"],
+    "BCART_EQ": ["x", "y", "z", "xdot", "ydot", "zdot"],
+    "CART": ["x", "y", "z", "xdot", "ydot", "zdot"],
+    "BCOM": ["q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB"],
+    "COM": ["q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB"],
+    "BKEP": ["a", "e", "inc", "node", "argPeri", "ma"],
+    "KEP": ["a", "e", "inc", "node", "argPeri", "ma"],
+}
+
 # Add this to MJD to convert to JD
 MJD_TO_JD_CONVERSTION = 2400000.5
 
@@ -175,6 +188,24 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         (col, dtype)
         for col, dtype in zip(required_colum_names[convert_to], default_column_dtypes, strict=False)
     ]
+
+    # A stored degree-format orbit carries its covariance in degrees (consistent
+    # with its degree-valued angles). The conversion math below works in radians
+    # (parse_covariance_row_to_CART and the element-value parsing use radians), so
+    # scale the angle rows/cols of the input covariance back to radians first.
+    # This mirrors the radians->degrees output scaling and keeps round-trips exact.
+    if has_covariance:
+        data = data.copy()
+        for fmt in degree_columns:
+            mask = data["FORMAT"] == fmt
+            if not mask.any():
+                continue
+            input_scale = np.ones(6)
+            for col in degree_columns[fmt]:
+                input_scale[element_order[fmt].index(col)] = np.pi / 180
+            for i in range(6):
+                for j in range(6):
+                    data[f"cov_{i}_{j}"][mask] *= input_scale[i] * input_scale[j]
 
     # For each row in the data, convert the orbit to the desired format
     results = []
@@ -342,6 +373,20 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     for col in degree_columns.get(convert_to, []):
         # Convert from radians to degrees and wrap to [0, 360)
         output[col] = (output[col] * 180 / np.pi) % 360
+
+    # The covariance is propagated in radians, so the rows/columns of any
+    # element whose value was just converted to degrees must be scaled by
+    # 180/pi to stay consistent with the (now degree-valued) state. Without
+    # this, the reported angular uncertainties are too small by 180/pi (their
+    # variances by (180/pi)^2). Round-trip conversions hide this because the
+    # inverse conversion undoes both the value and the covariance scaling.
+    if has_covariance and convert_to in degree_columns:
+        scale = np.ones(6)
+        for col in degree_columns[convert_to]:
+            scale[element_order[convert_to].index(col)] = 180 / np.pi
+        for i in range(6):
+            for j in range(6):
+                output[f"cov_{i}_{j}"] = output[f"cov_{i}_{j}"] * scale[i] * scale[j]
 
     return output
 
