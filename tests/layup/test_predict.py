@@ -379,7 +379,17 @@ def _prep_for_fit(obs, observatory):
     return rfn.merge_arrays([obs, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
 
-def test_predict_observational_covariance_matches_refit_scatter():
+# (label, observation file, prediction obscode). The interstellar case
+# (3I/ATLAS, designation A11pl3Z) is a strongly hyperbolic orbit (e ~ 6.5), so
+# it exercises the covariance projection well outside the main-belt regime.
+_SCATTER_CASES = [
+    ("mainbelt", "1_random_mpc_ADES_provIDs_no_sats_micro.csv", "704"),
+    ("interstellar_3I_ATLAS", "3I_ATLAS_ades.csv", "I40"),
+]
+
+
+@pytest.mark.parametrize("label, obs_filename, obscode", _SCATTER_CASES, ids=[c[0] for c in _SCATTER_CASES])
+def test_predict_observational_covariance_matches_refit_scatter(label, obs_filename, obscode):
     """Issue #278: Monte-Carlo validation of predict's observational covariance.
 
     Fit an orbit, predict to an epoch to obtain the on-sky (tangent-plane)
@@ -393,7 +403,9 @@ def test_predict_observational_covariance_matches_refit_scatter():
     This is the scatter.c-style check from Bernstein & Khushalani. It is a
     regression guard for the obs_cov_yy indexing bug, which set the Dec variance
     to the RA/Dec off-diagonal term and so under-estimated the minor-axis
-    uncertainty by an order of magnitude.
+    uncertainty by an order of magnitude. It runs across dynamical regimes
+    (main-belt and the hyperbolic interstellar object 3I/ATLAS) so the
+    covariance is validated where the orbit geometry differs substantially.
     """
     import spiceypy as spice
     from layup.orbitfit import _orbitfit
@@ -405,8 +417,7 @@ def test_predict_observational_covariance_matches_refit_scatter():
 
     DEG = np.pi / 180.0
     ARCSEC = DEG / 3600.0
-    STATE_COLS = ["x", "y", "z", "xdot", "ydot", "zdot"]
-    OBSCODE = "704"
+    OBSCODE = obscode
     N_TRIALS = 100
     SIGMA = 1.0 * ARCSEC  # matches the fitter's default per-observation uncertainty
 
@@ -414,7 +425,7 @@ def test_predict_observational_covariance_matches_refit_scatter():
     observatory = LayupObservatory(cache_dir=None)
 
     obs = CSVDataReader(
-        get_test_filepath("1_random_mpc_ADES_provIDs_no_sats_micro.csv"),
+        get_test_filepath(obs_filename),
         "csv",
         primary_id_column_name="provID",
     ).read_rows()
