@@ -5,6 +5,7 @@ from numpy.lib import recfunctions as rfn
 from numpy.testing import assert_array_equal, assert_equal
 
 from layup.utilities.data_processing_utilities import (
+    AU_KM,
     LayupObservatory,
     get_cov_columns,
     get_format,
@@ -560,3 +561,43 @@ def test_parse_fit_result_missing_some_cov_columns():
         assert len(fit_result.cov) == 36
         assert np.all(np.array(fit_result.cov[:-1]) != 0.0)
         assert fit_result.cov[-1] == 0.0
+
+
+def test_moving_observatory_barycentric_position():
+    """A moving (space-based) observatory's barycentric position must be Earth's
+    barycentric position plus the geocentric offset supplied in the data.
+
+    Regression test for a bug that routed a moving observatory's position --
+    stored in km in the J2000/ICRF frame -- through the fixed-station transform
+    (rotate Earth-fixed->J2000, then scale by the Earth radius). That misplaced
+    the observatory by a factor of the Earth radius (~6378x), i.e. tens of
+    millions of km, which made any fit including a space-based observation
+    diverge.
+    """
+    observatory = LayupObservatory()
+    et = spice.str2et("2003-01-26T00:24:24.480Z")
+    # An HST-like low-Earth-orbit position (km, J2000 geocentric), |r| ~ 6948 km.
+    geocentric_km = np.array([-6905.9, -673.9, -353.1])
+    row = np.array(
+        [("250", et, "ICRF_KM", 399, geocentric_km[0], geocentric_km[1], geocentric_km[2])],
+        dtype=[
+            ("stn", "U4"),
+            ("et", "<f8"),
+            ("sys", "U7"),
+            ("ctr", "i4"),
+            ("pos1", "<f8"),
+            ("pos2", "<f8"),
+            ("pos3", "<f8"),
+        ],
+    )
+
+    bary = np.atleast_1d(observatory.obscodes_to_barycentric(row))
+    obs_pos_km = np.array([bary["x"][0], bary["y"][0], bary["z"][0]]) * AU_KM
+
+    earth_state, _ = spice.spkezr("EARTH", et, "J2000", "NONE", "SSB")
+    earth_pos_km = np.array(earth_state[:3])
+
+    # The observatory must sit at exactly its given geocentric offset from Earth
+    # (~6948 km), not ~6378x further out.
+    offset_km = obs_pos_km - earth_pos_km
+    np.testing.assert_allclose(offset_km, geocentric_km, atol=1.0)
