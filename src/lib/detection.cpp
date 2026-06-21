@@ -105,6 +105,10 @@ namespace orbit_fit
         std::optional<double> epoch_err;
         std::optional<double> ra_unc;
         std::optional<double> dec_unc;
+        // Sky-motion-rate uncertainties (radians/day), used to weight the streak
+        // rate residuals. Only meaningful for StreakObservations.
+        std::optional<double> ra_rate_unc;
+        std::optional<double> dec_rate_unc;
 
     private:
         // Private constructor used by the factory methods.
@@ -213,10 +217,14 @@ namespace orbit_fit
         }
 
         // Factory method for a Streak observation.
+        // ra_rate/dec_rate and their uncertainties are in radians/day (great-circle;
+        // ra_rate already carries the cos(Dec) factor -- see orbitfit.py ingest).
         static Observation from_streak(double ra, double dec, double ra_rate, double dec_rate,
                                        double epoch_val,
                                        const std::array<double, 3> &obs_position,
-                                       const std::array<double, 3> &obs_velocity)
+                                       const std::array<double, 3> &obs_velocity,
+                                       double ra_rate_uncy = 24.0 / 206265.0,
+                                       double dec_rate_uncy = 24.0 / 206265.0)
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
             obs.observation_type = StreakObservation(ra_rate, dec_rate);
@@ -225,6 +233,8 @@ namespace orbit_fit
             obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
             obs.ra_unc = 1.0 / 206265;
             obs.dec_unc = 1.0 / 206265;
+            obs.ra_rate_unc = ra_rate_uncy;
+            obs.dec_rate_unc = dec_rate_uncy;
             return obs;
         }
 
@@ -232,9 +242,12 @@ namespace orbit_fit
                                                double ra, double dec, double ra_rate, double dec_rate,
                                                double epoch_val,
                                                const std::array<double, 3> &obs_position,
-                                               const std::array<double, 3> &obs_velocity)
+                                               const std::array<double, 3> &obs_velocity,
+                                               double ra_rate_uncy = 24.0 / 206265.0,
+                                               double dec_rate_uncy = 24.0 / 206265.0)
         {
-            Observation obs = from_streak(ra, dec, ra_rate, dec_rate, epoch_val, obs_position, obs_velocity);
+            Observation obs = from_streak(ra, dec, ra_rate, dec_rate, epoch_val, obs_position, obs_velocity,
+                                          ra_rate_uncy, dec_rate_uncy);
             obs.objID = objID;
             return obs;
         }
@@ -277,11 +290,13 @@ namespace orbit_fit
             .def_static("from_streak", &Observation::from_streak,
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+                        py::arg("ra_rate_unc") = 24.0 / 206265.0, py::arg("dec_rate_unc") = 24.0 / 206265.0,
                         "Construct a Streak observation")
             .def_static("from_streak_with_id", &Observation::from_streak_with_id,
                         py::arg("objID"),
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+                        py::arg("ra_rate_unc") = 24.0 / 206265.0, py::arg("dec_rate_unc") = 24.0 / 206265.0,
                         "Construct a Streak observation")
             .def_readwrite("epoch", &Observation::epoch, "Observation epoch (as a double)")
             .def_readwrite("observation_type", &Observation::observation_type, "Variant holding the observation data")
@@ -293,6 +308,8 @@ namespace orbit_fit
             .def_readwrite("inverse_covariance", &Observation::inverse_covariance, "Optional inverse covariance matrix")
             .def_readwrite("ra_unc", &Observation::ra_unc, "RA uncertainty")
             .def_readwrite("dec_unc", &Observation::dec_unc, "Dec uncertainty")
+            .def_readwrite("ra_rate_unc", &Observation::ra_rate_unc, "RA-rate uncertainty (rad/day)")
+            .def_readwrite("dec_rate_unc", &Observation::dec_rate_unc, "Dec-rate uncertainty (rad/day)")
             .def_readwrite("mag", &Observation::mag, "Optional magnitude")
             .def_readwrite("mag_err", &Observation::mag_err, "Optional magnitude error");
     }
