@@ -629,7 +629,7 @@ def _orbitfit(
 
         # Check if certain columns are present in the data
         column_names = data.dtype.names
-        g_column_present = "astCat" in column_names
+        astcat_column_present = "astCat" in column_names
         program_column_present = "program" in column_names
         position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
 
@@ -679,15 +679,19 @@ def _orbitfit(
                 )
 
             if weight_data:
-                data_weight = data_weight_Veres2017(
+                # data_weight_Veres2017 returns the astrometric uncertainty in
+                # ARCSECONDS (per its docstring), but Observation.ra_unc /
+                # dec_unc are stored in RADIANS.  Convert at the assignment.
+                data_weight_arcsec = data_weight_Veres2017(
                     obsCode=d["stn"],
                     jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
                     catalog=d["astCat"] if astcat_column_present else None,
                     program=d["program"] if program_column_present else None,
                 )
+                data_weight_rad = data_weight_arcsec * np.pi / (180.0 * 3600.0)
 
-                o.ra_unc = data_weight
-                o.dec_unc = data_weight
+                o.ra_unc = data_weight_rad
+                o.dec_unc = data_weight_rad
 
             observations.append(o)
 
