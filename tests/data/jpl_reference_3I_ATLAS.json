@@ -1,0 +1,13 @@
+{
+  "_comment": "JPL Horizons barycentric (SSB, @0) equatorial-frame (refplane='earth', = layup BCART_EQ) state of 3I/ATLAS (C/2025 N1), captured 2026-06-20 via astroquery.jplhorizons.Horizons(id='C/2025 N1', location='@0', epochs=<epoch_jd_tdb>, id_type=None).vectors(refplane='earth'). The epoch is the epoch layup selects when fitting tests/data/3I_ATLAS_ades.csv; regenerate (and re-measure tolerances) if that fixture or layup's epoch logic changes, or to refresh against an updated JPL solution.",
+  "object": "3I/ATLAS (C/2025 N1)",
+  "epoch_jd_tdb": 2460858.8888687054,
+  "state_au_au_per_day": [
+    0.2512056387644399,
+    -4.202966462230775,
+    -1.509094494467059,
+    -0.01384509539547448,
+    0.03044967992373226,
+    0.01159782444753675
+  ]
+}
