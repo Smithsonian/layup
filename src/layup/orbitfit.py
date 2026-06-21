@@ -17,7 +17,17 @@ from layup.routines import (
     get_ephem,
     run_from_vector_with_initial_guess,
 )
+
+try:
+    from layup.routines import (
+        get_ias15_adaptive_mode,
+        set_ias15_adaptive_mode,
+    )
+except ImportError:  # extension not rebuilt yet
+    get_ias15_adaptive_mode = lambda: -1
+    set_ias15_adaptive_mode = lambda m: None
 from layup.convert import convert
+from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
 from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
 from layup.utilities.data_processing_utilities import (
@@ -325,97 +335,201 @@ def create_empty_result(id, dtypes):
 
 
 def do_gauss_iod(observations, seq):
-    """Calculate an initial orbit estimate using Gauss's method.
+    """Backward-compat wrapper for the Gauss IOD.
 
-    Parameters
-    ----------
-    observations : list[Observation]
-        The list of Observations used for the orbit estimate
-    seq : list[list[int]
-        The list of lists of indexes of observations that are closely spaced in time.
-
-    Returns
-    -------
-    list[FitResult]
-        A collection of orbit fit results that can be used to perform a higher
-        quality fit estimate.
+    Prefer ``layup.iod.get_iod("gauss")`` for new code; this shim
+    exists so callers that imported ``do_gauss_iod`` directly continue
+    to work.
     """
-    # Get gauss solution, using the first, middle, and last observation
-    # of the primary sequence
-    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
-    logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
-    solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
-
-    return solns
+    return get_iod("gauss")(observations, seq)
 
 
-def do_fit(observations, seq, cache_dir, iod="gauss"):
-    """Carry out an orbit fit to the observations in a
-    series of steps.  A list of lists of observation indices
-    specifies the order in which the fit proceeds.
+# Multi-root picker tuning. Both knobs are exposed to do_fit() callers
+# in case downstream code wants to override them, but the defaults are
+# what worked best on the diagnostic/scan and neo_scan datasets.
+_PICKER_MIN_R_HELIO_AU = 0.3  # reject roots with r < this as unphysical
+_PICKER_SCREEN_ITER_MAX = 80  # cheap LM budget for the first pass
+_PICKER_FULL_ITER_MAX = 100  # full LM budget for the fallback pass
 
-    A Gauss preliminary order is fit for the 0-th segment,
-    using the first, middle, and last observations in that
-    segment.
+_PREFILTER_THRESHOLD_SIGMA = 1000.0  # held-out residual filter cutoff
 
-    Then an orbit fit is done on the 0-th segment, using the
-    initial orbit from Gauss.  If that fails, any other preliminary
-    solutions are tried.
+# IAS15 adaptive-step controller used during the multi-root picker.
+# With the legacy controller (mode 1), LM grinds for minutes on phantom
+# Gauss roots whose trajectories pass close to Earth (the integrator
+# chases ever-smaller steps to resolve the close encounter — 100-1000×
+# wallclock blowup observed on diagnostic/scan). The newer (Pham, Rein
+# & Spiegel 2024) controller, mode 2, steps through those encounters
+# efficiently: it brings the same pathological cases from >120 s to
+# sub-second with the identical recovered orbit, and unlike a step-size
+# floor it is a better controller rather than a truncation, so it costs
+# no accuracy on genuine close-Earth encounters. Set to -1 to leave
+# ASSIST's default (legacy mode 1).
+_PICKER_IAS15_ADAPTIVE_MODE = 2
 
-    Next, a fit to the full set of observations is attempted, given
-    the fit to the primary segment as an initial guess.  If that
-    succeeds, the solution is returned.
 
-    Otherwise, adjacent segments of observations are added and
-    the fit is updated, iteratively.
+# Cache of the Python-side assist.Ephem handle. The C-side get_ephem()
+# from layup.routines returns the C struct; the Python residual filter
+# needs the rebound/assist Python wrapper instead, so we cache one per
+# cache_dir.
+_assist_python_ephem_cache: dict = {}
+
+
+def _get_python_ephem(cache_dir):
+    """Lazy-load and cache the Python-side assist.Ephem for the filter."""
+    key = str(cache_dir)
+    if key in _assist_python_ephem_cache:
+        return _assist_python_ephem_cache[key]
+    try:
+        import assist
+    except ImportError:
+        return None
+    try:
+        eph = assist.Ephem(os.path.join(key, "linux_p1550p2650.440"), os.path.join(key, "sb441-n16.bsp"))
+    except Exception as e:
+        logger.warning(f"assist.Ephem load failed for {cache_dir}: {e}")
+        return None
+    _assist_python_ephem_cache[key] = eph
+    return eph
+
+
+def _pick_best_root(candidates, min_r_au):
+    """Pick the best converged candidate from a list of LM results.
+
+    "Best" means smallest χ² among candidates that
+      (1) report flag == 0 (LM converged), and
+      (2) have heliocentric distance > min_r_au (physical orbit).
+    Returns None if no candidate satisfies (1); in that case the caller
+    typically retries at a larger LM budget. If (1) is met but (2)
+    isn't, the smallest-χ² convergent root is still returned (better
+    than nothing).
+    """
+    converged = [c for c in candidates if c.flag == 0]
+    if not converged:
+        return None
+    sane = [c for c in converged if (c.state[0] ** 2 + c.state[1] ** 2 + c.state[2] ** 2) > min_r_au**2]
+    pool = sane if sane else converged
+    return min(pool, key=lambda c: c.csq)
+
+
+def do_fit(
+    observations,
+    seq,
+    cache_dir,
+    iod="gauss",
+    screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
+    full_iter_max: int = _PICKER_FULL_ITER_MAX,
+    min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
+    prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
+    picker_ias15_adaptive_mode: int = _PICKER_IAS15_ADAPTIVE_MODE,
+):
+    """Carry out an orbit fit to a list of observations.
+
+    Pipeline:
+      1. IOD: produce one or more candidate seed orbits via the
+         registered method named by `iod` (default: "gauss"). The
+         registry lives in `layup.iod`; register new methods with
+         `iod.register_iod(name, callable)`.
+      2. Multi-root picker: run LM from every IOD candidate on the
+         primary segment (`seq[0]`) at a cheap `screen_iter_max`
+         budget. Pick the smallest-χ² converged candidate with
+         heliocentric distance above `min_r_helio_AU`. If nothing
+         converges at the cheap budget, retry at `full_iter_max`.
+         Then refit on the full observation set.
 
     Parameters
     ----------
     observations : list
-        A time-ordered list of observations
+        Time-ordered list of layup Observations.
     seq : list of lists
-        A list of lists of observation indices.
+        Per-segment index lists; seq[0] is the primary segment.
+    cache_dir : str
+        Directory holding the ASSIST kernels.
     iod : str
-        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
-        Default is 'gauss'.
+        Name of the registered IOD method. Default "gauss".
+    screen_iter_max, full_iter_max : int
+        Two-tier LM iteration caps for the multi-root picker.
+    min_r_helio_AU : float
+        Lower bound on heliocentric distance for accepted IOD roots.
 
     Returns
     -------
     FitResult
-        The result of the orbit fit.
+        Best converged fit (flag == 0) when one exists, else a
+        best-effort or sentinel FitResult with a non-zero flag.
     """
 
-    if iod.lower() == "gauss":
-        solns = do_gauss_iod(observations, seq)
-    else:
-        raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
+    try:
+        iod_func = get_iod(iod) if isinstance(iod, str) else iod
+    except ValueError as e:
+        raise ValueError(f"{e} Use iod.register_iod to add a new method.")
+    solns = iod_func(observations, seq)
 
-    # If the selected iod fails, try something else.
+    # If the selected iod fails, surface a sentinel.
     if not solns:
-        logger.debug(f"The iod {iod} failed")
+        logger.debug(f"IOD {iod!r} returned no candidates")
         x = FitResult()
         x.flag = 5
         return x
 
+    # Pre-filter the IOD candidates by predicted-vs-observed residual
+    # on every observation. The right Gauss root predicts the full
+    # observation set within a few σ; phantom roots typically miss by
+    # 10⁵+ σ. Throwing those out before any LM iteration runs cuts
+    # the picker loop down to 1-2 LM fits per case in the common
+    # case (vs up to 8 brute-force LMs). Loose threshold (default
+    # 1000σ) so the right root is never rejected.
+    py_ephem = _get_python_ephem(cache_dir)
+    if py_ephem is not None and len(solns) > 1:
+        before = len(solns)
+        solns = filter_candidates_by_residual(
+            solns, observations, py_ephem, threshold_sigma=prefilter_threshold_sigma
+        )
+        if len(solns) < before:
+            logger.debug(
+                f"IOD pre-filter: kept {len(solns)}/{before} " f"candidates at {prefilter_threshold_sigma}σ"
+            )
+
     assist_ephem = get_ephem(cache_dir)
 
-    #! I think this can be a `for/else loop...`
-    # Fit primary interval, starting with gauss solution
-    x = solns[0]
-    obs = [observations[i] for i in seq[0]]
-    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    # Multi-root picker. Fit every IOD candidate on the primary segment
+    # at the cheap screening budget, pick the best converged root, and
+    # only fall back to the full LM budget if nothing converged at the
+    # cheap tier. Gauss's polynomial gives up to 8 real roots; historic
+    # do_fit committed to solns[0] (largest r), which is often a
+    # phantom outer-SS solution for NEO-like targets.
+    #
+    # During this loop we select IAS15 adaptive_mode=2 so phantom roots
+    # whose trajectories pass close to Earth can't tie up the
+    # integrator for minutes (100-1000× wallclock blowup observed on
+    # diagnostic/scan with the legacy controller). The newer controller
+    # steps through close encounters efficiently with no accuracy cost.
+    # The setting is restored on every exit path.
+    saved_mode = get_ias15_adaptive_mode()
+    if picker_ias15_adaptive_mode >= 0:
+        set_ias15_adaptive_mode(picker_ias15_adaptive_mode)
 
-    if (x.flag != 0) and len(solns) > 1:
-        x = solns[1]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    elif (x.flag != 0) and len(solns) > 2:
-        x = solns[2]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    if x.flag != 0:
-        logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
-        x.flag = 3  # caution
+    obs = [observations[i] for i in seq[0]]
+    try:
+        candidates = [
+            run_from_vector_with_initial_guess(assist_ephem, soln, obs, screen_iter_max) for soln in solns
+        ]
+        x = _pick_best_root(candidates, min_r_helio_AU)
+        if x is None:
+            candidates = [
+                run_from_vector_with_initial_guess(assist_ephem, soln, obs, full_iter_max) for soln in solns
+            ]
+            x = _pick_best_root(candidates, min_r_helio_AU)
+    finally:
+        set_ias15_adaptive_mode(saved_mode)
+
+    if x is None:
+        # Still no convergence — surface the least-bad attempt so the
+        # caller has *something* to inspect, with a flag they can detect.
+        x = min(candidates, key=lambda c: c.csq)
+        logger.debug(
+            f"Primary interval: no root converged " f"(best csq={x.csq:.3g}, n_roots={len(candidates)})"
+        )
+        x.flag = 3
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
@@ -428,9 +542,8 @@ def do_fit(observations, seq, cache_dir, iod="gauss"):
         x = solns[0]
         for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
-            print(i, "of", len(seq), obs[0], sq)
+            logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
             x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-            print("flag:", x.flag)
             if x.flag != 0:
                 x.flag = 4
                 break
