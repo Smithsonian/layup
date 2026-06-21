@@ -1,17 +1,11 @@
 """Pytest configuration for the layup test suite.
 
-Pin the native math threadpools to a single thread *before* numpy /
-OpenBLAS / REBOUND get imported.  Under ``pytest -n auto`` each xdist
-worker otherwise lets OpenBLAS (via numpy/scipy) and any OpenMP code
-spin up a full threadpool, so N workers x N threads badly oversubscribes
-a small CI runner (the GitHub Linux runners have ~4 cores).  On Linux
-that manifested as the test step hanging for well over an hour even
-though every individual orbit fit completes in under a second -- see the
-per-case timing in the BK test-skip investigation.  One thread per
-worker keeps the total thread count ~= core count and removes the hang.
-
-``setdefault`` so an explicit environment setting (e.g. a developer
-deliberately running multi-threaded) still wins.
+Pin the native math threadpools to one thread *before* numpy / OpenBLAS /
+REBOUND get imported. Under ``pytest -n auto`` each xdist worker would
+otherwise spin up a full OpenBLAS/OpenMP threadpool, so N workers x N
+threads oversubscribes a small CI runner (~4 cores) and hangs the Linux
+test step. One thread per worker keeps the total thread count ~= core
+count. ``setdefault`` lets an explicit environment setting win.
 """
 
 import os

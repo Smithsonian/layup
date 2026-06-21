@@ -1,23 +1,14 @@
 """Shared environment guards + data loaders for the BK engine test suites.
 
-Centralizes two things that the BK tests (Layers 2 and 3, plus the
-BK-IOD and iod='auto' suites that stack on top) used to each hardcode:
+Provides two things the BK suites depend on:
 
-1. **The ASSIST ephemeris location.**  Layup resolves its cache with
-   ``pooch.os_cache("layup")`` -- ``~/Library/Caches/layup`` on macOS,
-   ``~/.cache/layup`` on Linux.  The tests previously hardcoded the
-   macOS path, so on the Linux CI legs ``EPHEM_AVAILABLE`` was always
-   False and every BK suite skipped even though ``layup bootstrap`` had
-   downloaded the files.  Deriving the path from ``pooch`` the same way
-   the library does keeps the guard correct on every platform.
+1. ``requires_ephem`` -- skip marker active only when the ASSIST
+   ephemeris is present in layup's pooch cache. The cache path is
+   platform-dependent, so derive it via ``pooch.os_cache("layup")`` the
+   same way the library does rather than hardcoding it.
 
-2. **The diagnostic-scan truth set.**  These ASSIST-integrated truth
-   cases used to live at a personal absolute path
-   (``~/Dropbox/claude_layup/diagnostic/scan/truth``) that existed on no
-   CI runner and no other contributor's machine, so the Layer-3 suites
-   skipped everywhere.  The set is small (98 cases) and now ships in-repo
-   as a single consolidated, minified file ``tests/data/bk_scan_truth.json``
-   (keyed by case stem) carrying only the fields the tests read.
+2. ``requires_diagnostic`` plus loaders for the diagnostic-scan truth
+   set, shipped in-repo as ``tests/data/bk_scan_truth.json`` (see below).
 """
 
 from __future__ import annotations
@@ -51,11 +42,9 @@ requires_ephem = pytest.mark.skipif(
 # Diagnostic-scan truth set (shipped in-repo)
 # ---------------------------------------------------------------------------
 
-# The 98 cases ship as a single consolidated JSON file keyed by case stem
-# rather than 98 separate files.  Each case keeps only the fields the BK test
-# suites actually read -- sigma_arcsec, epoch_jd_tdb, truth_state_at_epoch and
-# per-observation {ra, dec, jd_tdb, observer_state_AU} -- which both shrinks
-# the fixture (~600 KB -> ~135 KB) and keeps the repo to one data file.
+# 98 ASSIST-integrated cases in one JSON file keyed by case stem. Each case
+# carries only the fields the BK suites read: sigma_arcsec, epoch_jd_tdb,
+# truth_state_at_epoch, and per-observation {ra, dec, jd_tdb, observer_state_AU}.
 DIAGNOSTIC_SCAN = Path(__file__).resolve().parents[1] / "data" / "bk_scan_truth.json"
 DIAGNOSTIC_AVAILABLE = DIAGNOSTIC_SCAN.is_file()
 
