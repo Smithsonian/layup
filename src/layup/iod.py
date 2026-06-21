@@ -251,6 +251,7 @@ def filter_candidates_by_residual(
         return physical
 
     survivors = []
+    best = None  # (max_resid_sigma, candidate) over residual-evaluated candidates
     for c in physical:
         # Close-Earth-approach pass-through: avoid both the integrator
         # blowup and a silently-wrong 2-body shortcut.
@@ -259,14 +260,15 @@ def filter_candidates_by_residual(
             survivors.append(c)
             continue
 
-        ok = True
+        max_resid_sigma = 0.0
+        integrable = True
         for obs in observations:
             try:
                 pred = _predict_rho_hat(ephem, c.state, c.epoch, obs)
             except Exception:
                 # ASSIST refused to integrate (e.g. state walked outside
                 # the kernel time range). Treat as a failed candidate.
-                ok = False
+                integrable = False
                 break
             actual = np.asarray(obs.rho_hat).flatten()
             cos_sep = float(np.clip(pred @ actual, -1.0, 1.0))
@@ -274,11 +276,26 @@ def filter_candidates_by_residual(
             sigma_ra = float(obs.ra_unc if obs.ra_unc is not None else 1.0 / 206265)
             sigma_dec = float(obs.dec_unc if obs.dec_unc is not None else 1.0 / 206265)
             sigma = max(sigma_ra, sigma_dec)
-            if sep_rad > threshold_sigma * sigma:
-                ok = False
-                break
-        if ok:
+            max_resid_sigma = max(max_resid_sigma, sep_rad / sigma)
+
+        if not integrable:
+            continue
+        # Track the single best-fitting integrable candidate so we can
+        # guarantee it is never discarded (see the invariant below).
+        if best is None or max_resid_sigma < best[0]:
+            best = (max_resid_sigma, c)
+        if max_resid_sigma <= threshold_sigma:
             survivors.append(c)
+
+    # Correctness invariant: the prefilter is a performance optimization
+    # (skip LM on obvious garbage) and must never discard the single
+    # best-fitting seed. A *valid* Gauss root can have a large raw-seed
+    # residual — a rough 3-point seed propagated across a long arc drifts
+    # well past the threshold (e.g. ~9500σ for a 52-day main-belt arc)
+    # even though LM converges cleanly from it. Without this guard the
+    # threshold silently rejects the right root and leaves only phantoms.
+    if best is not None and not any(c is best[1] for c in survivors):
+        survivors.append(best[1])
 
     if not survivors:
         # Don't reject everything — fall back to physically-OK candidates.

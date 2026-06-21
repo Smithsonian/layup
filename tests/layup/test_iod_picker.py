@@ -34,6 +34,78 @@ def test_register_and_get_iod():
         iod._REGISTRY.pop("fake_for_test", None)
 
 
+# --- prefilter invariant: never discard the single best seed --- #
+
+
+def _prefilter_setup(monkeypatch, residual_sigma_by_state):
+    """Wire up filter_candidates_by_residual with the integrator stubbed.
+
+    `residual_sigma_by_state(state) -> float` supplies the worst-case
+    per-candidate residual (in σ); candidates are plain namespaces so the
+    test never touches ASSIST or the C++ fitter.
+    """
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(iod, "_passes_physical_bounds", lambda c: True)
+    # No close-Earth bypass — force every candidate through the residual loop.
+    monkeypatch.setattr(iod, "_inertial_min_geocentric_AU", lambda *a, **k: 10.0)
+
+    sigma = 1.0 / 206265.0
+
+    def fake_pred(ephem, state, epoch, o):
+        ang = residual_sigma_by_state(state) * sigma  # rad
+        return np.array([np.cos(ang), np.sin(ang), 0.0])
+
+    monkeypatch.setattr(iod, "_predict_rho_hat", fake_pred)
+
+    obs = []
+    for j in range(5):
+        o = Observation.from_astrometry(0.0, 0.0, float(j), [0, 0, 0], [0, 0, 0])
+        o.ra_unc = o.dec_unc = sigma
+        obs.append(o)
+
+    def cand(r):
+        return SimpleNamespace(state=np.array([r, 0.0, 0.0, 0.0, 0.0, 0.0]), epoch=0.0)
+
+    return obs, cand
+
+
+def test_prefilter_keeps_best_root_even_above_threshold(monkeypatch):
+    """A valid-but-rough Gauss root whose raw-seed residual exceeds the
+    threshold must still survive — it is the best seed available and LM
+    converges from it.
+
+    Regression for object 609631: its 2.14 AU main-belt root sits at
+    ~9500σ over the 52-day arc (a rough 3-point seed propagated across
+    the whole arc), tripped the 1000σ cut, and was silently dropped,
+    leaving only a phantom — diverging the fit (macOS CI red).
+    """
+    # good ~9500σ, phantom ~600000σ — BOTH above the 1000σ threshold.
+    resid = lambda state: 9500.0 if state[0] > 1.0 else 600000.0
+    obs, cand = _prefilter_setup(monkeypatch, resid)
+    good, phantom = cand(2.14), cand(0.73)
+
+    out = iod.filter_candidates_by_residual([phantom, good], obs, ephem=None, threshold_sigma=1000.0)
+
+    rs = [float(np.linalg.norm(c.state[:3])) for c in out]
+    assert any(abs(r - 2.14) < 1e-6 for r in rs), f"best root dropped: {rs}"
+    # The far-worse phantom is still filtered out (only the best survives).
+    assert not any(abs(r - 0.73) < 1e-6 for r in rs), f"phantom kept: {rs}"
+
+
+def test_prefilter_drops_phantom_below_good_root(monkeypatch):
+    """The common case is unchanged: when the right root predicts within
+    threshold, obvious phantoms above it are still cut."""
+    resid = lambda state: 3.0 if state[0] > 1.0 else 500000.0
+    obs, cand = _prefilter_setup(monkeypatch, resid)
+    good, phantom = cand(2.14), cand(0.73)
+
+    out = iod.filter_candidates_by_residual([good, phantom], obs, ephem=None, threshold_sigma=1000.0)
+
+    rs = [float(np.linalg.norm(c.state[:3])) for c in out]
+    assert rs and all(abs(r - 2.14) < 1e-6 for r in rs), f"expected only good root, got {rs}"
+
+
 def test_unknown_iod_raises():
     with pytest.raises(ValueError) as exc:
         iod.get_iod("definitely_not_registered")
