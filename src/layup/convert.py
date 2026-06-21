@@ -195,7 +195,11 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # scale the angle rows/cols of the input covariance back to radians first.
     # This mirrors the radians->degrees output scaling and keeps round-trips exact.
     if has_covariance:
-        data = data.copy()
+        # Copy, and ensure the covariance columns are float: a CSV of all-zero
+        # placeholder covariances may be read as int, which an in-place float
+        # multiply cannot cast into under numpy's same-kind rule.
+        cov_cols = set(get_cov_columns())
+        data = data.astype([(n, "f8" if n in cov_cols else data.dtype[n]) for n in data.dtype.names])
         for fmt in degree_columns:
             mask = data["FORMAT"] == fmt
             if not mask.any():
