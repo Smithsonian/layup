@@ -230,6 +230,24 @@ def test_orbitfit_with_streak_observations():
     assert_equal(len(fitted_orbits_incomplete), n_uniq_ids)
 
 
+def test_streak_rate_unit_contract():
+    """Lock the observed sky-motion-rate contract.
+
+    ADES ``raRate``/``decRate`` are arcsec/hour in the great-circle convention
+    (``raRate`` = cos(Dec)*dRA/dt, matching Sorcha's ``RARateCosDec`` and the
+    fitter's ``omega . a_vec`` residual). The fitter works in rad/day, so ingest
+    multiplies by ``ARCSEC_PER_HOUR_TO_RAD_PER_DAY``. Guards against an
+    accidental revert to deg/day or a dropped/extra cos(Dec) factor.
+    """
+    from layup.orbitfit import ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+
+    # 1 arcsec/hour = (1/206264.806 rad/arcsec) * (24 hour/day)
+    assert ARCSEC_PER_HOUR_TO_RAD_PER_DAY == pytest.approx(24.0 / 206264.80624709636)
+    # Sorcha fixture value -2.665325 arcsec/hr -> -0.0177688 deg/day.
+    rate_deg_day = -2.665325283 * ARCSEC_PER_HOUR_TO_RAD_PER_DAY * 180.0 / np.pi
+    assert rate_deg_day == pytest.approx(-0.0177688352, abs=1e-9)
+
+
 def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
     """Test that the orbit_fit cli works for a small CSV file."""
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory

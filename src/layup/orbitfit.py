@@ -45,6 +45,16 @@ from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
 
+# Observed sky-motion rates (ADES `raRate`/`decRate`) arrive in arcsec/hour and
+# follow the great-circle convention: `raRate` is cos(Dec)*dRA/dt, NOT the bare
+# coordinate rate dRA/dt. This matches Sorcha's `RARateCosDec` output (which
+# projects drho_hat/dt onto A = (-sinRA, cosRA, 0)) and layup's own residual,
+# which projects onto the same tangent vector `a_vec` -- so an observed rate is
+# compared directly to omega.a_vec with no extra cos(Dec) factor. Internally the
+# fitter works in radians and AU/day, so omega = d(rho_hat)/dt is in rad/day;
+# convert the observed rates from arcsec/hour to rad/day at ingest.
+ARCSEC_PER_HOUR_TO_RAD_PER_DAY = (np.pi / 180.0 / 3600.0) * 24.0
+
 # The list of required input column names for the provided observations to be fit.
 # Note: This should not include the primary id column name.
 REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
@@ -632,6 +642,7 @@ def _orbitfit(
         astcat_column_present = "astCat" in column_names
         program_column_present = "program" in column_names
         position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
+        rate_unc_columns_present = all(col in column_names for col in ["rmsRArate", "rmsDecrate"])
 
         # Accommodate occultation measurements. These measurements are implied when
         # the "ra" and "dec" columns are None. In this case, we will use the "starra"
@@ -658,15 +669,24 @@ def _orbitfit(
         observations = []
         for d in data:
             if position_rates_columns_present and (not np.isnan(d["raRate"]) and not np.isnan(d["decRate"])):
+                # Rate uncertainties (rmsRArate/rmsDecrate) share raRate's
+                # arcsec/hour units; convert to rad/day. Absent -> C++ default.
+                streak_rate_unc = {}
+                if rate_unc_columns_present and not np.isnan(d["rmsRArate"]) and not np.isnan(d["rmsDecrate"]):
+                    streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+                    streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
                 o = Observation.from_streak_with_id(
                     str(d[primary_id_column_name]),
                     d["ra"] * np.pi / 180.0,
                     d["dec"] * np.pi / 180.0,
-                    d["raRate"],
-                    d["decRate"],
+                    # arcsec/hour (great-circle) -> rad/day; raRate already
+                    # carries the cos(Dec) factor (see module constant above).
+                    d["raRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                    d["decRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
                     convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),  # Convert obstime to JD TDB
                     [d["x"], d["y"], d["z"]],  # Barycentric position
                     [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
+                    **streak_rate_unc,
                 )
             else:
                 o = Observation.from_astrometry_with_id(
