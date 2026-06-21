@@ -30,9 +30,7 @@ SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
     [
         (100_000, 1, "BCART_EQ"),
         (100_000, 1, "COM"),
-        # num_workers=2 exercises the multi-worker fit->convert path that used
-        # to hang the ubuntu runner (#256).  #255 dropped this to 1 as a
-        # bandaid; restored now that the spawn start method fixes the deadlock.
+        # num_workers=2 exercises the multi-worker fit->convert path
         (100_000, 2, "KEP"),
     ],
 )
