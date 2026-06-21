@@ -263,3 +263,34 @@ def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
         )
 
         assert "The IOD, bad_iod is not supported" in str(e.value)
+
+
+def test_orbitfit_does_not_report_success_with_nan_state():
+    """A fit that cannot be solved must report failure, never success with NaN.
+
+    Regression test for converged(): a NaN Levenberg-Marquardt step was treated
+    as convergence (abs(NaN) > eps is false for every component, so the function
+    fell through to "converged"), which made orbit_fit return flag == 0 on a NaN
+    solution. The short single-night tracklets in this fixture have a degenerate
+    IOD seed and cannot be solved, so they exercise that path.
+    """
+    pid = "orbitID"
+    data = CSVDataReader(
+        get_test_filepath("streak_observations_complete.csv"), "csv", primary_id_column_name=pid
+    ).read_rows()
+    fitted = orbitfit(data, cache_dir=None, primary_id_column_name=pid)
+
+    state_cols = ["x", "y", "z", "xdot", "ydot", "zdot"]
+    has_nan = [not np.all(np.isfinite([row[c] for c in state_cols])) for row in fitted]
+
+    # The fixture must still exercise a degenerate (NaN-producing) fit, otherwise
+    # this test isn't checking anything.
+    assert any(has_nan), "fixture no longer produces a degenerate fit"
+
+    # Any fit with a NaN state MUST be reported as a failure (flag != 0); and
+    # equivalently, a successful fit (flag == 0) must have a finite state.
+    for row, nan in zip(fitted, has_nan):
+        if nan:
+            assert row["flag"] != 0, "fit reported success (flag == 0) with a NaN state"
+        if row["flag"] == 0:
+            assert not nan, "fit reported success (flag == 0) with a NaN state"
