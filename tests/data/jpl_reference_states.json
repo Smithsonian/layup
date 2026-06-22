@@ -1,0 +1,41 @@
+{
+  "_comment_": "JPL Horizons reference state vectors for objects in 4_random_mpc_ADES_provIDs_no_sats.csv. Queried 2026-05-17 via the public Horizons API at the layup-recovered epochs (epoch values match exactly so the comparison is at one definite epoch). Frame: barycentric, ICRF (== layup's BCART_EQ default).  To regenerate: run orbitfit on each provID to get its epoch, then query https://ssd.jpl.nasa.gov/api/horizons.api with COMMAND=<provID>, CENTER='@0', REF_PLANE='FRAME', REF_SYSTEM='ICRF', VEC_TABLE='2', OUT_UNITS='AU-D'.",
+  "objects": {
+    "119839": {
+      "_name_": "2002 CX17",
+      "epoch_jd_tdb": 2459546.75963587081,
+      "state_au_au_per_day": [
+        1.344744268651191,
+        2.442670284100593,
+        1.527065730993102,
+        -8.398959551991471e-03,
+        3.798491654270669e-03,
+        1.566943188232538e-03
+      ]
+    },
+    "742428": {
+      "_name_": "2007 TC75",
+      "epoch_jd_tdb": 2459533.7747232849,
+      "state_au_au_per_day": [
+        1.029054061740359,
+        1.662285121153878,
+        9.235029075529506e-01,
+        -1.101126322972753e-02,
+        5.383237535305223e-03,
+        4.062708891212091e-03
+      ]
+    },
+    "609631": {
+      "_name_": "2005 HE12",
+      "epoch_jd_tdb": 2460090.9466618486,
+      "state_au_au_per_day": [
+        -9.630481465458910e-01,
+        -1.785050165331816,
+        -6.814080563547801e-01,
+        1.054265385697093e-02,
+        -5.789403538867055e-03,
+        -2.494890808728241e-03
+      ]
+    }
+  }
+}
