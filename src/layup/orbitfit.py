@@ -672,7 +672,11 @@ def _orbitfit(
                 # Rate uncertainties (rmsRArate/rmsDecrate) share raRate's
                 # arcsec/hour units; convert to rad/day. Absent -> C++ default.
                 streak_rate_unc = {}
-                if rate_unc_columns_present and not np.isnan(d["rmsRArate"]) and not np.isnan(d["rmsDecrate"]):
+                if (
+                    rate_unc_columns_present
+                    and not np.isnan(d["rmsRArate"])
+                    and not np.isnan(d["rmsDecrate"])
+                ):
                     streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
                     streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
                 o = Observation.from_streak_with_id(

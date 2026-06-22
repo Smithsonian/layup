@@ -28,9 +28,7 @@ from layup.routines import FitResult, Observation, get_ephem, run_from_vector_wi
 
 FIXTURE = Path(__file__).resolve().parent.parent / "data" / "streak_synthetic.json"
 CACHE = str(pooch.os_cache("layup"))
-_EPHEM_OK = all(
-    os.path.exists(os.path.join(CACHE, f)) for f in ("linux_p1550p2650.440", "sb441-n16.bsp")
-)
+_EPHEM_OK = all(os.path.exists(os.path.join(CACHE, f)) for f in ("linux_p1550p2650.440", "sb441-n16.bsp"))
 pytestmark = pytest.mark.skipif(
     not _EPHEM_OK, reason="ASSIST ephemeris not in layup cache; run `layup bootstrap`"
 )
@@ -41,9 +39,16 @@ def _load():
     obs = []
     for o in d["observations"]:
         ob = Observation.from_streak_with_id(
-            "synth", o["ra"], o["dec"], o["ra_rate"], o["dec_rate"], o["epoch"],
-            o["observer_position"], o["observer_velocity"],
-            d["rate_unc_radday"], d["rate_unc_radday"],
+            "synth",
+            o["ra"],
+            o["dec"],
+            o["ra_rate"],
+            o["dec_rate"],
+            o["epoch"],
+            o["observer_position"],
+            o["observer_velocity"],
+            d["rate_unc_radday"],
+            d["rate_unc_radday"],
         )
         ob.ra_unc = d["ra_unc_rad"]
         ob.dec_unc = d["ra_unc_rad"]
@@ -90,10 +95,16 @@ def test_streak_rate_rows_are_live():
     o = d["observations"][0]
     bad_obs = list(obs)
     bad0 = Observation.from_streak_with_id(
-        "synth", o["ra"], o["dec"],
+        "synth",
+        o["ra"],
+        o["dec"],
         o["ra_rate"] + 50.0 * d["rate_unc_radday"],  # 50-sigma corruption of one ra rate
-        o["dec_rate"], o["epoch"], o["observer_position"], o["observer_velocity"],
-        d["rate_unc_radday"], d["rate_unc_radday"],
+        o["dec_rate"],
+        o["epoch"],
+        o["observer_position"],
+        o["observer_velocity"],
+        d["rate_unc_radday"],
+        d["rate_unc_radday"],
     )
     bad0.ra_unc = d["ra_unc_rad"]
     bad0.dec_unc = d["ra_unc_rad"]
