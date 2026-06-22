@@ -53,7 +53,63 @@
 #include <optional>
 
 #include "orbit_fit.h"
+#include "bk_basis.cpp"
 #include "../gauss/gauss.cpp"
+
+extern "C" {
+#include "rebound.h"
+}
+
+namespace orbit_fit
+{
+    // Optional floor on the IAS15 adaptive step size, in days. When > 0,
+    // every freshly-created REBOUND sim has its ri_ias15.min_dt set to
+    // this value so the integrator stops shrinking its step below the
+    // floor during close encounters. The trade-off is accuracy:
+    // truncating IAS15's adaptive control during a real close
+    // encounter introduces error in the encounter geometry, but for
+    // the LM-picker use case this is acceptable — a wildly-wrong
+    // Gauss root sent through a close approach just needs to report
+    // "big residual," not a precise integration.
+    //
+    // Default 0 means "no floor" (historical behavior). Setting
+    // 1e-3 days (≈86 s) bounds the worst-case LM iteration to
+    // O(arc_days / 1e-3) integrator steps, which kills the hours-long
+    // grinds on phantom inner-SS roots and costs <a few arcsec on
+    // real well-behaved orbits.
+    static double g_ias15_min_dt_days = 0.0;
+
+    inline void set_ias15_min_dt(double v) { g_ias15_min_dt_days = v; }
+    inline double get_ias15_min_dt(void)   { return g_ias15_min_dt_days; }
+
+    static inline void apply_ias15_min_dt(struct reb_simulation *r) {
+        if (g_ias15_min_dt_days > 0.0)
+            r->ri_ias15.min_dt = g_ias15_min_dt_days;
+    }
+
+    // Optional override of IAS15's adaptive step-size controller.
+    // assist_attach() forces ri_ias15.adaptive_mode = 1 (the legacy
+    // controller); setting this global to a non-negative value
+    // overrides it on every freshly-attached sim. adaptive_mode = 2 is
+    // the newer (Pham, Rein & Spiegel 2024) controller, which Hanno
+    // Rein suggested (PR 324 review) may handle close-Earth encounters
+    // more gracefully than the min-dt floor. Because assist_attach sets
+    // the legacy value, apply_ias15_adaptive_mode() must run *after*
+    // assist_attach, not before like apply_ias15_min_dt.
+    //
+    // Default -1 means "leave ASSIST's choice untouched" (no behavior
+    // change for existing callers).
+    static int g_ias15_adaptive_mode = -1;
+
+    inline void set_ias15_adaptive_mode(int m) { g_ias15_adaptive_mode = m; }
+    inline int  get_ias15_adaptive_mode(void)  { return g_ias15_adaptive_mode; }
+
+    static inline void apply_ias15_adaptive_mode(struct reb_simulation *r) {
+        if (g_ias15_adaptive_mode >= 0)
+            r->ri_ias15.adaptive_mode = g_ias15_adaptive_mode;
+    }
+}
+
 #include "predict.cpp"
 
 using std::cout;
@@ -278,6 +334,91 @@ namespace orbit_fit
         {
             parts.y_partials.push_back(dy_resid[i]);
         }
+
+        // ---- Streak (sky-motion-rate) residuals + partials ----
+        // Only StreakObservations contribute the two extra rate rows. The
+        // forward model matches Sorcha's RARateCosDec/DecRate (great-circle,
+        // cos(Dec) included), including the (1 - d(delta_t)/dt) light-time-rate
+        // factor; the partials use the geometric rate Jacobian (the omitted LT
+        // factor perturbs them by ~1e-4, negligible for LM). See orbitfit.py for
+        // the observed-rate unit/convention contract.
+        if (std::holds_alternative<StreakObservation>(this_det.observation_type))
+        {
+            const StreakObservation &sk = std::get<StreakObservation>(this_det.observation_type);
+
+            // Emission-time asteroid velocity (integrate_light_time left the sim
+            // at the retarded time) and the observer velocity.
+            double vax = r->particles[0].vx, vay = r->particles[0].vy, vaz = r->particles[0].vz;
+            double vox = this_det.observer_velocity[0];
+            double voy = this_det.observer_velocity[1];
+            double voz = this_det.observer_velocity[2];
+            double vrx = vax - vox, vry = vay - voy, vrz = vaz - voz; // v_rel
+
+            // rho_x/rho_y/rho_z are the unit vector rho_hat here; rho is the
+            // topocentric distance; invd = 1/rho.
+            double q = rho_x * vrx + rho_y * vry + rho_z * vrz; // rho_hat . v_rel = range rate
+            double ddeltatdt = q / SPEED_OF_LIGHT;
+
+            // d(rho_hat)/dt with Sorcha's light-time-rate factor.
+            double drx = vax * (1.0 - ddeltatdt) - vox;
+            double dry = vay * (1.0 - ddeltatdt) - voy;
+            double drz = vaz * (1.0 - ddeltatdt) - voz;
+            double wx = (drx - q * rho_x) * invd;
+            double wy = (dry - q * rho_y) * invd;
+            double wz = (drz - q * rho_z) * invd;
+
+            double model_ra_rate = Ax * wx + Ay * wy + Az * wz;
+            double model_dec_rate = Dx * wx + Dy * wy + Dz * wz;
+            resid.ra_rate_resid = sk.ra_rate - model_ra_rate;
+            resid.dec_rate_resid = sk.dec_rate - model_dec_rate;
+
+            // Geometry Jacobians (observed basis A/D held fixed):
+            //   p = X.rho_hat, s = X.v_rel, q = rho_hat.v_rel
+            //   dR/dr = -(q X + p v_rel + (s - 3 p q) rho_hat)/dist^2
+            //   dR/dv = (X - p rho_hat)/dist
+            double pA = Ax * rho_x + Ay * rho_y + Az * rho_z;
+            double sA = Ax * vrx + Ay * vry + Az * vrz;
+            double pD = Dx * rho_x + Dy * rho_y + Dz * rho_z;
+            double sD = Dx * vrx + Dy * vry + Dz * vrz;
+            double invd2 = invd * invd;
+
+            double dRdrA[3] = {-(q * Ax + pA * vrx + (sA - 3 * pA * q) * rho_x) * invd2,
+                               -(q * Ay + pA * vry + (sA - 3 * pA * q) * rho_y) * invd2,
+                               -(q * Az + pA * vrz + (sA - 3 * pA * q) * rho_z) * invd2};
+            double dRdvA[3] = {(Ax - pA * rho_x) * invd, (Ay - pA * rho_y) * invd, (Az - pA * rho_z) * invd};
+            double dRdrD[3] = {-(q * Dx + pD * vrx + (sD - 3 * pD * q) * rho_x) * invd2,
+                               -(q * Dy + pD * vry + (sD - 3 * pD * q) * rho_y) * invd2,
+                               -(q * Dz + pD * vrz + (sD - 3 * pD * q) * rho_z) * invd2};
+            double dRdvD[3] = {(Dx - pD * rho_x) * invd, (Dy - pD * rho_y) * invd, (Dz - pD * rho_z) * invd};
+
+            for (size_t i = 0; i < 6; i++)
+            {
+                size_t vn = var + i;
+                // d r_obj/d param_i: variational position + light-time shift of
+                // the emission time (v_ast * d t_ret, t_ret = t_obs - rho/c).
+                double ltf = ddist[i] / SPEED_OF_LIGHT;
+                double drk_x = dxk[i] - vax * ltf;
+                double drk_y = dyk[i] - vay * ltf;
+                double drk_z = dzk[i] - vaz * ltf;
+                // d v_obj/d param_i: velocity variational partials (the a_ast * d t_ret
+                // light-time term is ~1e-4 smaller and omitted).
+                double dvk_x = r->particles[vn].vx;
+                double dvk_y = r->particles[vn].vy;
+                double dvk_z = r->particles[vn].vz;
+
+                double dmodel_ra = dRdrA[0] * drk_x + dRdrA[1] * drk_y + dRdrA[2] * drk_z +
+                                   dRdvA[0] * dvk_x + dRdvA[1] * dvk_y + dRdvA[2] * dvk_z;
+                double dmodel_dec = dRdrD[0] * drk_x + dRdrD[1] * drk_y + dRdrD[2] * drk_z +
+                                    dRdvD[0] * dvk_x + dRdvD[1] * dvk_y + dRdvD[2] * dvk_z;
+
+                // residual = observed - model, so partial = -d(model)/d param.
+                parts.ra_rate_partials.push_back(-dmodel_ra);
+                parts.dec_rate_partials.push_back(-dmodel_dec);
+            }
+
+            resid.n_resid = 4;
+            parts.n_resid = 4;
+        }
     }
 
     // This routine requires that resid_vec and partials_vec are
@@ -295,7 +436,9 @@ namespace orbit_fit
 
         // Pass in this simulation stuff to keep it flexible
         struct reb_simulation *r = reb_simulation_create();
+        apply_ias15_min_dt(r);
         struct assist_extras *ax = assist_attach(r, ephem);
+        apply_ias15_adaptive_mode(r);  // after attach: ASSIST forces mode 1
 
         // 0. Set initial time, relative to ephem->jd_ref
         r->t = epoch - ephem->jd_ref;
@@ -372,22 +515,41 @@ namespace orbit_fit
         const int mlength = (int)partials_vec.size();
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> B;
         Eigen::MatrixXd eye = MatrixXd::Identity(6, 6);
-        B.resize(mlength * 2, 6);
 
-        for (size_t i = 0; i < partials_vec.size(); i++)
+        // Each observation contributes n_resid rows (2 for astrometry, 4 for a
+        // streak: ra/dec position + ra/dec rate). Lay them out with a per-obs
+        // prefix-sum offset; the weight matrix uses the identical ordering.
+        std::vector<int> row_off(mlength);
+        int total_rows = 0;
+        for (int i = 0; i < mlength; i++)
         {
-            for (size_t j = 0; j < 6; j++)
-            {
-                B(2 * i, j) = partials_vec[i].x_partials[j];
-                B(2 * i + 1, j) = partials_vec[i].y_partials[j];
-            }
+            row_off[i] = total_rows;
+            total_rows += partials_vec[i].n_resid;
         }
 
-        Eigen::MatrixXd resid_v(mlength * 2, 1);
-        for (size_t i = 0; i < resid_vec.size(); i++)
+        B.resize(total_rows, 6);
+        Eigen::MatrixXd resid_v(total_rows, 1);
+        for (size_t i = 0; i < partials_vec.size(); i++)
         {
-            resid_v(2 * i) = resid_vec[i].x_resid;
-            resid_v(2 * i + 1) = resid_vec[i].y_resid;
+            const int r0 = row_off[i];
+            for (size_t j = 0; j < 6; j++)
+            {
+                B(r0, j) = partials_vec[i].x_partials[j];
+                B(r0 + 1, j) = partials_vec[i].y_partials[j];
+            }
+            resid_v(r0) = resid_vec[i].x_resid;
+            resid_v(r0 + 1) = resid_vec[i].y_resid;
+
+            if (partials_vec[i].n_resid == 4)
+            {
+                for (size_t j = 0; j < 6; j++)
+                {
+                    B(r0 + 2, j) = partials_vec[i].ra_rate_partials[j];
+                    B(r0 + 3, j) = partials_vec[i].dec_rate_partials[j];
+                }
+                resid_v(r0 + 2) = resid_vec[i].ra_rate_resid;
+                resid_v(r0 + 3) = resid_vec[i].dec_rate_resid;
+            }
         }
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Bt = B.transpose();
@@ -442,14 +604,22 @@ namespace orbit_fit
 
     int converged(Eigen::MatrixXd dX, double eps, double chi2, size_t ndof, double thresh)
     {
-
+        // A NaN chi-square or step means the fit has diverged, not converged.
+        // Without this guard the loop below reports convergence on a NaN step,
+        // because abs(NaN) > eps is false for every element, so the function
+        // falls through to "return 1" -- making orbit_fit report flag = 0
+        // (success) for a NaN solution.
+        if (std::isnan(chi2))
+        {
+            return 0;
+        }
         if ((chi2 > ndof) > thresh)
         {
             return 2;
         }
         for (size_t i = 0; i < dX.size(); i++)
         {
-            if (abs(dX(i)) > eps)
+            if (std::isnan(dX(i)) || abs(dX(i)) > eps)
             {
                 return 0;
             }
@@ -459,21 +629,49 @@ namespace orbit_fit
 
     typedef Eigen::Triplet<double> T;
 
+    // Total number of residual rows across all observations: 2 per astrometry
+    // observation, 4 per streak (ra/dec position + ra/dec rate). Used for both
+    // the normal-equation layout and the degrees-of-freedom count.
+    size_t total_residual_rows(const std::vector<Observation> &detections)
+    {
+        size_t n = 0;
+        for (const auto &d : detections)
+            n += std::holds_alternative<StreakObservation>(d.observation_type) ? 4 : 2;
+        return n;
+    }
+
     Eigen::SparseMatrix<double> get_weight_matrix(std::vector<Observation> &detections)
     {
         const int mlength = (int)detections.size();
+
+        // Match compute_dX's row layout: 2 rows (astrometry) or 4 (streak).
+        std::vector<int> row_off(mlength);
+        int total_rows = 0;
+        for (int i = 0; i < mlength; i++)
+        {
+            row_off[i] = total_rows;
+            total_rows += std::holds_alternative<StreakObservation>(detections[i].observation_type) ? 4 : 2;
+        }
+
         std::vector<T> tripletList;
-        tripletList.reserve(2 * mlength);
-        Eigen::SparseMatrix<double> W(mlength * 2, mlength * 2);
+        tripletList.reserve(total_rows);
+        Eigen::SparseMatrix<double> W(total_rows, total_rows);
 
         for (size_t i = 0; i < mlength; i++)
         {
+            const int r0 = row_off[i];
             double x_unc = *detections[i].ra_unc;
-            double w2_x = 1.0 / (x_unc * x_unc);
-            tripletList.push_back(T(2 * i, 2 * i, w2_x));
+            tripletList.push_back(T(r0, r0, 1.0 / (x_unc * x_unc)));
             double y_unc = *detections[i].dec_unc;
-            double w2_y = 1.0 / (y_unc * y_unc);
-            tripletList.push_back(T(2 * i + 1, 2 * i + 1, w2_y));
+            tripletList.push_back(T(r0 + 1, r0 + 1, 1.0 / (y_unc * y_unc)));
+
+            if (std::holds_alternative<StreakObservation>(detections[i].observation_type))
+            {
+                double rar_unc = detections[i].ra_rate_unc ? *detections[i].ra_rate_unc : (24.0 / 206265.0);
+                double der_unc = detections[i].dec_rate_unc ? *detections[i].dec_rate_unc : (24.0 / 206265.0);
+                tripletList.push_back(T(r0 + 2, r0 + 2, 1.0 / (rar_unc * rar_unc)));
+                tripletList.push_back(T(r0 + 3, r0 + 3, 1.0 / (der_unc * der_unc)));
+            }
         }
         W.setFromTriplets(tripletList.begin(), tripletList.end());
 
@@ -567,6 +765,16 @@ namespace orbit_fit
 
             double chi2_d = chi2(0, 0);
 
+            // A NaN chi-square means the fit has diverged (e.g. from a
+            // degenerate IOD seed on a too-short tracklet). Stop immediately,
+            // leaving flag != 0, so the result is reported as a failure rather
+            // than grinding through every remaining iteration on NaNs.
+            if (std::isnan(chi2_d))
+            {
+                chi2_final = chi2_d;
+                break;
+            }
+
             double rho = (chi2_prev - chi2_d) / (dX.transpose() * (lambda * dX - grad)).norm();
 
             if (rho > rho_accept)
@@ -597,7 +805,7 @@ namespace orbit_fit
                 lambda *= 2.0;
             }
 
-            size_t ndof = detections.size() * 2 - 6;
+            size_t ndof = total_residual_rows(detections) - 6;
             double thresh = 10;
             int cflag = converged(dX, eps, chi2_d, ndof, thresh);
             if (cflag)
@@ -608,7 +816,7 @@ namespace orbit_fit
             }
         }
 
-        size_t ndof = detections.size() * 2 - 6;
+        size_t ndof = total_residual_rows(detections) - 6;
         double thresh = 10.0;
         if ((chi2_final / ndof) > thresh)
         {
@@ -708,7 +916,10 @@ namespace orbit_fit
         return ephem;
     }
 
-    FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
+    FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem,
+                                                  FitResult initial_guess,
+                                                  std::vector<Observation> &detections,
+                                                  size_t iter_max = 100)
     {
         int success = 1;
         size_t iters;
@@ -718,8 +929,6 @@ namespace orbit_fit
         std::vector<residuals> resid_vec(detections.size());
         std::vector<partials> partials_vec(detections.size());
 
-        // Make these parameters flexible.
-        size_t iter_max = 100;
         double eps = 1e-12;
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
@@ -748,7 +957,7 @@ namespace orbit_fit
             eps,
             iter_max);
 
-        dof = 2 * detections.size() - 6;
+        dof = total_residual_rows(detections) - 6;
 
         FitResult result;
 	
@@ -782,16 +991,58 @@ namespace orbit_fit
 
     }
 
+// Universal-BK fit (LM driver in BK basis).  Inlined here, inside
+// `namespace orbit_fit`, so all of layup's existing Cartesian-fit
+// helpers (compute_residuals, create_sequences, get_weight_matrix,
+// converged) and the Observation/FitResult types are in scope without
+// forward declarations.  Math primitives come from bk_basis.cpp,
+// included at the top of orbit_fit.cpp.
+#include "bk_fit.cpp"
+
+// Universal-BK 5-parameter linear IOD.  Same inlining rationale as
+// bk_fit.cpp above -- inlined inside `namespace orbit_fit` so that
+// Observation, FitResult, SPEED_OF_LIGHT, and the bk_basis primitives
+// are all in scope.
+#include "bk_iod.cpp"
+
 #ifdef Py_PYTHON_H
     static void orbit_fit_bindings(py::module &m)
     {
         py::class_<assist_ephem>(m, "assist_ephem");
         m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Core orbit fit function.)pbdoc");
         m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");
-        m.def("run_from_vector_with_initial_guess", &orbit_fit::run_from_vector_with_initial_guess, R"pbdoc(
-                Takes an assist_ephem object, a vector of observations and an initial guess
-                and runs orbit fit.
+        m.def("run_from_vector_with_initial_guess",
+              &orbit_fit::run_from_vector_with_initial_guess,
+              py::arg("ephem"), py::arg("initial_guess"),
+              py::arg("detections"), py::arg("iter_max") = 100,
+              R"pbdoc(
+                Takes an assist_ephem object, a vector of observations, an
+                initial guess, and (optionally) a cap on LM iterations
+                (`iter_max`, default 100), and runs orbit fit. Reducing
+                iter_max gives a cheap screening pass for use in
+                multi-candidate IOD picker loops.
             )pbdoc");
+        m.def("set_ias15_min_dt", &orbit_fit::set_ias15_min_dt,
+              py::arg("days"),
+              R"pbdoc(
+                Set a floor on IAS15's adaptive step size in days. Default
+                0 = no floor. A typical safe value is 1e-3 (~86 s): bounds
+                worst-case LM-iteration wall time on phantom IOD roots
+                whose trajectories pass close to Earth, at the cost of a
+                few arcsec of accuracy in real close encounters.
+            )pbdoc");
+        m.def("get_ias15_min_dt", &orbit_fit::get_ias15_min_dt,
+              R"pbdoc(Current IAS15 min-dt floor in days (0 = off).)pbdoc");
+        m.def("set_ias15_adaptive_mode", &orbit_fit::set_ias15_adaptive_mode,
+              py::arg("mode"),
+              R"pbdoc(
+                Override IAS15's adaptive step-size controller. -1 (default)
+                leaves ASSIST's choice, which is the legacy mode 1. Set 2 to
+                use the newer (Pham, Rein & Spiegel 2024) controller. Applied
+                after assist_attach, which forces mode 1.
+            )pbdoc");
+        m.def("get_ias15_adaptive_mode", &orbit_fit::get_ias15_adaptive_mode,
+              R"pbdoc(Current IAS15 adaptive_mode override (-1 = ASSIST default).)pbdoc");
     }
 #endif /* Py_PYTHON_H */
 

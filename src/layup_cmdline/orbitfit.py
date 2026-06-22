@@ -73,9 +73,22 @@ def main():
     optional.add_argument(
         "-i",
         "--iod",
-        help="IOD choice",
+        help="IOD choice: 'gauss' (default) or 'auto' (Gauss with BK 5-parameter linear IOD fallback)",
         dest="iod",
         default="gauss",
+        required=False,
+    )
+    optional.add_argument(
+        "--engine",
+        help=(
+            "LM fitter to use after IOD: 'cartesian' (default; classic "
+            "barycentric-Cartesian LM) or 'bk_native' (universal "
+            "Bernstein-Khushalani fit with energy prior, better-conditioned "
+            "for distant short-arc targets and at least as good elsewhere)."
+        ),
+        dest="engine",
+        choices=["cartesian", "bk_native"],
+        default="cartesian",
         required=False,
     )
     optional.add_argument(

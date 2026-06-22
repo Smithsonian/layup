@@ -71,6 +71,9 @@ PYBIND11_MODULE(_core, m)
     orbit_fit::orbit_fit_result_bindings(m);
     orbit_fit::predict_bindings(m);
     orbit_fit::predict_result_bindings(m);
+    orbit_fit::bk_basis_bindings(m);
+    orbit_fit::bk_fit_bindings(m);
+    orbit_fit::bk_iod_bindings(m);
 
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
