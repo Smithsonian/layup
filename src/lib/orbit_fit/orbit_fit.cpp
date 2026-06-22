@@ -500,14 +500,22 @@ namespace orbit_fit
 
     int converged(Eigen::MatrixXd dX, double eps, double chi2, size_t ndof, double thresh)
     {
-
+        // A NaN chi-square or step means the fit has diverged, not converged.
+        // Without this guard the loop below reports convergence on a NaN step,
+        // because abs(NaN) > eps is false for every element, so the function
+        // falls through to "return 1" -- making orbit_fit report flag = 0
+        // (success) for a NaN solution.
+        if (std::isnan(chi2))
+        {
+            return 0;
+        }
         if ((chi2 > ndof) > thresh)
         {
             return 2;
         }
         for (size_t i = 0; i < dX.size(); i++)
         {
-            if (abs(dX(i)) > eps)
+            if (std::isnan(dX(i)) || abs(dX(i)) > eps)
             {
                 return 0;
             }
@@ -624,6 +632,16 @@ namespace orbit_fit
             compute_dX(resid_vec, partials_vec, W, dX, C, chi2, grad, lambda);
 
             double chi2_d = chi2(0, 0);
+
+            // A NaN chi-square means the fit has diverged (e.g. from a
+            // degenerate IOD seed on a too-short tracklet). Stop immediately,
+            // leaving flag != 0, so the result is reported as a failure rather
+            // than grinding through every remaining iteration on NaNs.
+            if (std::isnan(chi2_d))
+            {
+                chi2_final = chi2_d;
+                break;
+            }
 
             double rho = (chi2_prev - chi2_d) / (dX.transpose() * (lambda * dX - grad)).norm();
 
