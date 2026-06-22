@@ -73,7 +73,7 @@ def main():
     optional.add_argument(
         "-i",
         "--iod",
-        help="IOD choice",
+        help="IOD choice: 'gauss' (default) or 'auto' (Gauss with BK 5-parameter linear IOD fallback)",
         dest="iod",
         default="gauss",
         required=False,
