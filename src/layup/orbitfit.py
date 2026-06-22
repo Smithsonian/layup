@@ -15,6 +15,7 @@ from layup.routines import (
     Observation,
     gauss,
     get_ephem,
+    run_bk_iod,
     run_bk_native_fit,
     run_from_vector_with_initial_guess,
 )
@@ -482,7 +483,9 @@ def do_fit(
     cache_dir : str
         Directory holding the ASSIST kernels.
     iod : str
-        Name of the registered IOD method. Default "gauss".
+        Name of the registered IOD method (default "gauss"), or "auto" to run
+        Gauss and fall back to the BK 5-parameter linear IOD (run_bk_iod) on the
+        primary segment when every Gauss root fails to seed a converged fit.
     engine : str
         Which LM fitter to dispatch to.  Supported:
           - 'cartesian' (default): the existing 6D Cartesian-state fit.
@@ -501,14 +504,21 @@ def do_fit(
         best-effort or sentinel FitResult with a non-zero flag.
     """
 
+    # 'auto' is a strategy, not a registered IOD: seed candidates with Gauss,
+    # then (after the picker, below) fall back to the BK 5-parameter linear IOD
+    # if every Gauss root fails to converge. Any other value is a registry name.
+    is_auto = isinstance(iod, str) and iod.lower() == "auto"
     try:
-        iod_func = get_iod(iod) if isinstance(iod, str) else iod
+        iod_func = get_iod("gauss") if is_auto else (get_iod(iod) if isinstance(iod, str) else iod)
     except ValueError as e:
         raise ValueError(f"{e} Use iod.register_iod to add a new method.")
-    solns = iod_func(observations, seq)
+    # Normalize to a list: an IOD may legitimately return None (e.g. Gauss
+    # finding no real roots), and the prefilter/picker below index and len() it.
+    solns = list(iod_func(observations, seq) or [])
 
-    # If the selected iod fails, surface a sentinel.
-    if not solns:
+    # If the iod produced no candidates, surface a sentinel -- unless we're in
+    # 'auto' mode, where the BK-IOD fallback below still has a shot.
+    if not solns and not is_auto:
         logger.debug(f"IOD {iod!r} returned no candidates")
         x = FitResult()
         x.flag = 5
@@ -565,9 +575,30 @@ def do_fit(
     finally:
         set_ias15_adaptive_mode(saved_mode)
 
+    if x is None and is_auto and len(obs) >= 3:
+        # Every Gauss root (if any) failed to seed a converged LM. Fall back to
+        # the BK 5-parameter linear IOD on the primary segment. BK-IOD shines on
+        # distant short arcs -- exactly where Gauss's three-point geometry is
+        # ill-conditioned (see bk_iod.cpp's regime-of-validity note); on the
+        # diagnostic scan Gauss+BK covers ~90% of cases vs ~84% for Gauss alone.
+        # Epoch convention matches do_gauss_iod's middle observation.
+        logger.debug(f"All {len(solns)} Gauss roots failed; trying BK-IOD fallback")
+        bk_seed = run_bk_iod(obs, float(obs[len(obs) // 2].epoch), _MU_SUN)
+        if bk_seed.flag == 0:
+            cand = _run_fit(assist_ephem, bk_seed, obs, engine, full_iter_max)
+            candidates.append(cand)
+            if cand.flag == 0:
+                x = cand
+
     if x is None:
-        # Still no convergence — surface the least-bad attempt so the
-        # caller has *something* to inspect, with a flag they can detect.
+        # Still no convergence — surface the least-bad attempt so the caller has
+        # *something* to inspect, with a flag they can detect.
+        if not candidates:
+            # 'auto' with zero Gauss roots and no usable BK seed: nothing to
+            # surface, so return an explicit no-solution sentinel.
+            x = FitResult()
+            x.flag = 5
+            return x
         x = min(candidates, key=lambda c: c.csq)
         logger.debug(
             f"Primary interval: no root converged " f"(best csq={x.csq:.3g}, n_roots={len(candidates)})"
@@ -576,13 +607,16 @@ def do_fit(
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
+    primary_x = x
     obs = observations
     x = _run_fit(assist_ephem, x, obs, engine)
 
     # If that failed, build up the solution slowly
     if x.flag != 0:
         obs = []
-        x = solns[0]
+        # Restart from the first IOD seed, or the converged primary fit when
+        # there were no IOD candidates (the iod='auto' BK-IOD fallback path).
+        x = solns[0] if solns else primary_x
         for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
             logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
@@ -640,7 +674,8 @@ def _orbitfit(
         Whether to apply data weighting based on the observation code, date, catalog
         and program. Default is False.
     iod : str
-        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        The IOD used to generate an initial guess orbit. Supports 'gauss'
+        (default) and 'auto' (Gauss with BK-IOD fallback).
         Default is 'gauss'.
     """
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
@@ -764,7 +799,7 @@ def _orbitfit(
 
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
-            if iod.lower() in ["gauss"]:
+            if iod.lower() in ["gauss", "auto"]:
                 res = do_fit(
                     observations=observations,
                     seq=sequence,
@@ -834,7 +869,8 @@ def orbitfit(
         Whether to apply data weighting based on the observation code, date, catalog
         and program. Default is False.
     iod : str
-        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
+        The IOD used to generate an initial guess orbit. Supports 'gauss'
+        (default) and 'auto' (Gauss with BK-IOD fallback).
         Default is 'gauss'.
     """
 
