@@ -31,7 +31,8 @@ SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
     [
         (100_000, 1, "BCART_EQ"),
         (100_000, 1, "COM"),
-        (100_000, 1, "KEP"),
+        # num_workers=2 exercises the multi-worker fit->convert path
+        (100_000, 2, "KEP"),
     ],
 )
 def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
@@ -231,6 +232,24 @@ def test_orbitfit_with_streak_observations():
     assert_equal(len(fitted_orbits_incomplete), n_uniq_ids)
 
 
+def test_streak_rate_unit_contract():
+    """Lock the observed sky-motion-rate contract.
+
+    ADES ``raRate``/``decRate`` are arcsec/hour in the great-circle convention
+    (``raRate`` = cos(Dec)*dRA/dt, matching Sorcha's ``RARateCosDec`` and the
+    fitter's ``omega . a_vec`` residual). The fitter works in rad/day, so ingest
+    multiplies by ``ARCSEC_PER_HOUR_TO_RAD_PER_DAY``. Guards against an
+    accidental revert to deg/day or a dropped/extra cos(Dec) factor.
+    """
+    from layup.orbitfit import ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+
+    # 1 arcsec/hour = (1/206264.806 rad/arcsec) * (24 hour/day)
+    assert ARCSEC_PER_HOUR_TO_RAD_PER_DAY == pytest.approx(24.0 / 206264.80624709636)
+    # Sorcha fixture value -2.665325 arcsec/hr -> -0.0177688 deg/day.
+    rate_deg_day = -2.665325283 * ARCSEC_PER_HOUR_TO_RAD_PER_DAY * 180.0 / np.pi
+    assert rate_deg_day == pytest.approx(-0.0177688352, abs=1e-9)
+
+
 def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
     """Test that the orbit_fit cli works for a small CSV file."""
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
@@ -250,6 +269,7 @@ def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
             self.g = g  # Command line argument for initial guesses file
             self.output_orbit_format = ("BCART_EQ",)
             self.iod = "bad_iod"
+            self.engine = "cartesian"
 
     with pytest.raises(ValueError) as e:
         # Now run the orbit_fit cli with overwrite set to True
@@ -291,3 +311,69 @@ def test_warn_if_short_arc_handles_empty(caplog):
     with caplog.at_level(logging.WARNING, logger="layup.orbitfit"):
         _warn_if_short_arc(np.array([]), "obj_empty")
     assert not caplog.records
+
+
+def test_orbitfit_does_not_report_success_with_nan_state():
+    """A fit that cannot be solved must report failure, never success with NaN.
+
+    Regression test for converged(): a NaN Levenberg-Marquardt step was treated
+    as convergence (abs(NaN) > eps is false for every component, so the function
+    fell through to "converged"), which made orbit_fit return flag == 0 on a NaN
+    solution. The short single-night tracklets in this fixture have a degenerate
+    IOD seed and cannot be solved, so they exercise that path.
+    """
+    pid = "orbitID"
+    data = CSVDataReader(
+        get_test_filepath("streak_observations_complete.csv"), "csv", primary_id_column_name=pid
+    ).read_rows()
+    fitted = orbitfit(data, cache_dir=None, primary_id_column_name=pid)
+
+    state_cols = ["x", "y", "z", "xdot", "ydot", "zdot"]
+    has_nan = [not np.all(np.isfinite([row[c] for c in state_cols])) for row in fitted]
+
+    # The fixture must still exercise a degenerate (NaN-producing) fit, otherwise
+    # this test isn't checking anything.
+    assert any(has_nan), "fixture no longer produces a degenerate fit"
+
+    # Any fit with a NaN state MUST be reported as a failure (flag != 0); and
+    # equivalently, a successful fit (flag == 0) must have a finite state.
+    for row, nan in zip(fitted, has_nan):
+        if nan:
+            assert row["flag"] != 0, "fit reported success (flag == 0) with a NaN state"
+        if row["flag"] == 0:
+            assert not nan, "fit reported success (flag == 0) with a NaN state"
+
+
+def test_orbit_fit_cli_raises_with_unknown_engine(tmpdir):
+    """The CLI's --engine flag is validated by argparse choices, but the
+    Python-level orbitfit_cli also accepts a cli_args.engine attribute;
+    if a caller passes an unrecognized engine value, the dispatch in
+    _run_fit raises ValueError at fit time."""
+    os.chdir(tmpdir)
+    guess_file_stem = "test_guess"
+    test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
+
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.ar_data_file_path = None
+            self.primary_id_column_name = "provID"
+            self.separate_flagged = False
+            self.force = False
+            self.debias = False
+            self.weight_data = False
+            self.g = g
+            self.output_orbit_format = ("BCART_EQ",)
+            self.iod = "gauss"
+            self.engine = "not_an_engine"
+
+    with pytest.raises(ValueError) as e:
+        orbitfit_cli(
+            input=test_input_filepath,
+            input_file_format="ADES_csv",
+            output_file_stem=guess_file_stem,
+            output_file_format="csv",
+            chunk_size=10_000,
+            num_workers=1,
+            cli_args=FakeCliArgs(),
+        )
+        assert "Unknown engine" in str(e.value)

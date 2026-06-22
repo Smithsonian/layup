@@ -91,118 +91,123 @@ cat_codes = {
 }
 
 
-def data_weight_Veres2017(obsCode, jd_tdb, catalog=None):
+def astrometric_uncertainty_Veres2017(obsCode, jd_tdb, catalog=None):
     # Need to put in the photographic and other observation
     # types
 
     if not isinstance(obsCode, str):
         raise ValueError("obsCode must be a string")
 
-    dw = 1.5
+    sigma_arcsec = 1.5
     if obsCode == "703":
         if jd_tdb <= early_703:
-            dw = 1.0
+            sigma_arcsec = 1.0
         else:
-            dw = 0.8
+            sigma_arcsec = 0.8
     elif obsCode == "691":
         if jd_tdb <= early_691:
-            dw = 0.6
+            sigma_arcsec = 0.6
         else:
-            dw = 0.5
+            sigma_arcsec = 0.5
     elif obsCode == "644":
         if jd_tdb <= early_644:
-            dw = 0.6
+            sigma_arcsec = 0.6
         else:
-            dw = 0.4
+            sigma_arcsec = 0.4
     elif obsCode == "704":
-        dw = 1.0
+        sigma_arcsec = 1.0
     elif obsCode == "G96":
-        dw = 0.5
+        sigma_arcsec = 0.5
     elif obsCode == "F51":
-        dw = 0.2
+        sigma_arcsec = 0.2
     elif obsCode == "G45":
-        dw = 0.6
+        sigma_arcsec = 0.6
     elif obsCode == "699":
-        dw = 0.8
+        sigma_arcsec = 0.8
     elif obsCode == "D29":
-        dw = 0.75
+        sigma_arcsec = 0.75
     elif obsCode == "C51":
-        dw = 1.0
+        sigma_arcsec = 1.0
     elif obsCode == "E12":
-        dw = 0.75
+        sigma_arcsec = 0.75
     elif obsCode == "608":
-        dw = 0.6
+        sigma_arcsec = 0.6
     elif obsCode == "J75":
-        dw = 1.0
+        sigma_arcsec = 1.0
     elif obsCode == "645":
-        dw = 0.3
+        sigma_arcsec = 0.3
     elif obsCode == "673":
-        dw = 0.3
+        sigma_arcsec = 0.3
     elif obsCode == "689":
-        dw = 0.5
+        sigma_arcsec = 0.5
     elif obsCode == "950":
-        dw = 0.5
+        sigma_arcsec = 0.5
     elif obsCode == "H01":
-        dw = 0.3
+        sigma_arcsec = 0.3
     elif obsCode == "J04":
-        dw = 0.4
+        sigma_arcsec = 0.4
     elif obsCode == "W84":
-        dw = 0.5
+        sigma_arcsec = 0.5
     elif obsCode == "645":
-        dw = 0.3
+        sigma_arcsec = 0.3
     elif obsCode == "G83" and prg == "2":
         if catalog in cat_codes:
             if cat_codes[catalog] in ["UCAC-4", "PPMXL"]:
-                dw = 0.3
+                sigma_arcsec = 0.3
             elif cat_codes[catalog] in ["Gaia-DR1", "Gaia-DR2", "Gaia-DR3", "Gaia-EDR3"]:
-                dw = 0.2
+                sigma_arcsec = 0.2
             else:
-                dw = 0.3
+                sigma_arcsec = 0.3
         else:
-            dw = 1.0
+            sigma_arcsec = 1.0
     elif obsCode in ["K92", "K93", "Q63", "Q64", "V37", "W84", "W85", "W86", "W87", "K91", "E10", "F65"]:
-        dw = 0.4  # Careful with W84
+        sigma_arcsec = 0.4  # Careful with W84
     elif obsCode == "Y28":
         if catalog in cat_codes:
             if cat_codes[catalog] in ["PPMXL", "Gaia-DR1"]:
-                dw = 0.3
+                sigma_arcsec = 0.3
             else:
-                dw = 1.5
+                sigma_arcsec = 1.5
         else:
-            dw = 1.5
+            sigma_arcsec = 1.5
     elif obsCode == "568":
         if catalog in cat_codes:
             if cat_codes[catalog] in ["USNO-B1.0", "USNO-B2.0"]:
-                dw = 0.5
+                sigma_arcsec = 0.5
             elif cat_codes[catalog] in ["Gaia-DR1", "Gaia-DR2", "Gaia-DR3", "Gaia-EDR3"]:
-                dw = 0.1
+                sigma_arcsec = 0.1
             elif cat_codes[catalog] in ["PPMXL"]:
-                dw = 0.2
+                sigma_arcsec = 0.2
             else:
-                dw = 1.5
+                sigma_arcsec = 1.5
         else:
-            dw = 1.5
+            sigma_arcsec = 1.5
     elif obsCode in ["T09", "T12", "T14"]:
         if catalog in cat_codes:
             if cat_codes[catalog] in ["Gaia-DR1", "Gaia-DR2", "Gaia-DR3", "Gaia-EDR3"]:
-                dw = 0.1
+                sigma_arcsec = 0.1
             else:
-                dw = 1.5
+                sigma_arcsec = 1.5
         else:
-            dw = 1.5
+            sigma_arcsec = 1.5
     elif obsCode == "309" and prg == "&":  # Micheli
         if cat_codes[catalog] in ["UCAC-4", "PPMXL"]:
-            dw = 0.3
+            sigma_arcsec = 0.3
         elif cat_codes[catalog] in ["Gaia-DR1", "Gaia-DR2", "Gaia-DR3", "Gaia-EDR3"]:
-            dw = 0.2
+            sigma_arcsec = 0.2
         else:
-            dw = 1.5
+            sigma_arcsec = 1.5
     elif catalog:
-        dw = 1.0
+        sigma_arcsec = 1.0
     else:
-        dw = 1.5
+        sigma_arcsec = 1.5
 
-    return dw
+    return sigma_arcsec
+
+
+# Backwards-compatible alias (returns an astrometric uncertainty in arcsec, not a
+# 1/sigma^2 weight, despite the historical name).
+data_weight_Veres2017 = astrometric_uncertainty_Veres2017
 
 
 # From Siegfried Eggl's code
@@ -354,12 +359,12 @@ def format_astrometry_line(line, readfunc=tr.convertObs80, ecliptic=False, jd_td
     if prg == " ":
         prg = None
 
-    dw = data_weight_Veres2017(obsCode, jd_tdb, cat)
+    sigma_arcsec = astrometric_uncertainty_Veres2017(obsCode, jd_tdb, cat)
     """
     if cat in cat_codes:
-        print(cat_codes[cat], obsCode, dw)
+        print(cat_codes[cat], obsCode, sigma_arcsec)
     else:
-        print('no catalog', obsCode, 'blah', dw)
+        print('no catalog', obsCode, 'blah', sigma_arcsec)
     """
 
     if jd_tdb < jd_tdb_min:
@@ -418,7 +423,7 @@ def format_astrometry_line(line, readfunc=tr.convertObs80, ecliptic=False, jd_td
         xo,
         yo,
         zo,
-        dw,
+        sigma_arcsec,
     )
 
     return outstring
