@@ -30,7 +30,7 @@ except ImportError:  # extension not rebuilt yet
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
-from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
+from layup.utilities.astrometric_uncertainty import astrometric_uncertainty_Veres2017
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,
@@ -713,19 +713,19 @@ def _orbitfit(
                 )
 
             if weight_data:
-                # data_weight_Veres2017 returns the astrometric uncertainty in
+                # astrometric_uncertainty_Veres2017 returns the astrometric uncertainty in
                 # ARCSECONDS (per its docstring), but Observation.ra_unc /
                 # dec_unc are stored in RADIANS.  Convert at the assignment.
-                data_weight_arcsec = data_weight_Veres2017(
+                sigma_arcsec = astrometric_uncertainty_Veres2017(
                     obsCode=d["stn"],
                     jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
                     catalog=d["astCat"] if astcat_column_present else None,
                     program=d["program"] if program_column_present else None,
                 )
-                data_weight_rad = data_weight_arcsec * np.pi / (180.0 * 3600.0)
+                sigma_rad = sigma_arcsec * np.pi / (180.0 * 3600.0)
 
-                o.ra_unc = data_weight_rad
-                o.dec_unc = data_weight_rad
+                o.ra_unc = sigma_rad
+                o.dec_unc = sigma_rad
 
             observations.append(o)
 
