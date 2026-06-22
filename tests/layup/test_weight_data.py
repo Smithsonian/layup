@@ -4,10 +4,10 @@ Guards two bugs that previously broke the `weight_data=True` code path:
 
   1. `g_column_present` was defined but `astcat_column_present` was
      referenced inside _orbitfit, raising NameError at the first
-     data_weight_Veres2017 call -- failure mode: hard crash before
+     astrometric_uncertainty_Veres2017 call -- failure mode: hard crash before
      any fitting happened.
 
-  2. `data_weight_Veres2017` returns astrometric uncertainty in
+  2. `astrometric_uncertainty_Veres2017` returns astrometric uncertainty in
      ARCSECONDS (per its docstring), but the call site assigned the
      return value directly to Observation.ra_unc / dec_unc which are
      stored in RADIANS -- failure mode: weights were ~206000x too
