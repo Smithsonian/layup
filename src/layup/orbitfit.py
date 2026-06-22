@@ -639,6 +639,31 @@ def do_other_fit(iod: str):
     raise ValueError(f"The IOD, {iod} is not supported. Please use a supported IOD.")
 
 
+# Minimum observational arc (in days) generally needed to constrain an orbit.
+# Below this the fit is essentially unconstrained, so a failure is most likely a
+# too-short baseline rather than anything wrong with the data.
+_MIN_ARC_DAYS = 1.0
+
+
+def _warn_if_short_arc(jds, obj_id):
+    """Emit a helpful warning when a failed fit is likely caused by too short an
+    observational arc (less than ~24 hours / a single night).
+
+    See issue #312: an orbit fit needs a baseline of more than 24 hours, so when
+    a fit fails on a sub-day arc we tell the user the likely cause rather than
+    leaving them with an opaque failure.
+    """
+    if jds is None or len(jds) == 0:
+        return
+    arc_days = float(np.max(jds) - np.min(jds))
+    if arc_days < _MIN_ARC_DAYS:
+        logger.warning(
+            f"Orbit fit failed for {obj_id}: the observations span only "
+            f"{arc_days * 24.0:.1f} hours.  Constraining an orbit generally requires "
+            f"a baseline of more than ~24 hours (more than a single night of observations)."
+        )
+
+
 def _orbitfit(
     data,
     cache_dir: str,
@@ -814,6 +839,8 @@ def _orbitfit(
             res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
+        if not success:
+            _warn_if_short_arc(jds, data[primary_id_column_name][0])
         cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
         output = np.array(
             [

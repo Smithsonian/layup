@@ -1,3 +1,4 @@
+import logging
 import os
 
 import numpy as np
@@ -5,7 +6,7 @@ import pooch
 import pytest
 from numpy.testing import assert_equal
 
-from layup.orbitfit import orbitfit, orbitfit_cli
+from layup.orbitfit import _MIN_ARC_DAYS, _warn_if_short_arc, orbitfit, orbitfit_cli
 from layup.routines import Observation, get_ephem, run_from_vector_with_initial_guess, FitResult, gauss
 from layup.utilities.data_processing_utilities import get_cov_columns, parse_cov, parse_fit_result
 from layup.utilities.data_utilities_for_tests import get_test_filepath
@@ -283,6 +284,33 @@ def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
         )
 
         assert "The IOD, bad_iod is not supported" in str(e.value)
+
+
+def test_warn_if_short_arc_warns_for_subday_arc(caplog):
+    """Issue #312: a failed fit on a sub-24h arc should log a clear warning
+    naming the object and the (too-short) arc length."""
+    jds = np.array([2460000.0, 2460000.2, 2460000.30])  # ~7.2 hour baseline
+    with caplog.at_level(logging.WARNING, logger="layup.orbitfit"):
+        _warn_if_short_arc(jds, "obj_short")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("obj_short" in m and "hours" in m for m in msgs), msgs
+
+
+def test_warn_if_short_arc_silent_for_multiday_arc(caplog):
+    """A multi-day arc that fails for some other reason should not trigger the
+    short-arc warning (avoid misleading the user)."""
+    jds = np.array([2460000.0, 2460002.0, 2460005.0])  # 5 day baseline
+    with caplog.at_level(logging.WARNING, logger="layup.orbitfit"):
+        _warn_if_short_arc(jds, "obj_long")
+    assert _MIN_ARC_DAYS == 1.0
+    assert not caplog.records
+
+
+def test_warn_if_short_arc_handles_empty(caplog):
+    """No observations -> no crash, no message."""
+    with caplog.at_level(logging.WARNING, logger="layup.orbitfit"):
+        _warn_if_short_arc(np.array([]), "obj_empty")
+    assert not caplog.records
 
 
 def test_orbitfit_does_not_report_success_with_nan_state():
