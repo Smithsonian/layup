@@ -79,6 +79,19 @@ def main():
         required=False,
     )
     optional.add_argument(
+        "--engine",
+        help=(
+            "LM fitter to use after IOD: 'cartesian' (default; classic "
+            "barycentric-Cartesian LM) or 'bk_native' (universal "
+            "Bernstein-Khushalani fit with energy prior, better-conditioned "
+            "for distant short-arc targets and at least as good elsewhere)."
+        ),
+        dest="engine",
+        choices=["cartesian", "bk_native"],
+        default="cartesian",
+        required=False,
+    )
+    optional.add_argument(
         "-o",
         "--output",
         help="output file stem. default path is current working directory",
