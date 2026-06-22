@@ -334,6 +334,91 @@ namespace orbit_fit
         {
             parts.y_partials.push_back(dy_resid[i]);
         }
+
+        // ---- Streak (sky-motion-rate) residuals + partials ----
+        // Only StreakObservations contribute the two extra rate rows. The
+        // forward model matches Sorcha's RARateCosDec/DecRate (great-circle,
+        // cos(Dec) included), including the (1 - d(delta_t)/dt) light-time-rate
+        // factor; the partials use the geometric rate Jacobian (the omitted LT
+        // factor perturbs them by ~1e-4, negligible for LM). See orbitfit.py for
+        // the observed-rate unit/convention contract.
+        if (std::holds_alternative<StreakObservation>(this_det.observation_type))
+        {
+            const StreakObservation &sk = std::get<StreakObservation>(this_det.observation_type);
+
+            // Emission-time asteroid velocity (integrate_light_time left the sim
+            // at the retarded time) and the observer velocity.
+            double vax = r->particles[0].vx, vay = r->particles[0].vy, vaz = r->particles[0].vz;
+            double vox = this_det.observer_velocity[0];
+            double voy = this_det.observer_velocity[1];
+            double voz = this_det.observer_velocity[2];
+            double vrx = vax - vox, vry = vay - voy, vrz = vaz - voz; // v_rel
+
+            // rho_x/rho_y/rho_z are the unit vector rho_hat here; rho is the
+            // topocentric distance; invd = 1/rho.
+            double q = rho_x * vrx + rho_y * vry + rho_z * vrz; // rho_hat . v_rel = range rate
+            double ddeltatdt = q / SPEED_OF_LIGHT;
+
+            // d(rho_hat)/dt with Sorcha's light-time-rate factor.
+            double drx = vax * (1.0 - ddeltatdt) - vox;
+            double dry = vay * (1.0 - ddeltatdt) - voy;
+            double drz = vaz * (1.0 - ddeltatdt) - voz;
+            double wx = (drx - q * rho_x) * invd;
+            double wy = (dry - q * rho_y) * invd;
+            double wz = (drz - q * rho_z) * invd;
+
+            double model_ra_rate = Ax * wx + Ay * wy + Az * wz;
+            double model_dec_rate = Dx * wx + Dy * wy + Dz * wz;
+            resid.ra_rate_resid = sk.ra_rate - model_ra_rate;
+            resid.dec_rate_resid = sk.dec_rate - model_dec_rate;
+
+            // Geometry Jacobians (observed basis A/D held fixed):
+            //   p = X.rho_hat, s = X.v_rel, q = rho_hat.v_rel
+            //   dR/dr = -(q X + p v_rel + (s - 3 p q) rho_hat)/dist^2
+            //   dR/dv = (X - p rho_hat)/dist
+            double pA = Ax * rho_x + Ay * rho_y + Az * rho_z;
+            double sA = Ax * vrx + Ay * vry + Az * vrz;
+            double pD = Dx * rho_x + Dy * rho_y + Dz * rho_z;
+            double sD = Dx * vrx + Dy * vry + Dz * vrz;
+            double invd2 = invd * invd;
+
+            double dRdrA[3] = {-(q * Ax + pA * vrx + (sA - 3 * pA * q) * rho_x) * invd2,
+                               -(q * Ay + pA * vry + (sA - 3 * pA * q) * rho_y) * invd2,
+                               -(q * Az + pA * vrz + (sA - 3 * pA * q) * rho_z) * invd2};
+            double dRdvA[3] = {(Ax - pA * rho_x) * invd, (Ay - pA * rho_y) * invd, (Az - pA * rho_z) * invd};
+            double dRdrD[3] = {-(q * Dx + pD * vrx + (sD - 3 * pD * q) * rho_x) * invd2,
+                               -(q * Dy + pD * vry + (sD - 3 * pD * q) * rho_y) * invd2,
+                               -(q * Dz + pD * vrz + (sD - 3 * pD * q) * rho_z) * invd2};
+            double dRdvD[3] = {(Dx - pD * rho_x) * invd, (Dy - pD * rho_y) * invd, (Dz - pD * rho_z) * invd};
+
+            for (size_t i = 0; i < 6; i++)
+            {
+                size_t vn = var + i;
+                // d r_obj/d param_i: variational position + light-time shift of
+                // the emission time (v_ast * d t_ret, t_ret = t_obs - rho/c).
+                double ltf = ddist[i] / SPEED_OF_LIGHT;
+                double drk_x = dxk[i] - vax * ltf;
+                double drk_y = dyk[i] - vay * ltf;
+                double drk_z = dzk[i] - vaz * ltf;
+                // d v_obj/d param_i: velocity variational partials (the a_ast * d t_ret
+                // light-time term is ~1e-4 smaller and omitted).
+                double dvk_x = r->particles[vn].vx;
+                double dvk_y = r->particles[vn].vy;
+                double dvk_z = r->particles[vn].vz;
+
+                double dmodel_ra = dRdrA[0] * drk_x + dRdrA[1] * drk_y + dRdrA[2] * drk_z +
+                                   dRdvA[0] * dvk_x + dRdvA[1] * dvk_y + dRdvA[2] * dvk_z;
+                double dmodel_dec = dRdrD[0] * drk_x + dRdrD[1] * drk_y + dRdrD[2] * drk_z +
+                                    dRdvD[0] * dvk_x + dRdvD[1] * dvk_y + dRdvD[2] * dvk_z;
+
+                // residual = observed - model, so partial = -d(model)/d param.
+                parts.ra_rate_partials.push_back(-dmodel_ra);
+                parts.dec_rate_partials.push_back(-dmodel_dec);
+            }
+
+            resid.n_resid = 4;
+            parts.n_resid = 4;
+        }
     }
 
     // This routine requires that resid_vec and partials_vec are
@@ -430,22 +515,41 @@ namespace orbit_fit
         const int mlength = (int)partials_vec.size();
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> B;
         Eigen::MatrixXd eye = MatrixXd::Identity(6, 6);
-        B.resize(mlength * 2, 6);
 
-        for (size_t i = 0; i < partials_vec.size(); i++)
+        // Each observation contributes n_resid rows (2 for astrometry, 4 for a
+        // streak: ra/dec position + ra/dec rate). Lay them out with a per-obs
+        // prefix-sum offset; the weight matrix uses the identical ordering.
+        std::vector<int> row_off(mlength);
+        int total_rows = 0;
+        for (int i = 0; i < mlength; i++)
         {
-            for (size_t j = 0; j < 6; j++)
-            {
-                B(2 * i, j) = partials_vec[i].x_partials[j];
-                B(2 * i + 1, j) = partials_vec[i].y_partials[j];
-            }
+            row_off[i] = total_rows;
+            total_rows += partials_vec[i].n_resid;
         }
 
-        Eigen::MatrixXd resid_v(mlength * 2, 1);
-        for (size_t i = 0; i < resid_vec.size(); i++)
+        B.resize(total_rows, 6);
+        Eigen::MatrixXd resid_v(total_rows, 1);
+        for (size_t i = 0; i < partials_vec.size(); i++)
         {
-            resid_v(2 * i) = resid_vec[i].x_resid;
-            resid_v(2 * i + 1) = resid_vec[i].y_resid;
+            const int r0 = row_off[i];
+            for (size_t j = 0; j < 6; j++)
+            {
+                B(r0, j) = partials_vec[i].x_partials[j];
+                B(r0 + 1, j) = partials_vec[i].y_partials[j];
+            }
+            resid_v(r0) = resid_vec[i].x_resid;
+            resid_v(r0 + 1) = resid_vec[i].y_resid;
+
+            if (partials_vec[i].n_resid == 4)
+            {
+                for (size_t j = 0; j < 6; j++)
+                {
+                    B(r0 + 2, j) = partials_vec[i].ra_rate_partials[j];
+                    B(r0 + 3, j) = partials_vec[i].dec_rate_partials[j];
+                }
+                resid_v(r0 + 2) = resid_vec[i].ra_rate_resid;
+                resid_v(r0 + 3) = resid_vec[i].dec_rate_resid;
+            }
         }
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Bt = B.transpose();
@@ -525,21 +629,49 @@ namespace orbit_fit
 
     typedef Eigen::Triplet<double> T;
 
+    // Total number of residual rows across all observations: 2 per astrometry
+    // observation, 4 per streak (ra/dec position + ra/dec rate). Used for both
+    // the normal-equation layout and the degrees-of-freedom count.
+    size_t total_residual_rows(const std::vector<Observation> &detections)
+    {
+        size_t n = 0;
+        for (const auto &d : detections)
+            n += std::holds_alternative<StreakObservation>(d.observation_type) ? 4 : 2;
+        return n;
+    }
+
     Eigen::SparseMatrix<double> get_weight_matrix(std::vector<Observation> &detections)
     {
         const int mlength = (int)detections.size();
+
+        // Match compute_dX's row layout: 2 rows (astrometry) or 4 (streak).
+        std::vector<int> row_off(mlength);
+        int total_rows = 0;
+        for (int i = 0; i < mlength; i++)
+        {
+            row_off[i] = total_rows;
+            total_rows += std::holds_alternative<StreakObservation>(detections[i].observation_type) ? 4 : 2;
+        }
+
         std::vector<T> tripletList;
-        tripletList.reserve(2 * mlength);
-        Eigen::SparseMatrix<double> W(mlength * 2, mlength * 2);
+        tripletList.reserve(total_rows);
+        Eigen::SparseMatrix<double> W(total_rows, total_rows);
 
         for (size_t i = 0; i < mlength; i++)
         {
+            const int r0 = row_off[i];
             double x_unc = *detections[i].ra_unc;
-            double w2_x = 1.0 / (x_unc * x_unc);
-            tripletList.push_back(T(2 * i, 2 * i, w2_x));
+            tripletList.push_back(T(r0, r0, 1.0 / (x_unc * x_unc)));
             double y_unc = *detections[i].dec_unc;
-            double w2_y = 1.0 / (y_unc * y_unc);
-            tripletList.push_back(T(2 * i + 1, 2 * i + 1, w2_y));
+            tripletList.push_back(T(r0 + 1, r0 + 1, 1.0 / (y_unc * y_unc)));
+
+            if (std::holds_alternative<StreakObservation>(detections[i].observation_type))
+            {
+                double rar_unc = detections[i].ra_rate_unc ? *detections[i].ra_rate_unc : (24.0 / 206265.0);
+                double der_unc = detections[i].dec_rate_unc ? *detections[i].dec_rate_unc : (24.0 / 206265.0);
+                tripletList.push_back(T(r0 + 2, r0 + 2, 1.0 / (rar_unc * rar_unc)));
+                tripletList.push_back(T(r0 + 3, r0 + 3, 1.0 / (der_unc * der_unc)));
+            }
         }
         W.setFromTriplets(tripletList.begin(), tripletList.end());
 
@@ -673,7 +805,7 @@ namespace orbit_fit
                 lambda *= 2.0;
             }
 
-            size_t ndof = detections.size() * 2 - 6;
+            size_t ndof = total_residual_rows(detections) - 6;
             double thresh = 10;
             int cflag = converged(dX, eps, chi2_d, ndof, thresh);
             if (cflag)
@@ -684,7 +816,7 @@ namespace orbit_fit
             }
         }
 
-        size_t ndof = detections.size() * 2 - 6;
+        size_t ndof = total_residual_rows(detections) - 6;
         double thresh = 10.0;
         if ((chi2_final / ndof) > thresh)
         {
@@ -825,7 +957,7 @@ namespace orbit_fit
             eps,
             iter_max);
 
-        dof = 2 * detections.size() - 6;
+        dof = total_residual_rows(detections) - 6;
 
         FitResult result;
 	
