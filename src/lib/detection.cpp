@@ -43,21 +43,26 @@ namespace orbit_fit
         return rho_hat;
     }
 
+    // Unit tangent vector in the direction of increasing RA: (-sin α, cos α, 0).
+    // The celestial pole is the z-axis. Singular only at ρ̂_z = ±1.
     Eigen::Vector3d a_vec_from_rho_hat(const Eigen::Vector3d &rho_hat)
     {
+        double cd = std::sqrt(rho_hat.x() * rho_hat.x() + rho_hat.y() * rho_hat.y());
         Eigen::Vector3d a_vec;
-        a_vec.x() = rho_hat.z();
-        a_vec.y() = 0.0;
-        a_vec.z() = -rho_hat.x();
+        a_vec.x() = -rho_hat.y() / cd;
+        a_vec.y() = rho_hat.x() / cd;
+        a_vec.z() = 0.0;
         return a_vec;
     }
 
+    // Unit tangent vector in the direction of increasing Dec.
     Eigen::Vector3d d_vec_from_rho_hat(const Eigen::Vector3d &rho_hat)
     {
+        double cd = std::sqrt(rho_hat.x() * rho_hat.x() + rho_hat.y() * rho_hat.y());
         Eigen::Vector3d d_vec;
-        d_vec.x() = -rho_hat.x() * rho_hat.y();
-        d_vec.y() = rho_hat.x() * rho_hat.x() + rho_hat.z() * rho_hat.z();
-        d_vec.z() = -rho_hat.z() * rho_hat.y();
+        d_vec.x() = -rho_hat.z() * rho_hat.x() / cd;
+        d_vec.y() = -rho_hat.z() * rho_hat.y() / cd;
+        d_vec.z() = cd;
         return d_vec;
     }
     struct AstrometryObservation

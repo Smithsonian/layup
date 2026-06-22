@@ -55,6 +55,61 @@
 #include "orbit_fit.h"
 #include "bk_basis.cpp"
 #include "../gauss/gauss.cpp"
+
+extern "C" {
+#include "rebound.h"
+}
+
+namespace orbit_fit
+{
+    // Optional floor on the IAS15 adaptive step size, in days. When > 0,
+    // every freshly-created REBOUND sim has its ri_ias15.min_dt set to
+    // this value so the integrator stops shrinking its step below the
+    // floor during close encounters. The trade-off is accuracy:
+    // truncating IAS15's adaptive control during a real close
+    // encounter introduces error in the encounter geometry, but for
+    // the LM-picker use case this is acceptable — a wildly-wrong
+    // Gauss root sent through a close approach just needs to report
+    // "big residual," not a precise integration.
+    //
+    // Default 0 means "no floor" (historical behavior). Setting
+    // 1e-3 days (≈86 s) bounds the worst-case LM iteration to
+    // O(arc_days / 1e-3) integrator steps, which kills the hours-long
+    // grinds on phantom inner-SS roots and costs <a few arcsec on
+    // real well-behaved orbits.
+    static double g_ias15_min_dt_days = 0.0;
+
+    inline void set_ias15_min_dt(double v) { g_ias15_min_dt_days = v; }
+    inline double get_ias15_min_dt(void)   { return g_ias15_min_dt_days; }
+
+    static inline void apply_ias15_min_dt(struct reb_simulation *r) {
+        if (g_ias15_min_dt_days > 0.0)
+            r->ri_ias15.min_dt = g_ias15_min_dt_days;
+    }
+
+    // Optional override of IAS15's adaptive step-size controller.
+    // assist_attach() forces ri_ias15.adaptive_mode = 1 (the legacy
+    // controller); setting this global to a non-negative value
+    // overrides it on every freshly-attached sim. adaptive_mode = 2 is
+    // the newer (Pham, Rein & Spiegel 2024) controller, which Hanno
+    // Rein suggested (PR 324 review) may handle close-Earth encounters
+    // more gracefully than the min-dt floor. Because assist_attach sets
+    // the legacy value, apply_ias15_adaptive_mode() must run *after*
+    // assist_attach, not before like apply_ias15_min_dt.
+    //
+    // Default -1 means "leave ASSIST's choice untouched" (no behavior
+    // change for existing callers).
+    static int g_ias15_adaptive_mode = -1;
+
+    inline void set_ias15_adaptive_mode(int m) { g_ias15_adaptive_mode = m; }
+    inline int  get_ias15_adaptive_mode(void)  { return g_ias15_adaptive_mode; }
+
+    static inline void apply_ias15_adaptive_mode(struct reb_simulation *r) {
+        if (g_ias15_adaptive_mode >= 0)
+            r->ri_ias15.adaptive_mode = g_ias15_adaptive_mode;
+    }
+}
+
 #include "predict.cpp"
 
 using std::cout;
@@ -296,7 +351,9 @@ namespace orbit_fit
 
         // Pass in this simulation stuff to keep it flexible
         struct reb_simulation *r = reb_simulation_create();
+        apply_ias15_min_dt(r);
         struct assist_extras *ax = assist_attach(r, ephem);
+        apply_ias15_adaptive_mode(r);  // after attach: ASSIST forces mode 1
 
         // 0. Set initial time, relative to ephem->jd_ref
         r->t = epoch - ephem->jd_ref;
@@ -709,7 +766,10 @@ namespace orbit_fit
         return ephem;
     }
 
-    FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem, FitResult initial_guess, std::vector<Observation> &detections)
+    FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem,
+                                                  FitResult initial_guess,
+                                                  std::vector<Observation> &detections,
+                                                  size_t iter_max = 100)
     {
         int success = 1;
         size_t iters;
@@ -719,8 +779,6 @@ namespace orbit_fit
         std::vector<residuals> resid_vec(detections.size());
         std::vector<partials> partials_vec(detections.size());
 
-        // Make these parameters flexible.
-        size_t iter_max = 100;
         double eps = 1e-12;
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
@@ -797,10 +855,38 @@ namespace orbit_fit
         py::class_<assist_ephem>(m, "assist_ephem");
         m.def("orbit_fit", &orbit_fit::orbit_fit, R"pbdoc(Core orbit fit function.)pbdoc");
         m.def("get_ephem", &orbit_fit::get_ephem, R"pbdoc(get ephemeris)pbdoc");
-        m.def("run_from_vector_with_initial_guess", &orbit_fit::run_from_vector_with_initial_guess, R"pbdoc(
-                Takes an assist_ephem object, a vector of observations and an initial guess
-                and runs orbit fit.
+        m.def("run_from_vector_with_initial_guess",
+              &orbit_fit::run_from_vector_with_initial_guess,
+              py::arg("ephem"), py::arg("initial_guess"),
+              py::arg("detections"), py::arg("iter_max") = 100,
+              R"pbdoc(
+                Takes an assist_ephem object, a vector of observations, an
+                initial guess, and (optionally) a cap on LM iterations
+                (`iter_max`, default 100), and runs orbit fit. Reducing
+                iter_max gives a cheap screening pass for use in
+                multi-candidate IOD picker loops.
             )pbdoc");
+        m.def("set_ias15_min_dt", &orbit_fit::set_ias15_min_dt,
+              py::arg("days"),
+              R"pbdoc(
+                Set a floor on IAS15's adaptive step size in days. Default
+                0 = no floor. A typical safe value is 1e-3 (~86 s): bounds
+                worst-case LM-iteration wall time on phantom IOD roots
+                whose trajectories pass close to Earth, at the cost of a
+                few arcsec of accuracy in real close encounters.
+            )pbdoc");
+        m.def("get_ias15_min_dt", &orbit_fit::get_ias15_min_dt,
+              R"pbdoc(Current IAS15 min-dt floor in days (0 = off).)pbdoc");
+        m.def("set_ias15_adaptive_mode", &orbit_fit::set_ias15_adaptive_mode,
+              py::arg("mode"),
+              R"pbdoc(
+                Override IAS15's adaptive step-size controller. -1 (default)
+                leaves ASSIST's choice, which is the legacy mode 1. Set 2 to
+                use the newer (Pham, Rein & Spiegel 2024) controller. Applied
+                after assist_attach, which forces mode 1.
+            )pbdoc");
+        m.def("get_ias15_adaptive_mode", &orbit_fit::get_ias15_adaptive_mode,
+              R"pbdoc(Current IAS15 adaptive_mode override (-1 = ASSIST default).)pbdoc");
     }
 #endif /* Py_PYTHON_H */
 

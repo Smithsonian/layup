@@ -1,4 +1,5 @@
 import logging
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
@@ -10,6 +11,23 @@ from layup.routines import FitResult
 from layup.utilities.layup_configs import LayupConfigs
 
 """ A module for utilities useful for processing data in structured numpy arrays """
+
+# Start worker processes with "spawn" rather than the platform default.
+#
+# On Linux the default start method is "fork", which clones the whole parent
+# process -- including any mutexes other threads hold at the instant of the
+# fork, in their *locked* state.  layup imports JAX (via layup.convert ->
+# orbit_conversion) at module load, and JAX/XLA runs background threads, so a
+# forked worker can inherit a permanently-locked JAX mutex and deadlock the
+# first time it touches it.  This is the cause of the ubuntu CI hangs in
+# orbit-fit/convert workflows with num_workers > 1 (see issues #256 and #302).
+#
+# "spawn" launches a fresh interpreter per worker, inheriting none of the
+# parent's locks or threads, so the deadlock cannot occur.  macOS already
+# defaults to "spawn" (which is why the hang was Linux-only); pinning it here
+# makes every platform behave the same.  ("forkserver" would also work and is
+# cheaper, but "spawn" is the most portable and matches the macOS default.)
+_MP_CONTEXT = multiprocessing.get_context("spawn")
 
 AU_M = 149597870700
 AU_KM = AU_M / 1000.0
@@ -49,7 +67,7 @@ def process_data(data, n_workers, func, **kwargs):
     # and end is the last index of the block + 1.
     blocks = [(i, min(i + block_size, len(data))) for i in range(0, len(data), block_size)]
 
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    with ProcessPoolExecutor(max_workers=n_workers, mp_context=_MP_CONTEXT) as executor:
         # Create a future applying the function to each block of data
         futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
         # Concatenate all processed blocks together as our final result
@@ -90,7 +108,7 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
         return data
 
     kwargs["primary_id_column_name"] = primary_id_column_name
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    with ProcessPoolExecutor(max_workers=n_workers, mp_context=_MP_CONTEXT) as executor:
         # Create a future applying the function to each block of data for a given object id
         futures = [
             executor.submit(func, data[data[primary_id_column_name] == id], **kwargs)

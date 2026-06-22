@@ -27,6 +27,10 @@ dependencies = [
     "pybind11",
     "jax",
     "scipy",
+    "plotly",
+    "dash",
+    "dash-daq",
+    "dash-ag-grid",
     "pytest"
 ]
 
@@ -49,7 +53,7 @@ layup-log = "layup_cmdline.log:main"
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
 dev = [
-    "black==26.1.0", # Used for static linting of files
+    "black==26.5.1", # Used for static linting of files
     "jupyter", # Clears output from Jupyter notebooks
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
