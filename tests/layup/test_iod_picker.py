@@ -37,13 +37,17 @@ def test_register_and_get_iod():
 # --- prefilter invariant: never discard the single best seed --- #
 
 
-def _prefilter_setup(monkeypatch, residual_sigma_by_state):
+def _prefilter_setup(monkeypatch, residual_sigma_by_state, n_obs=5):
     """Wire up filter_candidates_by_residual with the integrator stubbed.
 
-    `residual_sigma_by_state(state) -> float` supplies the worst-case
-    per-candidate residual (in σ); candidates are plain namespaces so the
-    test never touches ASSIST or the C++ fitter.
+    `residual_sigma_by_state` supplies each candidate's per-observation
+    residual (in σ). It may be called as `f(state)` (same residual on
+    every observation) or `f(state, j)` (per-observation index j), so a
+    single helper covers both the constant-residual and contaminated-arc
+    tests. Candidates are plain namespaces so the test never touches
+    ASSIST or the C++ fitter.
     """
+    import inspect
     from types import SimpleNamespace
 
     monkeypatch.setattr(iod, "_passes_physical_bounds", lambda c: True)
@@ -51,18 +55,22 @@ def _prefilter_setup(monkeypatch, residual_sigma_by_state):
     monkeypatch.setattr(iod, "_inertial_min_geocentric_AU", lambda *a, **k: 10.0)
 
     sigma = 1.0 / 206265.0
+    per_obs = len(inspect.signature(residual_sigma_by_state).parameters) >= 2
+
+    obs = []
+    idx_of = {}  # id(obs) -> index; the C++ Observation can't hold a custom attr.
+    for j in range(n_obs):
+        o = Observation.from_astrometry(0.0, 0.0, float(j), [0, 0, 0], [0, 0, 0])
+        o.ra_unc = o.dec_unc = sigma
+        idx_of[id(o)] = j
+        obs.append(o)
 
     def fake_pred(ephem, state, epoch, o):
-        ang = residual_sigma_by_state(state) * sigma  # rad
+        rs = residual_sigma_by_state(state, idx_of[id(o)]) if per_obs else residual_sigma_by_state(state)
+        ang = rs * sigma  # rad
         return np.array([np.cos(ang), np.sin(ang), 0.0])
 
     monkeypatch.setattr(iod, "_predict_rho_hat", fake_pred)
-
-    obs = []
-    for j in range(5):
-        o = Observation.from_astrometry(0.0, 0.0, float(j), [0, 0, 0], [0, 0, 0])
-        o.ra_unc = o.dec_unc = sigma
-        obs.append(o)
 
     def cand(r):
         return SimpleNamespace(state=np.array([r, 0.0, 0.0, 0.0, 0.0, 0.0]), epoch=0.0)
@@ -104,6 +112,45 @@ def test_prefilter_drops_phantom_below_good_root(monkeypatch):
 
     rs = [float(np.linalg.norm(c.state[:3])) for c in out]
     assert rs and all(abs(r - 2.14) < 1e-6 for r in rs), f"expected only good root, got {rs}"
+
+
+def test_prefilter_percentile_tolerates_contaminated_points(monkeypatch):
+    """A good root that fits the bulk of the arc but has a minority of
+    contaminating observations must survive on its own merits — not merely
+    via the keep-best guard. The robust LM downstream handles the bad
+    points; the prefilter should not reject the root for them.
+
+    With one bad point in ten (10% < the 20% the 80th percentile
+    tolerates), the percentile metric stays small and the contaminated
+    root is a direct survivor alongside a cleaner competing root (so the
+    single-candidate keep-best guard cannot explain its survival).
+    """
+
+    def resid(state, j):
+        # r≈2.50 root: fits 9/10 obs at 5σ, one contaminated point at 5e4σ.
+        if state[0] > 2.3:
+            return 50000.0 if j == 0 else 5.0
+        # r≈2.14 root: clean, 5σ everywhere (the best-fitting candidate).
+        return 5.0
+
+    obs, cand = _prefilter_setup(monkeypatch, resid, n_obs=10)
+    clean, contaminated = cand(2.14), cand(2.50)
+
+    out = iod.filter_candidates_by_residual([clean, contaminated], obs, ephem=None, threshold_sigma=1000.0)
+    rs = [float(np.linalg.norm(c.state[:3])) for c in out]
+    assert any(abs(r - 2.50) < 1e-6 for r in rs), f"contaminated-but-good root dropped: {rs}"
+    assert any(abs(r - 2.14) < 1e-6 for r in rs), f"clean root dropped: {rs}"
+
+    # residual_percentile=100 recovers the legacy worst-point behavior:
+    # the contaminated root's 5e4σ point now exceeds threshold, and since
+    # the clean root is the best seed, the contaminated one is dropped.
+    out_max = iod.filter_candidates_by_residual(
+        [clean, contaminated], obs, ephem=None, threshold_sigma=1000.0, residual_percentile=100.0
+    )
+    rs_max = [float(np.linalg.norm(c.state[:3])) for c in out_max]
+    assert not any(
+        abs(r - 2.50) < 1e-6 for r in rs_max
+    ), f"max metric should drop contaminated root: {rs_max}"
 
 
 def test_unknown_iod_raises():

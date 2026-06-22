@@ -189,16 +189,30 @@ def filter_candidates_by_residual(
     observations,
     ephem,
     threshold_sigma: float = 1000.0,
+    residual_percentile: float = 80.0,
     min_obs_for_filter: int = 4,
     close_earth_AU: float = _CLOSE_EARTH_AU,
 ):
     """Drop IOD candidates whose predicted positions miss the observations
     by more than `threshold_sigma` times the per-axis astrometric σ.
 
-    The right Gauss root predicts the observations within a few σ; phantom
-    roots are typically off by 10⁵-10⁶ σ. A loose threshold (1000σ
-    default) keeps the right root in every realistic case while throwing
-    out the obviously-wrong ones before LM ever runs on them.
+    The right Gauss root predicts the bulk of the observations within a few
+    σ; phantom roots are typically off by 10⁵-10⁶ σ on essentially every
+    observation. A loose threshold (1000σ default) keeps the right root in
+    every realistic case while throwing out the obviously-wrong ones before
+    LM ever runs on them.
+
+    The per-candidate metric is the `residual_percentile`-th percentile of
+    the per-observation residuals (in σ), *not* the worst single point. A
+    max-residual criterion is brittle: one contaminating observation (or a
+    rough multi-point seed propagated across a long arc) can throw a single
+    large residual that exceeds the threshold even for the correct root.
+    Using a high percentile (80th by default) tolerates a minority of bad
+    points — which the downstream robust LM fit cleans up — while still
+    rejecting candidates that miss the *majority* of observations. Keeping
+    it a percentile rather than the median means a candidate must still fit
+    most of the arc, so a seed that only matches one of two mis-linked
+    tracklet groups is not waved through.
 
     Candidates whose inertial trajectory passes within `close_earth_AU`
     of the observer at any obs time are passed through unfiltered. Full
@@ -222,8 +236,13 @@ def filter_candidates_by_residual(
         `assist.Ephem(planets_path, sb_path)`). Not the C struct from
         layup.routines.get_ephem.
     threshold_sigma : float
-        Reject candidates whose angular residual exceeds this multiple
-        of the per-observation σ on any observation.
+        Reject candidates whose `residual_percentile`-th-percentile
+        angular residual exceeds this multiple of the per-observation σ.
+    residual_percentile : float
+        Percentile (0-100) of the per-observation residuals used as the
+        per-candidate rejection metric. 80.0 by default; 50.0 gives the
+        median (tolerant of up to half the points being outliers), 100.0
+        recovers the legacy worst-point behavior.
     min_obs_for_filter : int
         Bypass the filter (return all candidates that pass the physical
         bounds) when there are fewer than this many observations.
@@ -251,7 +270,7 @@ def filter_candidates_by_residual(
         return physical
 
     survivors = []
-    best = None  # (max_resid_sigma, candidate) over residual-evaluated candidates
+    best = None  # (resid_metric_sigma, candidate) over residual-evaluated candidates
     for c in physical:
         # Close-Earth-approach pass-through: avoid both the integrator
         # blowup and a silently-wrong 2-body shortcut.
@@ -260,7 +279,7 @@ def filter_candidates_by_residual(
             survivors.append(c)
             continue
 
-        max_resid_sigma = 0.0
+        resids_sigma = []
         integrable = True
         for obs in observations:
             try:
@@ -276,24 +295,29 @@ def filter_candidates_by_residual(
             sigma_ra = float(obs.ra_unc if obs.ra_unc is not None else 1.0 / 206265)
             sigma_dec = float(obs.dec_unc if obs.dec_unc is not None else 1.0 / 206265)
             sigma = max(sigma_ra, sigma_dec)
-            max_resid_sigma = max(max_resid_sigma, sep_rad / sigma)
+            resids_sigma.append(sep_rad / sigma)
 
-        if not integrable:
+        if not integrable or not resids_sigma:
             continue
+        # Robust per-candidate metric: a high percentile of the per-obs
+        # residuals rather than the single worst point, so a minority of
+        # contaminating observations can't reject an otherwise-good root
+        # (the downstream robust LM cleans those up). See the docstring.
+        resid_metric_sigma = float(np.percentile(resids_sigma, residual_percentile))
         # Track the single best-fitting integrable candidate so we can
         # guarantee it is never discarded (see the invariant below).
-        if best is None or max_resid_sigma < best[0]:
-            best = (max_resid_sigma, c)
-        if max_resid_sigma <= threshold_sigma:
+        if best is None or resid_metric_sigma < best[0]:
+            best = (resid_metric_sigma, c)
+        if resid_metric_sigma <= threshold_sigma:
             survivors.append(c)
 
     # Correctness invariant: the prefilter is a performance optimization
     # (skip LM on obvious garbage) and must never discard the single
-    # best-fitting seed. A *valid* Gauss root can have a large raw-seed
-    # residual — a rough 3-point seed propagated across a long arc drifts
-    # well past the threshold (e.g. ~9500σ for a 52-day main-belt arc)
-    # even though LM converges cleanly from it. Without this guard the
-    # threshold silently rejects the right root and leaves only phantoms.
+    # best-fitting seed. A *valid* Gauss root can still land above the
+    # threshold — a rough multi-point seed propagated across a long arc
+    # drifts on part of the arc even where LM later converges cleanly.
+    # Without this guard the threshold could silently reject the right
+    # root and leave only phantoms.
     if best is not None and not any(c is best[1] for c in survivors):
         survivors.append(best[1])
 
