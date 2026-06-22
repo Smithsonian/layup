@@ -53,6 +53,7 @@
 #include <optional>
 
 #include "orbit_fit.h"
+#include "bk_basis.cpp"
 #include "../gauss/gauss.cpp"
 
 extern "C" {
@@ -839,6 +840,14 @@ namespace orbit_fit
 	return result;
 
     }
+
+// Universal-BK fit (LM driver in BK basis).  Inlined here, inside
+// `namespace orbit_fit`, so all of layup's existing Cartesian-fit
+// helpers (compute_residuals, create_sequences, get_weight_matrix,
+// converged) and the Observation/FitResult types are in scope without
+// forward declarations.  Math primitives come from bk_basis.cpp,
+// included at the top of orbit_fit.cpp.
+#include "bk_fit.cpp"
 
 #ifdef Py_PYTHON_H
     static void orbit_fit_bindings(py::module &m)

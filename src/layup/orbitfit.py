@@ -15,6 +15,7 @@ from layup.routines import (
     Observation,
     gauss,
     get_ephem,
+    run_bk_native_fit,
     run_from_vector_with_initial_guess,
 )
 
@@ -74,6 +75,31 @@ INPUT_FORMAT_READERS = {
 GMtotal = 0.0002963092748799319
 AU_M = 149597870700
 SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
+
+# Heliocentric GM in AU^3 / day^2 (k^2, k = Gaussian gravitational constant).
+# Used by the BK-native fit for the bound-orbit energy prior on gdot.
+_MU_SUN = 0.00029591220828559104
+
+
+def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
+    """Dispatch a single LM fit step to the configured engine.
+
+    Centralizing the dispatch here keeps do_fit's IOD-then-fit pipeline
+    parameterization-agnostic and lets us add new engines (e.g., a
+    future distance-dispatched 'auto') with a single edit instead of
+    threading the choice through every call site.
+
+    `iter_max` is the LM iteration budget used by the multi-root picker's
+    two-tier (cheap-screen then full) passes. The Cartesian engine honors
+    it; the BK-native engine uses its own internal cap (it takes `mu` for
+    the bound-orbit energy prior rather than an iteration budget), so
+    `iter_max` is ignored on that path.
+    """
+    if engine == "cartesian":
+        return run_from_vector_with_initial_guess(assist_ephem, initial_guess, observations, iter_max)
+    if engine == "bk_native":
+        return run_bk_native_fit(assist_ephem, initial_guess, observations, _MU_SUN)
+    raise ValueError(f"Unknown engine {engine!r}; expected one of 'cartesian', 'bk_native'.")
 
 
 def _get_result_dtypes(primary_id_column_name: str):
@@ -416,6 +442,7 @@ def do_fit(
     seq,
     cache_dir,
     iod="gauss",
+    engine="cartesian",
     screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
     full_iter_max: int = _PICKER_FULL_ITER_MAX,
     min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
@@ -446,6 +473,12 @@ def do_fit(
         Directory holding the ASSIST kernels.
     iod : str
         Name of the registered IOD method. Default "gauss".
+    engine : str
+        Which LM fitter to dispatch to.  Supported:
+          - 'cartesian' (default): the existing 6D Cartesian-state fit.
+          - 'bk_native': the universal Bernstein-Khushalani fit
+            (run_bk_native_fit), with a fixed bound-orbit energy prior
+            on gdot.  Recovers the Cartesian state at the same epoch.
     screen_iter_max, full_iter_max : int
         Two-tier LM iteration caps for the multi-root picker.
     min_r_helio_AU : float
@@ -504,20 +537,20 @@ def do_fit(
     # diagnostic/scan with the legacy controller). The newer controller
     # steps through close encounters efficiently with no accuracy cost.
     # The setting is restored on every exit path.
+    #
+    # Each LM call dispatches through _run_fit so the picker honors the
+    # selected engine. The screen/full iteration budgets apply to the
+    # Cartesian engine; the BK-native engine uses its own internal cap.
     saved_mode = get_ias15_adaptive_mode()
     if picker_ias15_adaptive_mode >= 0:
         set_ias15_adaptive_mode(picker_ias15_adaptive_mode)
 
     obs = [observations[i] for i in seq[0]]
     try:
-        candidates = [
-            run_from_vector_with_initial_guess(assist_ephem, soln, obs, screen_iter_max) for soln in solns
-        ]
+        candidates = [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max) for soln in solns]
         x = _pick_best_root(candidates, min_r_helio_AU)
         if x is None:
-            candidates = [
-                run_from_vector_with_initial_guess(assist_ephem, soln, obs, full_iter_max) for soln in solns
-            ]
+            candidates = [_run_fit(assist_ephem, soln, obs, engine, full_iter_max) for soln in solns]
             x = _pick_best_root(candidates, min_r_helio_AU)
     finally:
         set_ias15_adaptive_mode(saved_mode)
@@ -534,7 +567,7 @@ def do_fit(
 
     # Attempt to fit all the data, given the fit of the primary interval
     obs = observations
-    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    x = _run_fit(assist_ephem, x, obs, engine)
 
     # If that failed, build up the solution slowly
     if x.flag != 0:
@@ -543,7 +576,7 @@ def do_fit(
         for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
             logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
-            x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+            x = _run_fit(assist_ephem, x, obs, engine)
             if x.flag != 0:
                 x.flag = 4
                 break
