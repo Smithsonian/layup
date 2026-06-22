@@ -1,8 +1,13 @@
+import gzip
 import logging
 import multiprocessing
+import os
+import tempfile
 from concurrent.futures import ProcessPoolExecutor
+from importlib.resources import files
 
 import numpy as np
+import requests
 from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
@@ -33,6 +38,25 @@ AU_M = 149597870700
 AU_KM = AU_M / 1000.0
 
 logger = logging.getLogger(__name__)
+
+
+def write_fallback_obscodes():
+    """Decompress the observatory-codes file bundled with layup to a plain JSON
+    file and return its path.
+
+    The MPC observatory-codes file is normally downloaded from
+    minorplanetcenter.net on first use.  When that download fails (e.g. the MPC
+    server is unreachable, as has happened on CI runners), we fall back to the
+    copy shipped in ``layup/data/ObsCodes.json.gz`` instead of failing the run.
+    Observatory codes change rarely, so a slightly stale fallback is far better
+    than a hard failure.  Returns a path suitable for ``Observatory``'s
+    ``oc_file`` argument (which reads the decompressed JSON directly).
+    """
+    compressed = files("layup.data").joinpath("ObsCodes.json.gz").read_bytes()
+    dest = os.path.join(tempfile.gettempdir(), "layup_obscodes_fallback.json")
+    with open(dest, "wb") as f:
+        f.write(gzip.decompress(compressed))
+    return dest
 
 
 def process_data(data, n_workers, func, **kwargs):
@@ -333,7 +357,22 @@ class LayupObservatory(SorchaObservatory):
         # Furnish the spiceypy kernels
         layup_furnish_spiceypy(cache_dir)
 
-        super().__init__(FakeSorchaArgs(cache_dir), config.auxiliary)
+        try:
+            super().__init__(FakeSorchaArgs(cache_dir), config.auxiliary)
+        except requests.exceptions.RequestException as exc:
+            # The observatory-codes download from the MPC failed (server
+            # unreachable, timeout, etc.).  Fall back to the copy bundled with
+            # layup so we don't fail the run over a transient network outage.
+            logger.warning(
+                "Could not fetch observatory codes from the MPC (%s); "
+                "falling back to the copy bundled with layup.",
+                exc,
+            )
+            super().__init__(
+                FakeSorchaArgs(cache_dir),
+                config.auxiliary,
+                oc_file=write_fallback_obscodes(),
+            )
 
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
