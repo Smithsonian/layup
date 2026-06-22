@@ -46,8 +46,10 @@ degree_columns = {
 }
 
 # Ordered 6-element state for each format; the index of an element here is also
-# its row/column index in the 6x6 covariance. Used to scale the covariance of
-# the degree columns when their values are converted from radians to degrees.
+# its row/column index in the 6x6 covariance. This ordering MUST match the basis
+# of the covariance produced by the conversion routines (covariance_*_xyz /
+# parse_covariance_row_to_CART); _scale_degree_cov relies on it, and
+# test_element_order_matches_degree_columns guards the dict from drifting.
 element_order = {
     "BCART": ["x", "y", "z", "xdot", "ydot", "zdot"],
     "BCART_EQ": ["x", "y", "z", "xdot", "ydot", "zdot"],
@@ -57,6 +59,30 @@ element_order = {
     "BKEP": ["a", "e", "inc", "node", "argPeri", "ma"],
     "KEP": ["a", "e", "inc", "node", "argPeri", "ma"],
 }
+
+
+def _scale_degree_cov(arr, fmt, factor, mask=None):
+    """Congruence-scale the flattened 6x6 covariance of a structured array.
+
+    Applies ``diag(s) C diag(s)`` where ``s`` is ``factor`` on each of
+    ``fmt``'s degree columns and 1 elsewhere -- i.e. the covariance transform
+    for rescaling those state elements by ``factor``. Pass ``factor = 180/pi``
+    when the matching state values were just converted radians->degrees, or
+    ``pi/180`` for the inverse. Restricted to rows in ``mask`` when given,
+    else applied to the whole column.
+
+    Relies on the invariant that ``element_order[fmt]`` indexes the ``cov_i_j``
+    rows/cols (see element_order; guarded by
+    test_element_order_matches_degree_columns).
+    """
+    s = np.ones(6)
+    for col in degree_columns[fmt]:
+        s[element_order[fmt].index(col)] = factor
+    sel = slice(None) if mask is None else mask
+    for i in range(6):
+        for j in range(6):
+            arr[f"cov_{i}_{j}"][sel] *= s[i] * s[j]
+
 
 # Add this to MJD to convert to JD
 MJD_TO_JD_CONVERSTION = 2400000.5
@@ -204,12 +230,10 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
             mask = data["FORMAT"] == fmt
             if not mask.any():
                 continue
-            input_scale = np.ones(6)
-            for col in degree_columns[fmt]:
-                input_scale[element_order[fmt].index(col)] = np.pi / 180
-            for i in range(6):
-                for j in range(6):
-                    data[f"cov_{i}_{j}"][mask] *= input_scale[i] * input_scale[j]
+            # Input values for this format are in degrees; rescale the
+            # covariance of those elements back to radians (pi/180) for the
+            # rows of this format before conversion.
+            _scale_degree_cov(data, fmt, np.pi / 180, mask=mask)
 
     # For each row in the data, convert the orbit to the desired format
     results = []
@@ -385,12 +409,10 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     # variances by (180/pi)^2). Round-trip conversions hide this because the
     # inverse conversion undoes both the value and the covariance scaling.
     if has_covariance and convert_to in degree_columns:
-        scale = np.ones(6)
-        for col in degree_columns[convert_to]:
-            scale[element_order[convert_to].index(col)] = 180 / np.pi
-        for i in range(6):
-            for j in range(6):
-                output[f"cov_{i}_{j}"] = output[f"cov_{i}_{j}"] * scale[i] * scale[j]
+        # Mirror the value conversion directly above (radians->degrees), which
+        # operates on the whole column, so scale the covariance whole-column
+        # too (no row mask) to keep values and covariance consistent.
+        _scale_degree_cov(output, convert_to, 180 / np.pi)
 
     return output
 

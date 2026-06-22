@@ -367,3 +367,26 @@ def test_convert_covariance_angle_units():
             f"{fmt} covariance is inconsistent with the finite-difference Jacobian "
             f"(rel.err {rel_err:.2e}) -- angle covariance likely in the wrong units"
         )
+
+
+def test_element_order_matches_degree_columns():
+    """Guard the hand-synced invariant _scale_degree_cov relies on.
+
+    `_scale_degree_cov` maps each degree column to a covariance row/col via
+    `element_order[fmt].index(col)`. If `degree_columns` and `element_order`
+    drift apart the lookup either raises or silently scales the wrong row, so
+    pin: every degree format is in element_order, each of its degree columns is
+    present there, and every element_order entry is a unique 6-vector (so the
+    index is a valid 0..5 covariance position). The *numerical* basis match is
+    covered by test_convert_covariance_angle_units.
+    """
+    from layup.convert import degree_columns, element_order
+
+    for fmt, cols in degree_columns.items():
+        assert fmt in element_order, f"{fmt} in degree_columns but not element_order"
+        order = element_order[fmt]
+        assert len(order) == 6, f"element_order[{fmt}] is not a 6-vector: {order}"
+        assert len(set(order)) == 6, f"element_order[{fmt}] has duplicates: {order}"
+        for col in cols:
+            assert col in order, f"degree column {col!r} missing from element_order[{fmt}]"
+            assert 0 <= order.index(col) <= 5
