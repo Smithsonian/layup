@@ -377,6 +377,44 @@ class LayupObservatory(SorchaObservatory):
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
 
+    def convert_to_geocentric(self, obs_location: dict) -> tuple:
+        """Convert an observatory's parallax constants to geocentric coordinates.
+
+        This overrides Sorcha's ``Observatory.convert_to_geocentric``, which gates
+        on the truthiness of the parallax constants
+        (``obs_location.get("sin", False)``). A constant that is legitimately
+        ``0.0`` -- e.g. the geocenter (codes 500/244/248: Longitude=cos=sin=0),
+        Greenwich (code 000: Longitude=0), or an equatorial station such as Quito
+        (code 782: sin=0) -- is falsy, so the base class wrongly reports the
+        observatory as having no fixed position. Layup then routes it to the
+        moving-observatory path and raises "invalid coordinates" for plain MPC
+        input that carries no per-observation position (issue #286).
+
+        We instead test for the *presence* of the constants. Codes that have no
+        position keys at all (roving observer 247, space telescopes WISE/TESS/HST,
+        ...) still return ``(None, None, None)`` and are correctly routed to the
+        ADES per-observation position path. The geocenter resolves to a (0, 0, 0)
+        offset from Earth's center, which is exactly right.
+
+        Parameters
+        ----------
+        obs_location : dict
+            Dictionary with Longitude and the sin/cos of the observatory latitude.
+
+        Returns
+        -------
+        tuple
+            Geocentric position (x, y, z), or (None, None, None) when the
+            observatory has no fixed position.
+        """
+        longitude = obs_location.get("Longitude")
+        cos = obs_location.get("cos")
+        sin = obs_location.get("sin")
+        if longitude is not None and cos is not None and sin is not None:
+            longitude_rad = longitude * np.pi / 180.0
+            return (cos * np.cos(longitude_rad), cos * np.sin(longitude_rad), sin)
+        return (None, None, None)
+
     def create_obscode_cache_key(self, obscode, et):
         """
         Create a cache key for the observatory coordinates.
