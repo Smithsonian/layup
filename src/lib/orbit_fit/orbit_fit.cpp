@@ -744,6 +744,12 @@ namespace orbit_fit
 
         double chi2_prev = HUGE_VAL;
 
+        // Initialise so that a fit which runs to iter_max without converging (or
+        // iter_max == 0) reports a meaningful chi-square rather than whatever the
+        // caller left in this out-parameter. chi2_final is refreshed every
+        // iteration below.
+        chi2_final = HUGE_VAL;
+
         double rho_accept = 0.1;
 
         // Do an initial step
@@ -764,6 +770,10 @@ namespace orbit_fit
             compute_dX(resid_vec, partials_vec, W, dX, C, chi2, grad, lambda);
 
             double chi2_d = chi2(0, 0);
+            // Track the most recent chi-square so the reported value is honest
+            // even when the loop exits by exhausting iter_max (e.g. the LM is
+            // stuck rejecting steps against a gross outlier, dX -> 0).
+            chi2_final = chi2_d;
 
             // A NaN chi-square means the fit has diverged (e.g. from a
             // degenerate IOD seed on a too-short tracklet). Stop immediately,
