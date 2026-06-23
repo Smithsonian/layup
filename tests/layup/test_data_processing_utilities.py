@@ -717,3 +717,34 @@ def test_layup_observatory_falls_back_on_mpc_failure(monkeypatch):
     assert calls[0] is None and calls[1] is not None
     assert "X05" in observatory.ObservatoryXYZ
     assert len(observatory.ObservatoryXYZ) > 2000
+
+
+def test_layup_observatory_falls_back_on_corrupt_obscodes(monkeypatch):
+    """If the MPC obscodes download "succeeds" but yields an empty/corrupt file
+    that fails to parse as JSON, the LayupObservatory should still fall back to
+    the bundled copy instead of raising (the download error is a
+    json.JSONDecodeError, not a network exception)."""
+    import json
+
+    import layup.utilities.data_processing_utilities as dpu
+
+    orig_init = dpu.SorchaObservatory.__init__
+    calls = []
+
+    def fake_init(self, args, auxconfigs, oc_file=None):
+        calls.append(oc_file)
+        if oc_file is None:
+            # Simulate sorcha decompressing an empty obscodes file and json.load
+            # choking on the empty string -- the failure observed on CI.
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        # The fallback path supplies a local oc_file; let the real init read it.
+        orig_init(self, args, auxconfigs, oc_file=oc_file)
+
+    monkeypatch.setattr(dpu.SorchaObservatory, "__init__", fake_init)
+
+    observatory = LayupObservatory()
+
+    # First attempt (corrupt download) raised; the second used the bundled fallback.
+    assert calls[0] is None and calls[1] is not None
+    assert "X05" in observatory.ObservatoryXYZ
+    assert len(observatory.ObservatoryXYZ) > 2000
