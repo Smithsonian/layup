@@ -1,4 +1,5 @@
 import gzip
+import json
 import logging
 import multiprocessing
 import os
@@ -360,12 +361,15 @@ class LayupObservatory(SorchaObservatory):
 
         try:
             super().__init__(FakeSorchaArgs(cache_dir), config.auxiliary)
-        except requests.exceptions.RequestException as exc:
-            # The observatory-codes download from the MPC failed (server
-            # unreachable, timeout, etc.).  Fall back to the copy bundled with
-            # layup so we don't fail the run over a transient network outage.
+        except (requests.exceptions.RequestException, json.JSONDecodeError) as exc:
+            # Loading the MPC observatory-codes file failed. Either the download
+            # itself errored (server unreachable, timeout, etc.), or it
+            # "succeeded" but produced an empty/corrupt file that does not parse
+            # as JSON -- both have been seen as transient CI failures. Either
+            # way, fall back to the copy bundled with layup rather than failing
+            # the run over a transient outage.
             logger.warning(
-                "Could not fetch observatory codes from the MPC (%s); "
+                "Could not load observatory codes from the MPC (%s); "
                 "falling back to the copy bundled with layup.",
                 exc,
             )
