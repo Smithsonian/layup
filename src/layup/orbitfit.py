@@ -113,8 +113,14 @@ def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
     raise ValueError(f"Unknown engine {engine!r}; expected one of 'cartesian', 'bk_native'.")
 
 
-def _get_result_dtypes(primary_id_column_name: str):
-    """Helper function to create the result dtype with the correct primary ID column name."""
+def _get_result_dtypes(primary_id_column_name: str, fit_nongrav: bool = False):
+    """Helper function to create the result dtype with the correct primary ID column name.
+
+    When ``fit_nongrav`` is set, two extra columns (``a2``, ``a2_unc``) are
+    appended for the fitted non-gravitational A2 term and its 1-sigma uncertainty
+    (au/day^2). They are omitted otherwise so the default 6-parameter output
+    schema is unchanged.
+    """
     # Define a structured dtype to match the OrbfitResult fields
     return np.dtype(
         [
@@ -134,6 +140,7 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("FORMAT", "O"),  # Orbit format
         ]
         + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
+        + ([("a2", "f8"), ("a2_unc", "f8")] if fit_nongrav else [])  # non-grav A2 (issue #351)
     )
 
 
@@ -366,6 +373,7 @@ def create_empty_result(id, dtypes):
                 "NONE",  # format
             )
             + (np.nan,) * 36  # Flat covariance matrix
+            + ((np.nan, np.nan) if "a2" in dtypes.names else ())  # non-grav A2 cols (issue #351)
         ],
         dtype=dtypes,
     )
@@ -674,6 +682,7 @@ def _orbitfit(
     weight_data: bool = False,
     iod: str = "gauss",
     engine: str = "cartesian",
+    fit_nongrav: bool = False,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -703,7 +712,16 @@ def _orbitfit(
         (default) and 'auto' (Gauss with BK-IOD fallback).
         Default is 'gauss'.
     """
-    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
+    # Fitting the non-gravitational A2 (issue #351) uses the joint state+A2 LM,
+    # which only the Cartesian engine supports; the BK-native engine assumes a 6D
+    # state. Override with a warning, mirroring the radar path.
+    if fit_nongrav and engine != "cartesian":
+        logger.warning(
+            "Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine
+        )
+        engine = "cartesian"
+
+    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, fit_nongrav)
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
 
@@ -837,11 +855,32 @@ def _orbitfit(
         else:
             guess_to_use = parse_fit_result(initial_guess)
             res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
+
+        # Non-gravitational A2 (issue #351): once the 6-parameter orbit has
+        # converged, refine it jointly with A2 seeded from that solution. A2 is
+        # weakly constrained on short arcs, so if the joint fit fails to converge
+        # we keep the 6-parameter result and report A2 as NaN (graceful guard).
+        if fit_nongrav and res.flag == 0:
+            res_a2 = run_from_vector_with_initial_guess(
+                get_ephem(kernels_loc), res, observations, fit_a2=True
+            )
+            if res_a2.flag == 0:
+                res = res_a2
+            else:
+                logger.debug("Non-grav A2 refinement did not converge; reporting A2 as NaN.")
+
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
         if not success:
             _warn_if_short_arc(jds, data[primary_id_column_name][0])
         cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
+        nongrav_cols = ()
+        if fit_nongrav:
+            fitted_a2 = success and getattr(res, "fit_a2", False)
+            nongrav_cols = (
+                (res.a2 if fitted_a2 else np.nan),
+                (res.a2_unc if fitted_a2 else np.nan),
+            )
         output = np.array(
             [
                 (
@@ -858,6 +897,7 @@ def _orbitfit(
                     ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
+                + nongrav_cols  # non-grav A2 + uncertainty (issue #351), when fit_nongrav
             ],
             dtype=_RESULT_DTYPES,
         )
@@ -875,6 +915,7 @@ def orbitfit(
     weight_data=False,
     iod="gauss",
     engine="cartesian",
+    fit_nongrav=False,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -899,6 +940,11 @@ def orbitfit(
         The IOD used to generate an initial guess orbit. Supports 'gauss'
         (default) and 'auto' (Gauss with BK-IOD fallback).
         Default is 'gauss'.
+    fit_nongrav : bool
+        Whether to also fit the non-gravitational A2 (transverse Yarkovsky) term
+        after the 6-parameter orbit converges. Adds ``a2`` and ``a2_unc`` columns
+        (au/day^2) to the result. Cartesian engine only; A2 is weakly constrained
+        on short arcs, where it is reported as NaN. Default is False (issue #351).
     """
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
@@ -926,6 +972,7 @@ def orbitfit(
         weight_data=weight_data,
         iod=iod,
         engine=engine,
+        fit_nongrav=fit_nongrav,
     )
 
 

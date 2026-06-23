@@ -24,6 +24,7 @@ import os
 import numpy as np
 import pytest
 
+from layup.orbitfit import orbitfit
 from layup.routines import FitResult, Observation, get_ephem, run_from_vector_with_initial_guess
 
 CACHE = os.path.expanduser("~/Library/Caches/layup")
@@ -142,3 +143,109 @@ def test_six_param_fit_unaffected_and_biased_by_a2():
     # The unmodeled A2 drift leaves the 6-parameter fit with a much larger
     # chi-square than the 7-parameter fit that absorbs it.
     assert fit6.csq > 1e3 * fit7.csq
+
+
+def _build_arc_array():
+    """The same A2 arc as a structured ra/dec array (obsTime/stn) for the
+    orbitfit() driver. Truth ra/dec are generated against the driver's *own*
+    obscodes_to_barycentric observer states (geocenter, code 500) so the
+    noise-free joint fit reaches ~0 chi-square; plus a perturbed initial guess.
+    """
+    from datetime import datetime, timedelta
+
+    import assist
+    import numpy.lib.recfunctions as rfn
+    import rebound
+    import spiceypy as spice
+
+    from layup.orbitfit import _get_result_dtypes
+    from layup.utilities.data_processing_utilities import LayupObservatory, get_cov_columns
+    from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
+
+    ephem = assist.Ephem(os.path.join(CACHE, _EPHEM[0]), os.path.join(CACHE, _EPHEM[1]))
+    jr = ephem.jd_ref
+
+    def ast_at(t_jd):
+        sim = rebound.Simulation()
+        sim.t = _EPOCH - jr
+        sim.add(x=_STATE[0], y=_STATE[1], z=_STATE[2], vx=_STATE[3], vy=_STATE[4], vz=_STATE[5])
+        ax = assist.Extras(sim, ephem)
+        ax.forces = ["SUN", "PLANETS", "ASTEROIDS", "NON_GRAVITATIONAL", "GR_SIMPLE"]
+        for k, v in _GR.items():
+            setattr(ax, k, v)
+        ax.particle_params = np.array([0.0, _TRUE_A2, 0.0])
+        sim.integrate(t_jd - jr)
+        p = sim.particles[0]
+        return np.array([p.x, p.y, p.z])
+
+    obstimes = [
+        (datetime(2013, 1, 31) + timedelta(days=float(d))).strftime("%Y-%m-%dT%H:%M:%S")
+        for d in np.linspace(0.0, 4 * 365.0, 36)
+    ]
+    lo = LayupObservatory(cache_dir=CACHE)
+    base = np.array(
+        [("t", t, "500") for t in obstimes],
+        dtype=[("provID", "U4"), ("obsTime", "U32"), ("stn", "U4")],
+    )
+    et = np.array([spice.str2et(r["obsTime"]) for r in base], dtype="<f8")
+    base = rfn.append_fields(base, "et", et, usemask=False, asrecarray=True)
+    pv = np.atleast_1d(lo.obscodes_to_barycentric(base))
+
+    data = np.empty(
+        len(obstimes),
+        dtype=[("provID", "U4"), ("obsTime", "U32"), ("stn", "U4"), ("ra", "f8"), ("dec", "f8")],
+    )
+    for i, t in enumerate(obstimes):
+        jd = convert_tdb_date_to_julian_date(t, CACHE)
+        r_obs = np.array([pv[i]["x"], pv[i]["y"], pv[i]["z"]])
+        lt = 0.0
+        for _ in range(3):
+            rho = ast_at(jd - lt) - r_obs
+            lt = np.linalg.norm(rho) / _C
+        rho /= np.linalg.norm(rho)
+        data[i] = (
+            "t",
+            t,
+            "500",
+            np.degrees(np.arctan2(rho[1], rho[0])) % 360.0,
+            np.degrees(np.arcsin(rho[2])),
+        )
+
+    guess = np.zeros(1, dtype=_get_result_dtypes("provID"))
+    guess["provID"] = "t"
+    pert = _STATE.copy()
+    pert[:3] += 1.0e-7
+    pert[3:] += 1.0e-9
+    for k, v in zip(("x", "y", "z", "xdot", "ydot", "zdot"), pert):
+        guess[k] = v
+    guess["epochMJD_TDB"] = _EPOCH - 2400000.5
+    guess["flag"] = 0
+    guess["FORMAT"] = "BCART_EQ"
+    guess["method"] = "seed"
+    for c in get_cov_columns():
+        guess[c] = 0.0
+    return data, guess
+
+
+def test_orbitfit_driver_fits_a2():
+    """The orbitfit() driver with fit_nongrav=True adds a2/a2_unc columns and
+    recovers the true A2 from a ground-based ra/dec arc."""
+    data, guess = _build_arc_array()
+    fit = orbitfit(data, cache_dir=CACHE, initial_guess=guess, fit_nongrav=True)
+    assert "a2" in fit.dtype.names and "a2_unc" in fit.dtype.names
+    row = fit[0]
+    assert row["flag"] == 0
+    assert row["ndof"] == 2 * len(data) - 7
+    assert abs(row["a2"] - _TRUE_A2) / abs(_TRUE_A2) < 1e-2, f"recovered A2 {row['a2']:.4e}"
+    assert np.isfinite(row["a2_unc"]) and row["a2_unc"] > 0.0
+    assert row["csq"] < 1e-5
+
+
+def test_orbitfit_default_schema_unchanged():
+    """Without fit_nongrav the result schema has no a2 columns and the 6-parameter
+    fit still succeeds (no regression)."""
+    data, guess = _build_arc_array()
+    fit = orbitfit(data, cache_dir=CACHE, initial_guess=guess)
+    assert "a2" not in fit.dtype.names
+    assert "a2_unc" not in fit.dtype.names
+    assert fit[0]["flag"] == 0
