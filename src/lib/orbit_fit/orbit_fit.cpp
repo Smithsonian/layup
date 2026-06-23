@@ -250,6 +250,106 @@ namespace orbit_fit
         double ye = this_det.observer_position[1];
         double ze = this_det.observer_position[2];
 
+        // 5. compare the model result to the observation.
+        //   This means dotting the model unit vector with the
+        //   A and D vectors of the observation
+
+        reb_vec3d r_obs = {xe, ye, ze};
+        double t_obs = jd_tdb - ephem->jd_ref;
+
+        int j = 0;
+        // Iterate the (up-)leg light time: leaves the sim at the retarded
+        // emission/bounce time with the asteroid position AND velocity.
+        integrate_light_time(ax, j, t_obs, r_obs, 0.0, 4, SPEED_OF_LIGHT);
+
+        // Topocentric range vector and distance; then normalise to the unit
+        // line-of-sight rho_hat (rho keeps the distance).
+        double rho_x = r->particles[j].x - xe;
+        double rho_y = r->particles[j].y - ye;
+        double rho_z = r->particles[j].z - ze;
+        double rho = sqrt(rho_x * rho_x + rho_y * rho_y + rho_z * rho_z);
+
+        rho_x /= rho;
+        rho_y /= rho;
+        rho_z /= rho;
+        double invd = 1. / rho;
+
+        // 6. Variational position partials at the retarded time, and the range
+        //    partial numerator ddist[i] = rho_hat . d r_obj / d param_i. These
+        //    are shared by the optical and radar residual paths below.
+        double dxk[6], dyk[6], dzk[6];
+        double ddist[6];
+        for (size_t i = 0; i < 6; i++)
+        {
+            size_t vn = var + i;
+            dxk[i] = r->particles[vn].x;
+            dyk[i] = r->particles[vn].y;
+            dzk[i] = r->particles[vn].z;
+            ddist[i] = rho_x * dxk[i] + rho_y * dyk[i] + rho_z * dzk[i];
+        }
+
+        // ---- Radar (delay / Doppler) residuals + partials ----
+        // Monostatic first cut: round-trip delay = 2 rho / c (days) and
+        // round-trip range-rate = 2 (rho_hat . v_rel) (au/day). The factor of 2
+        // is kept explicit so a bistatic up/down-leg split is a localised change
+        // later. See ISSUE_146_RADAR_DESIGN.md.
+        if (std::holds_alternative<RadarObservation>(this_det.observation_type))
+        {
+            const RadarObservation &rd = std::get<RadarObservation>(this_det.observation_type);
+
+            double vax = r->particles[0].vx, vay = r->particles[0].vy, vaz = r->particles[0].vz;
+            double vox = this_det.observer_velocity[0];
+            double voy = this_det.observer_velocity[1];
+            double voz = this_det.observer_velocity[2];
+            double vrx = vax - vox, vry = vay - voy, vrz = vaz - voz; // v_rel
+
+            double q = rho_x * vrx + rho_y * vry + rho_z * vrz;     // one-way range rate
+            double q_ast = rho_x * vax + rho_y * vay + rho_z * vaz; // asteroid-only (light time)
+            double ltdenom = 1.0 + q_ast / SPEED_OF_LIGHT;
+
+            double model_delay = 2.0 * rho / SPEED_OF_LIGHT; // round-trip light time (days)
+            double model_doppler = 2.0 * q;                  // round-trip range rate (au/day)
+            resid.delay_resid = rd.delay - model_delay;
+            resid.doppler_resid = rd.doppler - model_doppler;
+
+            for (size_t i = 0; i < 6; i++)
+            {
+                size_t vn = var + i;
+                // Exact single-leg range partial (light-time corrected):
+                //   d rho / d param = ddist / (1 + (rho_hat . v_ast)/c).
+                double range_partial = ddist[i] / ltdenom;
+                // d(model_delay)/d param = (2/c) d rho / d param.
+                parts.delay_partials.push_back(-2.0 * range_partial / SPEED_OF_LIGHT);
+
+                // d(model_doppler)/d param = 2 d(rho_hat . v_rel)/d param.
+                // Total position partial incl. the light-time shift of the
+                // emission time (t_ret = t_obs - rho/c => d t_ret = -range_partial/c).
+                double drk_x = dxk[i] - vax * range_partial / SPEED_OF_LIGHT;
+                double drk_y = dyk[i] - vay * range_partial / SPEED_OF_LIGHT;
+                double drk_z = dzk[i] - vaz * range_partial / SPEED_OF_LIGHT;
+                // Velocity variational partials (the a_ast * d t_ret term is
+                // ~1e-4 smaller and omitted, matching the streak treatment).
+                double dvk_x = r->particles[vn].vx;
+                double dvk_y = r->particles[vn].vy;
+                double dvk_z = r->particles[vn].vz;
+
+                // d(rho_hat)/d param = (I - rho_hat rho_hat^T)/rho . drk, so
+                //   dq = rho_hat . dvk + (v_rel . drk - q (rho_hat . drk))/rho.
+                double rdotdrk = rho_x * drk_x + rho_y * drk_y + rho_z * drk_z;
+                double dq = (rho_x * dvk_x + rho_y * dvk_y + rho_z * dvk_z) +
+                            ((vrx * drk_x + vry * drk_y + vrz * drk_z) - q * rdotdrk) * invd;
+                parts.doppler_partials.push_back(-2.0 * dq);
+            }
+
+            int nrows = (rd.has_delay ? 1 : 0) + (rd.has_doppler ? 1 : 0);
+            resid.n_resid = parts.n_resid = nrows;
+            resid.obs_kind = parts.obs_kind = RADAR;
+            resid.has_delay = parts.has_delay = rd.has_delay;
+            resid.has_doppler = parts.has_doppler = rd.has_doppler;
+            return;
+        }
+
+        // ---- Optical astrometry residuals + partials ----
         Eigen::Vector3d Av = this_det.a_vec;
         Eigen::Vector3d Dv = this_det.d_vec;
 
@@ -261,60 +361,16 @@ namespace orbit_fit
         double Dy = Dv.y();
         double Dz = Dv.z();
 
-        // 5. compare the model result to the observation.
-        //   This means dotting the model unit vector with the
-        //   A and D vectors of the observation
-
-        reb_vec3d r_obs = {xe, ye, ze};
-        double t_obs = jd_tdb - ephem->jd_ref;
-
-        int j = 0;
-        // Make the number of iterations flexible
-        // Could make integrate_light_time return
-        // rho and its components, since those are
-        // already computed for the light time iteration.
-
-        integrate_light_time(ax, j, t_obs, r_obs, 0.0, 4, SPEED_OF_LIGHT);
-
-        double rho_x = r->particles[j].x - xe;
-        double rho_y = r->particles[j].y - ye;
-        double rho_z = r->particles[j].z - ze;
-        double rho = sqrt(rho_x * rho_x + rho_y * rho_y + rho_z * rho_z);
-
-        rho_x /= rho;
-        rho_y /= rho;
-        rho_z /= rho;
-
         // Put the residuals into a struct, so that the
         // struct can be easily managed in a vector.
         resid.x_resid = -(rho_x * Ax + rho_y * Ay + rho_z * Az);
         resid.y_resid = -(rho_x * Dx + rho_y * Dy + rho_z * Dz);
 
-        // 6. Calculate the partial deriviatives of the model
-        //    observations with respect to the initial conditions
-
-        double dxk[6], dyk[6], dzk[6];
         double drho_x[6], drho_y[6], drho_z[6];
-
-        for (size_t i = 0; i < 6; i++)
-        {
-            size_t vn = var + i;
-            dxk[i] = r->particles[vn].x;
-            dyk[i] = r->particles[vn].y;
-            dzk[i] = r->particles[vn].z;
-        }
-
-        double invd = 1. / rho;
-
-        double ddist[6];
         double dx_resid[6];
         double dy_resid[6];
         for (size_t i = 0; i < 6; i++)
         {
-
-            // Derivative of topocentric distance w.r.t. parameters
-            ddist[i] = rho_x * dxk[i] + rho_y * dyk[i] + rho_z * dzk[i];
-
             drho_x[i] = dxk[i] * invd - rho_x * invd * ddist[i] - r->particles[0].vx * ddist[i] * invd / SPEED_OF_LIGHT;
             drho_y[i] = dyk[i] * invd - rho_y * invd * ddist[i] - r->particles[0].vy * ddist[i] * invd / SPEED_OF_LIGHT;
             drho_z[i] = dzk[i] * invd - rho_z * invd * ddist[i] - r->particles[0].vz * ddist[i] * invd / SPEED_OF_LIGHT;
@@ -532,6 +588,29 @@ namespace orbit_fit
         for (size_t i = 0; i < partials_vec.size(); i++)
         {
             const int r0 = row_off[i];
+
+            // Radar observations contribute a delay row and/or a Doppler row;
+            // they have no astrometry rows, so handle them separately.
+            if (partials_vec[i].obs_kind == RADAR)
+            {
+                int row = r0;
+                if (partials_vec[i].has_delay)
+                {
+                    for (size_t j = 0; j < 6; j++)
+                        B(row, j) = partials_vec[i].delay_partials[j];
+                    resid_v(row) = resid_vec[i].delay_resid;
+                    row++;
+                }
+                if (partials_vec[i].has_doppler)
+                {
+                    for (size_t j = 0; j < 6; j++)
+                        B(row, j) = partials_vec[i].doppler_partials[j];
+                    resid_v(row) = resid_vec[i].doppler_resid;
+                    row++;
+                }
+                continue;
+            }
+
             for (size_t j = 0; j < 6; j++)
             {
                 B(r0, j) = partials_vec[i].x_partials[j];
@@ -629,14 +708,26 @@ namespace orbit_fit
 
     typedef Eigen::Triplet<double> T;
 
-    // Total number of residual rows across all observations: 2 per astrometry
-    // observation, 4 per streak (ra/dec position + ra/dec rate). Used for both
-    // the normal-equation layout and the degrees-of-freedom count.
+    // Number of residual rows a single observation contributes: 2 (astrometry),
+    // 4 (streak: ra/dec position + ra/dec rate), or 1-2 (radar: delay and/or
+    // Doppler). Centralised so the layout, weight matrix, and dof count agree.
+    size_t observation_residual_rows(const Observation &d)
+    {
+        if (std::holds_alternative<RadarObservation>(d.observation_type))
+        {
+            const auto &rd = std::get<RadarObservation>(d.observation_type);
+            return (rd.has_delay ? 1 : 0) + (rd.has_doppler ? 1 : 0);
+        }
+        return std::holds_alternative<StreakObservation>(d.observation_type) ? 4 : 2;
+    }
+
+    // Total number of residual rows across all observations. Used for both the
+    // normal-equation layout and the degrees-of-freedom count.
     size_t total_residual_rows(const std::vector<Observation> &detections)
     {
         size_t n = 0;
         for (const auto &d : detections)
-            n += std::holds_alternative<StreakObservation>(d.observation_type) ? 4 : 2;
+            n += observation_residual_rows(d);
         return n;
     }
 
@@ -644,13 +735,13 @@ namespace orbit_fit
     {
         const int mlength = (int)detections.size();
 
-        // Match compute_dX's row layout: 2 rows (astrometry) or 4 (streak).
+        // Match compute_dX's row layout: 2 (astrometry), 4 (streak), or 1-2 (radar).
         std::vector<int> row_off(mlength);
         int total_rows = 0;
         for (int i = 0; i < mlength; i++)
         {
             row_off[i] = total_rows;
-            total_rows += std::holds_alternative<StreakObservation>(detections[i].observation_type) ? 4 : 2;
+            total_rows += (int)observation_residual_rows(detections[i]);
         }
 
         std::vector<T> tripletList;
@@ -660,6 +751,28 @@ namespace orbit_fit
         for (size_t i = 0; i < mlength; i++)
         {
             const int r0 = row_off[i];
+
+            // Radar: diagonal weights for the delay and/or Doppler rows, in the
+            // same order compute_dX lays them out (delay first, then Doppler).
+            if (std::holds_alternative<RadarObservation>(detections[i].observation_type))
+            {
+                const auto &rd = std::get<RadarObservation>(detections[i].observation_type);
+                int row = r0;
+                if (rd.has_delay)
+                {
+                    double d_unc = detections[i].delay_unc ? *detections[i].delay_unc : 1.0;
+                    tripletList.push_back(T(row, row, 1.0 / (d_unc * d_unc)));
+                    row++;
+                }
+                if (rd.has_doppler)
+                {
+                    double v_unc = detections[i].doppler_unc ? *detections[i].doppler_unc : 1.0;
+                    tripletList.push_back(T(row, row, 1.0 / (v_unc * v_unc)));
+                    row++;
+                }
+                continue;
+            }
+
             double x_unc = *detections[i].ra_unc;
             tripletList.push_back(T(r0, r0, 1.0 / (x_unc * x_unc)));
             double y_unc = *detections[i].dec_unc;

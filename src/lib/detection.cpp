@@ -81,7 +81,26 @@ namespace orbit_fit
         StreakObservation(double ra_rate, double dec_rate) : ra_rate(ra_rate), dec_rate(dec_rate) {}
     };
 
-    using ObservationType = std::variant<AstrometryObservation, StreakObservation>;
+    // Radar observation: round-trip delay (light time) and/or Doppler
+    // (round-trip range rate). has_delay/has_doppler flag which components are
+    // present; either or both may be supplied. The user/JPL units
+    // (microseconds, Hz) are converted to these internal units at Python ingest
+    // (see orbitfit.py): delay in days, doppler in au/day. No observed sky
+    // direction is needed -- the radar residual derives the line of sight from
+    // the modeled asteroid position.
+    struct RadarObservation
+    {
+        double delay = 0.0;   // round-trip light time (days)
+        double doppler = 0.0; // round-trip range rate (au/day)
+        bool has_delay = false;
+        bool has_doppler = false;
+
+        RadarObservation() = default;
+        RadarObservation(double delay, double doppler, bool has_delay, bool has_doppler)
+            : delay(delay), doppler(doppler), has_delay(has_delay), has_doppler(has_doppler) {}
+    };
+
+    using ObservationType = std::variant<AstrometryObservation, StreakObservation, RadarObservation>;
 
     // --- Main Observation Structure ---
     // Now, Observation has private constructors and public static factory methods.
@@ -109,6 +128,11 @@ namespace orbit_fit
         // rate residuals. Only meaningful for StreakObservations.
         std::optional<double> ra_rate_unc;
         std::optional<double> dec_rate_unc;
+        // Radar delay/Doppler 1-sigma uncertainties, in the same internal units
+        // as RadarObservation (delay: days; doppler: au/day). Only meaningful
+        // for RadarObservations.
+        std::optional<double> delay_unc;
+        std::optional<double> doppler_unc;
 
     private:
         // Private constructor used by the factory methods.
@@ -253,7 +277,40 @@ namespace orbit_fit
         }
 
         // Factory method for a Radar observation.
-        // not implemented yet
+        // delay = round-trip light time (days); doppler = round-trip range rate
+        // (au/day); uncertainties in those same units. has_delay/has_doppler
+        // select which components contribute residual rows (1 or 2 total). No
+        // rho_hat/a_vec/d_vec are set: the radar residual derives the line of
+        // sight from the modeled asteroid position (see orbit_fit.cpp).
+        static Observation from_radar(double delay, double doppler,
+                                      bool has_delay, bool has_doppler,
+                                      double epoch_val,
+                                      const std::array<double, 3> &obs_position,
+                                      const std::array<double, 3> &obs_velocity,
+                                      double delay_uncy = 1.0,
+                                      double doppler_uncy = 1.0)
+        {
+            Observation obs(epoch_val, obs_position, obs_velocity);
+            obs.observation_type = RadarObservation(delay, doppler, has_delay, has_doppler);
+            obs.delay_unc = delay_uncy;
+            obs.doppler_unc = doppler_uncy;
+            return obs;
+        }
+
+        static Observation from_radar_with_id(std::string objID,
+                                              double delay, double doppler,
+                                              bool has_delay, bool has_doppler,
+                                              double epoch_val,
+                                              const std::array<double, 3> &obs_position,
+                                              const std::array<double, 3> &obs_velocity,
+                                              double delay_uncy = 1.0,
+                                              double doppler_uncy = 1.0)
+        {
+            Observation obs = from_radar(delay, doppler, has_delay, has_doppler, epoch_val,
+                                         obs_position, obs_velocity, delay_uncy, doppler_uncy);
+            obs.objID = objID;
+            return obs;
+        }
     };
 
     static void detection_bindings(py::module &m)
@@ -267,6 +324,16 @@ namespace orbit_fit
                  py::arg("ra_rate"), py::arg("dec_rate"))
             .def_readonly("ra_rate", &StreakObservation::ra_rate)
             .def_readonly("dec_rate", &StreakObservation::dec_rate);
+
+        // Bind RadarObservation type.
+        py::class_<RadarObservation>(m, "RadarObservation")
+            .def(py::init<double, double, bool, bool>(),
+                 py::arg("delay"), py::arg("doppler"),
+                 py::arg("has_delay"), py::arg("has_doppler"))
+            .def_readonly("delay", &RadarObservation::delay)
+            .def_readonly("doppler", &RadarObservation::doppler)
+            .def_readonly("has_delay", &RadarObservation::has_delay)
+            .def_readonly("has_doppler", &RadarObservation::has_doppler);
 
         // Bind the main Observation type with multiple overloaded constructors.
         py::class_<Observation>(m, "Observation")
@@ -298,6 +365,20 @@ namespace orbit_fit
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         py::arg("ra_rate_unc") = 24.0 / 206265.0, py::arg("dec_rate_unc") = 24.0 / 206265.0,
                         "Construct a Streak observation")
+            // Constructor for a Radar (delay/Doppler) observation.
+            .def_static("from_radar", &Observation::from_radar,
+                        py::arg("delay"), py::arg("doppler"),
+                        py::arg("has_delay"), py::arg("has_doppler"),
+                        py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+                        py::arg("delay_unc") = 1.0, py::arg("doppler_unc") = 1.0,
+                        "Construct a Radar observation (delay in days, doppler in au/day)")
+            .def_static("from_radar_with_id", &Observation::from_radar_with_id,
+                        py::arg("objID"),
+                        py::arg("delay"), py::arg("doppler"),
+                        py::arg("has_delay"), py::arg("has_doppler"),
+                        py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
+                        py::arg("delay_unc") = 1.0, py::arg("doppler_unc") = 1.0,
+                        "Construct a Radar observation (delay in days, doppler in au/day)")
             .def_readwrite("epoch", &Observation::epoch, "Observation epoch (as a double)")
             .def_readwrite("observation_type", &Observation::observation_type, "Variant holding the observation data")
             .def_readwrite("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
@@ -310,6 +391,8 @@ namespace orbit_fit
             .def_readwrite("dec_unc", &Observation::dec_unc, "Dec uncertainty")
             .def_readwrite("ra_rate_unc", &Observation::ra_rate_unc, "RA-rate uncertainty (rad/day)")
             .def_readwrite("dec_rate_unc", &Observation::dec_rate_unc, "Dec-rate uncertainty (rad/day)")
+            .def_readwrite("delay_unc", &Observation::delay_unc, "Radar delay uncertainty (days)")
+            .def_readwrite("doppler_unc", &Observation::doppler_unc, "Radar Doppler uncertainty (au/day)")
             .def_readwrite("mag", &Observation::mag, "Optional magnitude")
             .def_readwrite("mag_err", &Observation::mag_err, "Optional magnitude error");
     }
