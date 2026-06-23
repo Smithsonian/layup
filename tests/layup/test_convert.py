@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_equal
 
@@ -9,6 +10,14 @@ from layup.utilities.data_processing_utilities import has_cov_columns
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 from layup.utilities.file_io.HDF5Reader import HDF5DataReader
+from layup.utilities.orbit_conversion import (
+    covariance_keplerian_xyz,
+    universal_cartesian,
+    universal_keplerian,
+)
+
+# Standard gravitational parameter of the Sun, AU^3 / day^2.
+_GM_SUN = 0.00029591220828559
 
 
 def create_argparse_object():
@@ -318,3 +327,99 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
                 output_data_BCOM[column_name],
                 err_msg=f"Column {column_name} not equal with dtype {input_data_BCOM[column_name].dtype}",
             )
+
+
+def test_keplerian_covariance_finite_for_hyperbolic_orbit():
+    """Regression for #288: converting a hyperbolic orbit (e>1, a<0) to KEP/BKEP
+    must produce a finite covariance.
+
+    universal_keplerian computed the mean motion as sqrt(mu / a**3); for a < 0
+    that is the square root of a negative number -> NaN, which poisoned the KEP
+    covariance Jacobian and produced an all-NaN covariance matrix.  The mean
+    motion is now sqrt(mu / |a|**3), real for hyperbolic orbits.
+    """
+    epoch = 60000.0
+    # Build a hyperbolic Cartesian state from elements (q = 1.2 AU, e = 1.4).
+    state = np.asarray(
+        universal_cartesian(_GM_SUN, 1.2, 1.4, 0.3, 0.5, 0.8, epoch - 30.0, epoch),
+        dtype=float,
+    )
+    a, e = (float(v) for v in universal_keplerian(_GM_SUN, *state, epoch)[:2])
+    assert a < 0.0 and e > 1.0  # premise: genuinely hyperbolic
+
+    rng = np.random.default_rng(0)
+    A = rng.normal(size=(6, 6)) * 1e-5
+    cov_xyz = A @ A.T + np.eye(6) * 1e-11  # a symmetric positive-definite Cartesian covariance
+    cov_kep = np.asarray(covariance_keplerian_xyz(_GM_SUN, *state, epoch, cov_xyz))
+    assert np.all(np.isfinite(cov_kep)), "hyperbolic KEP covariance contains NaN/inf"
+
+
+def test_convert_covariance_angle_units():
+    """Covariance of degree-valued angle elements must be in degrees^2.
+
+    convert() reports the angular elements (inc, node, argPeri, ma) in degrees.
+    Their covariance must be in degrees^2 to match. Regression test for a bug
+    where the angle *values* were converted radians->degrees but their
+    covariance was left in radians^2, making the reported angular uncertainties
+    too small by 180/pi (their variances by (180/pi)^2 ~ 3283x). The existing
+    round-trip tests miss this because the inverse conversion undoes both the
+    value and the covariance scaling; here we check the forward covariance
+    against a finite-difference Jacobian of the conversion.
+    """
+    data = CSVDataReader(
+        get_test_filepath("test_convert_BCART_EQ.csv"), "csv", primary_id_column_name="provID"
+    ).read_rows()
+    data = np.atleast_1d(data)
+    state_cols = ["x", "y", "z", "xdot", "ydot", "zdot"]
+    s0 = np.array([data[c][0] for c in state_cols])
+    cov_bcart = np.array([[data[f"cov_{i}_{j}"][0] for j in range(6)] for i in range(6)])
+
+    for fmt, elem_cols in [
+        ("KEP", ["a", "e", "inc", "node", "argPeri", "ma"]),
+        ("COM", ["q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB"]),
+    ]:
+        conv = convert(data, fmt, num_workers=1, primary_id_column_name="provID")
+        cov_analytic = np.array([[conv[f"cov_{i}_{j}"][0] for j in range(6)] for i in range(6)])
+
+        # Finite-difference Jacobian d(format element)/d(BCART_EQ state).
+        jac = np.zeros((6, 6))
+        for k in range(6):
+            h = 1e-7 * max(abs(s0[k]), 1e-3 if k < 3 else 1e-5)
+            dp = data.copy()
+            dp[state_cols[k]][0] = s0[k] + h
+            dm = data.copy()
+            dm[state_cols[k]][0] = s0[k] - h
+            cp = convert(dp, fmt, num_workers=1, primary_id_column_name="provID")
+            cm = convert(dm, fmt, num_workers=1, primary_id_column_name="provID")
+            for r in range(6):
+                jac[r, k] = (cp[elem_cols[r]][0] - cm[elem_cols[r]][0]) / (2 * h)
+
+        cov_fd = jac @ cov_bcart @ jac.T
+        rel_err = np.linalg.norm(cov_analytic - cov_fd) / np.linalg.norm(cov_fd)
+        assert rel_err < 1e-3, (
+            f"{fmt} covariance is inconsistent with the finite-difference Jacobian "
+            f"(rel.err {rel_err:.2e}) -- angle covariance likely in the wrong units"
+        )
+
+
+def test_element_order_matches_degree_columns():
+    """Guard the hand-synced invariant _scale_degree_cov relies on.
+
+    `_scale_degree_cov` maps each degree column to a covariance row/col via
+    `element_order[fmt].index(col)`. If `degree_columns` and `element_order`
+    drift apart the lookup either raises or silently scales the wrong row, so
+    pin: every degree format is in element_order, each of its degree columns is
+    present there, and every element_order entry is a unique 6-vector (so the
+    index is a valid 0..5 covariance position). The *numerical* basis match is
+    covered by test_convert_covariance_angle_units.
+    """
+    from layup.convert import degree_columns, element_order
+
+    for fmt, cols in degree_columns.items():
+        assert fmt in element_order, f"{fmt} in degree_columns but not element_order"
+        order = element_order[fmt]
+        assert len(order) == 6, f"element_order[{fmt}] is not a 6-vector: {order}"
+        assert len(set(order)) == 6, f"element_order[{fmt}] has duplicates: {order}"
+        for col in cols:
+            assert col in order, f"degree column {col!r} missing from element_order[{fmt}]"
+            assert 0 <= order.index(col) <= 5

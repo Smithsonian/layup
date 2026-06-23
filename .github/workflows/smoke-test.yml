@@ -29,6 +29,16 @@ jobs:
       uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
+    # Cache the SPICE kernels + MPC obscodes that `layup bootstrap` and the
+    # tests download, so a transient outage of naif.jpl.nasa.gov or
+    # minorplanetcenter.net does not fail the run. See testing-and-coverage.yml.
+    - name: Cache layup ephemeris + obscodes data
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/layup
+          ~/Library/Caches/layup
+        key: layup-data-${{ runner.os }}-v1
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
