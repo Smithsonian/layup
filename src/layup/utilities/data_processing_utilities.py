@@ -8,6 +8,7 @@ from importlib.resources import files
 
 import numpy as np
 import requests
+import spiceypy as spice
 from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
@@ -513,6 +514,32 @@ class LayupObservatory(SorchaObservatory):
             self.ObservatoryXYZ[obscode_cache_key] = coords
         return obscode_cache_key
 
+    def _barycentric_moving_observatory(self, et, obscode_cache_key):
+        """Barycentric position and velocity (km, km/s) of a moving observatory.
+
+        A fixed ground station's ObservatoryXYZ entry holds dimensionless
+        parallax constants in the Earth-fixed frame, so
+        barycentricObservatoryRates rotates it to J2000 and scales it by the
+        Earth radius. A moving (e.g. space-based) observatory is different: its
+        position is supplied per-observation as an explicit geocentric vector
+        that populate_observatory has already stored in km and in the
+        J2000/ICRF frame (from the sys/ctr/pos1..3 columns). It must therefore
+        be added to Earth's barycentric position directly -- with no
+        Earth-rotation and no Earth-radius scaling, both of which
+        barycentricObservatoryRates would apply and which would misplace the
+        observatory by a factor of the Earth radius (~6378x).
+
+        The observatory's own geocentric velocity is not provided per
+        observation, so Earth's barycentric velocity is used; the satellite's
+        orbital velocity (~km/s) is a small correction that only enters through
+        aberration.
+        """
+        posvel, _ = spice.spkezr("EARTH", et, "J2000", "NONE", "SSB")
+        earth_pos = np.array(posvel[0:3])  # km, J2000
+        earth_vel = np.array(posvel[3:6])  # km/s, J2000
+        obs_geocentric = np.array(self.ObservatoryXYZ[obscode_cache_key])  # km, J2000
+        return earth_pos + obs_geocentric, earth_vel
+
     def obscodes_to_barycentric(self, data):
         """
         Takes a structured array of observations and returns the barycentric positions and velocites
@@ -552,10 +579,14 @@ class LayupObservatory(SorchaObservatory):
                 self.cached_obs[obscode_cache_key] = {}
 
             # Calculate the barycentric position and velocity of the observatory or fetch
-            # it from the cache if it has already been calculated
-            bary_obs_pos, bary_obs_vel = self.cached_obs[obscode_cache_key].setdefault(
-                et, barycentricObservatoryRates(et, obscode_cache_key, self)
-            )
+            # it from the cache if it has already been calculated. A per-epoch cache
+            # key (obscode != key) marks a moving observatory whose position was
+            # supplied in the data; it must not go through the fixed-station transform.
+            if obscode_cache_key == obscode:
+                bary = barycentricObservatoryRates(et, obscode_cache_key, self)
+            else:
+                bary = self._barycentric_moving_observatory(et, obscode_cache_key)
+            bary_obs_pos, bary_obs_vel = self.cached_obs[obscode_cache_key].setdefault(et, bary)
 
             # Create a structured array for our barycentric coordinates with appropriate dtypes.
             # Needed to adjust the units here.

@@ -1,0 +1,13 @@
+{
+  "_comment": "JPL Horizons barycentric (SSB, @0) equatorial-frame (refplane='earth', = layup BCART_EQ) state of TNO 2000 FV53, captured 2026-06-20 via astroquery Horizons(id='2000 FV53', location='@0', epochs=<epoch_jd_tdb>, id_type='smallbody').vectors(refplane='earth'). Epoch is what layup selects fitting the 2000 FV53 subset of tests/data/bernstein_2004_kbos_data_with_sats_occ.csv (28 obs incl. 1 HST/space-based); regenerate if that data or layup's epoch logic changes.",
+  "object": "2000 FV53 (classical TNO, a~39 AU)",
+  "epoch_jd_tdb": 2452730.787512708,
+  "state_au_au_per_day": [
+    -27.80363587150747,
+    -16.52264754169081,
+    -6.219698916582758,
+    0.001575890862815997,
+    -0.002813851392019764,
+    -0.0001725405249918419
+  ]
+}
