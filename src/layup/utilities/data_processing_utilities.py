@@ -378,6 +378,44 @@ class LayupObservatory(SorchaObservatory):
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
 
+    def convert_to_geocentric(self, obs_location: dict) -> tuple:
+        """Convert an observatory's parallax constants to geocentric coordinates.
+
+        This overrides Sorcha's ``Observatory.convert_to_geocentric``, which gates
+        on the truthiness of the parallax constants
+        (``obs_location.get("sin", False)``). A constant that is legitimately
+        ``0.0`` -- e.g. the geocenter (codes 500/244/248: Longitude=cos=sin=0),
+        Greenwich (code 000: Longitude=0), or an equatorial station such as Quito
+        (code 782: sin=0) -- is falsy, so the base class wrongly reports the
+        observatory as having no fixed position. Layup then routes it to the
+        moving-observatory path and raises "invalid coordinates" for plain MPC
+        input that carries no per-observation position (issue #286).
+
+        We instead test for the *presence* of the constants. Codes that have no
+        position keys at all (roving observer 247, space telescopes WISE/TESS/HST,
+        ...) still return ``(None, None, None)`` and are correctly routed to the
+        ADES per-observation position path. The geocenter resolves to a (0, 0, 0)
+        offset from Earth's center, which is exactly right.
+
+        Parameters
+        ----------
+        obs_location : dict
+            Dictionary with Longitude and the sin/cos of the observatory latitude.
+
+        Returns
+        -------
+        tuple
+            Geocentric position (x, y, z), or (None, None, None) when the
+            observatory has no fixed position.
+        """
+        longitude = obs_location.get("Longitude")
+        cos = obs_location.get("cos")
+        sin = obs_location.get("sin")
+        if longitude is not None and cos is not None and sin is not None:
+            longitude_rad = longitude * np.pi / 180.0
+            return (cos * np.cos(longitude_rad), cos * np.sin(longitude_rad), sin)
+        return (None, None, None)
+
     def create_obscode_cache_key(self, obscode, et):
         """
         Create a cache key for the observatory coordinates.
@@ -602,25 +640,27 @@ def get_format(data):
         raise ValueError("Data does not contain 'FORMAT' column")
 
 
-def skyplane_cov_to_radec_cov(ra, dec, cov_xx, cov_xy, cov_yy):
+def skyplane_cov_to_radec_cov(cov_xx, cov_xy, cov_yy):
     """
-    Transforms the sky plane covariance matrix into
-    an on-sky covariance matrix (error ellipse)
+    Convert a 2x2 sky-plane covariance into an on-sky error ellipse.
 
-    Code adapted from B&K routines
+    The covariance is expressed in the local orthonormal tangent-plane basis
+    used by predict, whose axes are the unit vectors in the directions of
+    increasing RA (a great circle on the sky, i.e. already scaled by cos(dec))
+    and increasing Dec. The error ellipse is therefore the eigen-decomposition
+    of the 2x2 matrix; no cos(dec) scaling is applied (the input is already an
+    on-sky covariance, not a covariance in RA/Dec coordinates).
 
     Parameters
     ----------
-    ra: numpy array
-        right ascension of the observation (deg)
-    dec: numpy array
-        declination of the observation (deg)
     cov_xx: numpy array
-        (x,x) entry of the sky plane cov matrix (radians)
+        (x, x) entry of the sky-plane covariance (radians^2); x is the
+        great-circle RA direction.
     cov_xy: numpy array
-        (x,y) entry of the sky plane cov matrix (radians)
+        (x, y) entry of the sky-plane covariance (radians^2).
     cov_yy: numpy array
-        (y,y) entry of the sky plane cov matrix (radians)
+        (y, y) entry of the sky-plane covariance (radians^2); y is the Dec
+        direction.
 
     Returns
     -----------
@@ -629,23 +669,21 @@ def skyplane_cov_to_radec_cov(ra, dec, cov_xx, cov_xy, cov_yy):
     numpy array
         semi-minor axis of the error ellipse (arcsec)
     numpy array
-        position angle of the error ellipse (degrees)
+        position angle of the major axis (degrees, North through East)
     """
+    rad_to_arcsec = (180.0 / np.pi) * 3600.0
 
-    xx = cov_xx * np.cos(dec) * np.cos(dec)
-    xy = cov_xy * np.cos(dec)
-    yy = cov_yy
-    PA = 0.5 * np.arctan2(2.0 * xy, (xx - yy)) * 180.0 / np.pi
-    # Put PA N through E
-    PA = 90.0 - PA
-    bovasqrd = (xx + yy - np.sqrt(np.power(xx - yy, 2.0) + np.power(2.0 * xy, 2.0))) / (
-        xx + yy + np.sqrt(np.power(xx - yy, 2.0) + np.power(2.0 * xy, 2.0))
-    )
-    det = xx * yy - xy * xy
-    b = np.power(det * bovasqrd, 0.25)  # this is in radians
-    a = np.power(det / bovasqrd, 0.25)
+    # Eigenvalues of the symmetric 2x2 [[xx, xy], [xy, yy]].
+    trace = cov_xx + cov_yy
+    disc = np.sqrt(np.power(cov_xx - cov_yy, 2.0) + np.power(2.0 * cov_xy, 2.0))
+    lambda_major = 0.5 * (trace + disc)
+    lambda_minor = 0.5 * (trace - disc)
 
-    b *= (180 / np.pi) * 3600  # this is now in arcsec
-    a *= (180 / np.pi) * 3600  # this is now in arcsec
+    # Guard against a tiny negative minor eigenvalue from floating-point error.
+    a = np.sqrt(np.maximum(lambda_major, 0.0)) * rad_to_arcsec
+    b = np.sqrt(np.maximum(lambda_minor, 0.0)) * rad_to_arcsec
+
+    # Angle of the major axis from the RA (x) axis, reported North through East.
+    PA = 90.0 - 0.5 * np.arctan2(2.0 * cov_xy, cov_xx - cov_yy) * 180.0 / np.pi
 
     return a, b, PA

@@ -12,6 +12,7 @@ from layup.utilities.data_processing_utilities import (
     has_cov_columns,
     parse_fit_result,
     process_data,
+    skyplane_cov_to_radec_cov,
     write_fallback_obscodes,
 )
 from layup.utilities.data_utilities_for_tests import get_test_filepath
@@ -299,6 +300,41 @@ def test_moving_observatory_coordinate_cache():
         row_inconsistent = np.array(("ICRF_KM", 399, 10.0, 12.0, 13.0), dtype=row_dtype)
         with pytest.raises(ValueError):
             observatory.populate_observatory(obscode, et, row_inconsistent)
+
+
+def test_fixed_observatory_with_zero_parallax_constant():
+    """Regression test for issue #286.
+
+    Observatories whose parallax constants are legitimately 0.0 must still be
+    treated as fixed-position observatories. The previous truthiness check
+    treated a 0.0 Longitude/cos/sin as "no position", which routed these codes
+    to the moving-observatory path and raised "invalid coordinates" for plain
+    MPC input that carries no per-observation position.
+    """
+    observatory = LayupObservatory()
+
+    # Codes that have parallax-constant keys (possibly 0.0) must resolve to a
+    # finite fixed position. The geocenter codes resolve to (0, 0, 0).
+    fixed_with_zero = {
+        "000": None,  # Greenwich: Longitude == 0.0
+        "782": None,  # Quito (equatorial): sin == 0.0
+        "500": (0.0, 0.0, 0.0),  # Geocentric: Longitude == cos == sin == 0.0
+        "244": (0.0, 0.0, 0.0),  # Geocentric Occultation Observation
+        "248": (0.0, 0.0, 0.0),  # Hipparcos
+    }
+    for obscode, expected in fixed_with_zero.items():
+        coords = observatory.ObservatoryXYZ.get(obscode)
+        assert coords is not None
+        assert None not in coords, f"{obscode} wrongly treated as having no fixed position"
+        assert not np.isnan(np.asarray(coords, dtype=float)).any()
+        if expected is not None:
+            assert np.allclose(coords, expected)
+
+    # Codes with no parallax-constant keys (roving observer, space telescopes)
+    # must still report no fixed position so they take the ADES-position path.
+    for obscode in ("247", "C51", "C57", "250"):
+        coords = observatory.ObservatoryXYZ.get(obscode)
+        assert coords == (None, None, None)
 
 
 def test_get_format():
@@ -602,6 +638,45 @@ def test_moving_observatory_barycentric_position():
     # (~6948 km), not ~6378x further out.
     offset_km = obs_pos_km - earth_pos_km
     np.testing.assert_allclose(offset_km, geocentric_km, atol=1.0)
+
+
+def test_skyplane_cov_to_radec_cov():
+    """The sky-plane covariance is already an on-sky (great-circle) covariance,
+    so the error ellipse is the eigen-decomposition of the 2x2 matrix with no
+    cos(dec) scaling. Regression test for the previous version, which scaled by
+    cos(dec) with dec in degrees and was called with obs_cov_yy and obs_cov_xy
+    swapped.
+    """
+    rad_to_arcsec = (180.0 / np.pi) * 3600.0
+
+    # Axis-aligned covariance, major axis along Dec (yy > xx): PA points North (0 deg).
+    a, b, pa = skyplane_cov_to_radec_cov(np.array([1e-12]), np.array([0.0]), np.array([4e-12]))
+    assert np.isclose(a[0], np.sqrt(4e-12) * rad_to_arcsec)
+    assert np.isclose(b[0], np.sqrt(1e-12) * rad_to_arcsec)
+    assert np.isclose(pa[0] % 180.0, 0.0)
+
+    # Axis-aligned covariance, major axis along RA (xx > yy): PA points East (90 deg).
+    a, b, pa = skyplane_cov_to_radec_cov(np.array([4e-12]), np.array([0.0]), np.array([1e-12]))
+    assert np.isclose(a[0], np.sqrt(4e-12) * rad_to_arcsec)
+    assert np.isclose(pa[0] % 180.0, 90.0)
+
+    # Isotropic covariance: a circle, a == b.
+    a, b, _ = skyplane_cov_to_radec_cov(np.array([2e-12]), np.array([0.0]), np.array([2e-12]))
+    assert np.isclose(a[0], b[0])
+
+    # General positive-definite case must match the eigenvalues of the 2x2,
+    # independent of any RA/Dec (no cos(dec) dependence in the signature).
+    rng = np.random.default_rng(0)
+    for _ in range(10):
+        m = rng.normal(size=(2, 2))
+        cov = m @ m.T * 1e-12  # symmetric positive-definite, radians^2
+        a, b, _ = skyplane_cov_to_radec_cov(
+            np.array([cov[0, 0]]), np.array([cov[0, 1]]), np.array([cov[1, 1]])
+        )
+        eigvals = np.linalg.eigvalsh(cov)
+        assert np.isclose(a[0], np.sqrt(eigvals[1]) * rad_to_arcsec)
+        assert np.isclose(b[0], np.sqrt(eigvals[0]) * rad_to_arcsec)
+        assert a[0] >= b[0] > 0.0
 
 
 def test_write_fallback_obscodes():
