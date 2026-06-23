@@ -289,10 +289,17 @@ namespace orbit_fit
         }
 
         // ---- Radar (delay / Doppler) residuals + partials ----
-        // Monostatic first cut: round-trip delay = 2 rho / c (days) and
-        // round-trip range-rate = 2 (rho_hat . v_rel) (au/day). The factor of 2
-        // is kept explicit so a bistatic up/down-leg split is a localised change
-        // later. See ISSUE_146_RADAR_DESIGN.md.
+        // Monostatic two-leg light time. The down leg (integrate_light_time
+        // above) put the asteroid at the bounce time using the station at the
+        // receive epoch. The up leg was transmitted ~one round-trip earlier,
+        // when the station had moved (Earth orbital motion ~30 km/s + rotation):
+        // ignoring this biases real radar by thousands of us in delay and
+        // ~100 Hz in Doppler, far above the ~1 us / sub-Hz measurement precision
+        // (quantified against (99942) Apophis; see ISSUE_146_RADAR_DESIGN.md and
+        // ISSUE_146_radar_realdata_crosscheck.py). We add the up leg by
+        // Taylor-extrapolating the station state (pos+vel) to the transmit time
+        // t_obs - tau using the observer acceleration supplied from Python.
+        // Shapiro (relativistic) delay (~2 us here) is the next refinement.
         if (std::holds_alternative<RadarObservation>(this_det.observation_type))
         {
             const RadarObservation &rd = std::get<RadarObservation>(this_det.observation_type);
@@ -307,18 +314,60 @@ namespace orbit_fit
             double q_ast = rho_x * vax + rho_y * vay + rho_z * vaz; // asteroid-only (light time)
             double ltdenom = 1.0 + q_ast / SPEED_OF_LIGHT;
 
-            double model_delay = 2.0 * rho / SPEED_OF_LIGHT; // round-trip light time (days)
-            double model_doppler = 2.0 * q;                  // round-trip range rate (au/day)
+            // Bounce point (asteroid at the down-leg retarded time) and observer
+            // acceleration for the up-leg station extrapolation.
+            double rbx = r->particles[j].x, rby = r->particles[j].y, rbz = r->particles[j].z;
+            double aox = this_det.observer_acceleration[0];
+            double aoy = this_det.observer_acceleration[1];
+            double aoz = this_det.observer_acceleration[2];
+
+            // Up-leg light time: iterate tau_u with the station at the transmit
+            // time t_obs - (tau_d + tau_u), Taylor-extrapolated from the receive
+            // epoch. rho is the converged down-leg distance from above.
+            double tau_d = rho / SPEED_OF_LIGHT;
+            double tau_u = tau_d;
+            double rhu_x = rho_x, rhu_y = rho_y, rhu_z = rho_z, rho_u = rho;
+            for (int it = 0; it < 3; it++)
+            {
+                double tau = tau_d + tau_u;
+                double rtx_x = xe - vox * tau - 0.5 * aox * tau * tau;
+                double rtx_y = ye - voy * tau - 0.5 * aoy * tau * tau;
+                double rtx_z = ze - voz * tau - 0.5 * aoz * tau * tau;
+                rhu_x = rbx - rtx_x;
+                rhu_y = rby - rtx_y;
+                rhu_z = rbz - rtx_z;
+                rho_u = sqrt(rhu_x * rhu_x + rhu_y * rhu_y + rhu_z * rhu_z);
+                tau_u = rho_u / SPEED_OF_LIGHT;
+            }
+            rhu_x /= rho_u; // up-leg unit vector (bounce -> transmit station)
+            rhu_y /= rho_u;
+            rhu_z /= rho_u;
+            double tau = tau_d + tau_u;
+            double vtx_x = vox - aox * tau; // station velocity at transmit
+            double vtx_y = voy - aoy * tau;
+            double vtx_z = voz - aoz * tau;
+
+            double model_delay = tau_d + tau_u; // round-trip light time (days)
+            // Round-trip range rate: down leg uses the station velocity at
+            // receive, up leg at transmit.
+            double model_doppler =
+                (rho_x * (vax - vox) + rho_y * (vay - voy) + rho_z * (vaz - voz)) +
+                (rhu_x * (vax - vtx_x) + rhu_y * (vay - vtx_y) + rhu_z * (vaz - vtx_z));
             resid.delay_resid = rd.delay - model_delay;
             resid.doppler_resid = rd.doppler - model_doppler;
 
+            // Partials use the single-leg-times-two Jacobian: the up and down
+            // legs are parallel to ~|Earth displacement|/rho ~ 2e-4 rad, so the
+            // two-leg residual and this Jacobian agree to that level. Gauss-Newton
+            // converges on the (data-driven, two-leg) residual regardless; the
+            // Jacobian only sets the step direction (cf. the streak treatment).
             for (size_t i = 0; i < 6; i++)
             {
                 size_t vn = var + i;
                 // Exact single-leg range partial (light-time corrected):
                 //   d rho / d param = ddist / (1 + (rho_hat . v_ast)/c).
                 double range_partial = ddist[i] / ltdenom;
-                // d(model_delay)/d param = (2/c) d rho / d param.
+                // d(model_delay)/d param ~ (2/c) d rho / d param.
                 parts.delay_partials.push_back(-2.0 * range_partial / SPEED_OF_LIGHT);
 
                 // d(model_doppler)/d param = 2 d(rho_hat . v_rel)/d param.

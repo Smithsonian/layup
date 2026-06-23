@@ -111,6 +111,11 @@ namespace orbit_fit
         ObservationType observation_type;
         std::array<double, 3> observer_position;
         std::array<double, 3> observer_velocity;
+        // Barycentric observer acceleration (au/day^2). Only used by the radar
+        // two-leg light-time model, which Taylor-extrapolates the station state
+        // back to the signal transmit time (~one round-trip earlier). Defaults to
+        // zero, so it has no effect on optical/streak observations.
+        std::array<double, 3> observer_acceleration{{0.0, 0.0, 0.0}};
 
         // Computed unit direction vector
         Eigen::Vector3d rho_hat;
@@ -288,12 +293,14 @@ namespace orbit_fit
                                       const std::array<double, 3> &obs_position,
                                       const std::array<double, 3> &obs_velocity,
                                       double delay_uncy = 1.0,
-                                      double doppler_uncy = 1.0)
+                                      double doppler_uncy = 1.0,
+                                      const std::array<double, 3> &obs_acceleration = {{0.0, 0.0, 0.0}})
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
             obs.observation_type = RadarObservation(delay, doppler, has_delay, has_doppler);
             obs.delay_unc = delay_uncy;
             obs.doppler_unc = doppler_uncy;
+            obs.observer_acceleration = obs_acceleration;
             return obs;
         }
 
@@ -304,10 +311,12 @@ namespace orbit_fit
                                               const std::array<double, 3> &obs_position,
                                               const std::array<double, 3> &obs_velocity,
                                               double delay_uncy = 1.0,
-                                              double doppler_uncy = 1.0)
+                                              double doppler_uncy = 1.0,
+                                              const std::array<double, 3> &obs_acceleration = {{0.0, 0.0, 0.0}})
         {
             Observation obs = from_radar(delay, doppler, has_delay, has_doppler, epoch_val,
-                                         obs_position, obs_velocity, delay_uncy, doppler_uncy);
+                                         obs_position, obs_velocity, delay_uncy, doppler_uncy,
+                                         obs_acceleration);
             obs.objID = objID;
             return obs;
         }
@@ -371,6 +380,7 @@ namespace orbit_fit
                         py::arg("has_delay"), py::arg("has_doppler"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         py::arg("delay_unc") = 1.0, py::arg("doppler_unc") = 1.0,
+                        py::arg("observer_acceleration") = std::array<double, 3>{{0.0, 0.0, 0.0}},
                         "Construct a Radar observation (delay in days, doppler in au/day)")
             .def_static("from_radar_with_id", &Observation::from_radar_with_id,
                         py::arg("objID"),
@@ -378,11 +388,13 @@ namespace orbit_fit
                         py::arg("has_delay"), py::arg("has_doppler"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         py::arg("delay_unc") = 1.0, py::arg("doppler_unc") = 1.0,
+                        py::arg("observer_acceleration") = std::array<double, 3>{{0.0, 0.0, 0.0}},
                         "Construct a Radar observation (delay in days, doppler in au/day)")
             .def_readwrite("epoch", &Observation::epoch, "Observation epoch (as a double)")
             .def_readwrite("observation_type", &Observation::observation_type, "Variant holding the observation data")
             .def_readwrite("observer_position", &Observation::observer_position, "Observer position as a 3D vector")
             .def_readwrite("observer_velocity", &Observation::observer_velocity, "Observer velocity as a 3D vector")
+            .def_readwrite("observer_acceleration", &Observation::observer_acceleration, "Observer acceleration (au/day^2; radar two-leg model)")
             .def_readwrite("rho_hat", &Observation::rho_hat, "Unit direction vector")
             .def_readwrite("a_vec", &Observation::a_vec, "Tangent plane vector A")
             .def_readwrite("d_vec", &Observation::d_vec, "Tangent plane vector D")
