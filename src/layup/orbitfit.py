@@ -172,8 +172,10 @@ def _radar_observation(objID, d, epoch_jd, column_names):
     delay (us, round-trip) -> days; Doppler (Hz) -> round-trip range-rate
     (au/day) via the per-observation transmit frequency ``freqTx``. The
     barycentric observer position/velocity columns (x,y,z,vx,vy,vz) must already
-    be present (added by ``orbitfit``). 1-sigma uncertainties come from
-    ``rmsDelay``/``rmsDoppler`` when present, else the module defaults.
+    be present (added by ``orbitfit``); the observer acceleration columns
+    (ax,ay,az) drive the two-leg light-time model and default to zero when
+    absent. 1-sigma uncertainties come from ``rmsDelay``/``rmsDoppler`` when
+    present, else the module defaults.
     """
     has_delay = "delay" in column_names and not np.isnan(d["delay"])
     has_doppler = "doppler" in column_names and not np.isnan(d["doppler"])
@@ -200,6 +202,11 @@ def _radar_observation(objID, d, epoch_jd, column_names):
     else:
         doppler_unc = abs(SPEED_OF_LIGHT * _DEFAULT_DOPPLER_UNC_HZ / f_tx) if not np.isnan(f_tx) else 1.0
 
+    if all(c in column_names for c in ("ax", "ay", "az")):
+        observer_acc = [float(d["ax"]), float(d["ay"]), float(d["az"])]
+    else:
+        observer_acc = [0.0, 0.0, 0.0]
+
     return Observation.from_radar_with_id(
         str(objID),
         delay_days,
@@ -211,6 +218,32 @@ def _radar_observation(objID, d, epoch_jd, column_names):
         [d["vx"], d["vy"], d["vz"]],  # Barycentric observer velocity
         delay_unc,
         doppler_unc,
+        observer_acc,  # Barycentric observer acceleration (au/day^2)
+    )
+
+
+def _append_observer_acceleration(data, observatory, dt_sec=2.0):
+    """Append barycentric observer acceleration columns (ax, ay, az; au/day^2).
+
+    Finite-differences the barycentric station velocity from
+    ``obscodes_to_barycentric`` at the observation epoch +/- ``dt_sec``. Used only
+    by radar observations, whose two-leg light-time model extrapolates the station
+    state back to the signal transmit time. Requires the ``et`` column (seconds
+    past J2000, TDB) that ``orbitfit`` adds before computing the observer states.
+    """
+
+    def _vel(et_offset_sec):
+        shifted = data.copy()
+        shifted["et"] = data["et"] + et_offset_sec
+        pv = np.atleast_1d(observatory.obscodes_to_barycentric(shifted))
+        return np.stack([pv["vx"], pv["vy"], pv["vz"]], axis=-1)
+
+    # d(velocity[au/day]) / d(time[day]); 2*dt_sec seconds = 2*dt_sec/86400 days.
+    scale = 86400.0 / (2.0 * dt_sec)
+    acc = (_vel(dt_sec) - _vel(-dt_sec)) * scale
+    acc = np.atleast_2d(acc)
+    return rfn.append_fields(
+        data, ["ax", "ay", "az"], [acc[:, 0], acc[:, 1], acc[:, 2]], usemask=False, asrecarray=True
     )
 
 
@@ -1011,6 +1044,12 @@ def orbitfit(
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
+
+    # Radar (delay/Doppler) observations need the barycentric observer
+    # acceleration for the two-leg light-time model; compute it only when radar
+    # columns are present so optical/streak fits are unaffected.
+    if any(col in data.dtype.names for col in ("delay", "doppler")):
+        data = _append_observer_acceleration(data, layup_observatory)
 
     bias_dict = None
     if debias:

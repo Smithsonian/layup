@@ -1,0 +1,305 @@
+{
+  "_comment": "Real JPL radar astrometry for (99942) Apophis, 2013 apparition, monostatic only (xmit==rcvr; Goldstone DSS-14 -> MPC 253, Arecibo -> MPC 251). Source: https://ssd-api.jpl.nasa.gov/sb_radar.api?des=99942 . delay 'value' is round-trip us, doppler 'value' is Hz at freqTx_hz. Reference state is JPL Horizons barycentric ICRF (DE441) at epoch_jd_tdb, AU & AU/day: COMMAND='99942;' CENTER='@0' REF_PLANE='FRAME' OUT_UNITS='AU-D' VEC_TABLE='2' TLIST='2456323.5'.",
+  "object": "99942 Apophis",
+  "reference": {
+    "epoch_jd_tdb": 2456323.5,
+    "state_au_au_per_day": [
+      -0.6885941010606326,
+      0.7853011708041518,
+      0.2744012411423299,
+      -0.01236352140633316,
+      -0.007926849409608376,
+      -0.003263604704470501
+    ]
+  },
+  "observations": [
+    {
+      "obsTime": "2013-03-15T23:59:00",
+      "stn": "251",
+      "value": 235220855.07,
+      "sigma": 2.0,
+      "units": "us",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-03-15T23:59:00",
+      "stn": "251",
+      "value": -80977.5254,
+      "sigma": 0.238,
+      "units": "Hz",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-21T01:04:00",
+      "stn": "251",
+      "value": -79697.13,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-20T01:26:00",
+      "stn": "251",
+      "value": 163578875.87,
+      "sigma": 0.25,
+      "units": "us",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-20T01:26:00",
+      "stn": "251",
+      "value": -79560.965,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-20T00:38:00",
+      "stn": "251",
+      "value": -78070.341,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-19T01:08:00",
+      "stn": "251",
+      "value": -78105.657,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-18T01:37:00",
+      "stn": "251",
+      "value": 157906444.15,
+      "sigma": 0.25,
+      "units": "us",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-18T01:37:00",
+      "stn": "251",
+      "value": -78041.365,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-02-18T00:56:00",
+      "stn": "251",
+      "value": -76760.475,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 2380000000.0
+    },
+    {
+      "obsTime": "2013-01-17T06:20:00",
+      "stn": "253",
+      "value": -47875.142,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-16T07:50:00",
+      "stn": "253",
+      "value": -46641.384,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-16T06:30:00",
+      "stn": "253",
+      "value": 98086754.0,
+      "sigma": 1.0,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-16T06:30:00",
+      "stn": "253",
+      "value": -39582.277,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-15T06:30:00",
+      "stn": "253",
+      "value": -30666.291,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-14T09:50:00",
+      "stn": "253",
+      "value": 97283037.17,
+      "sigma": 0.2,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-14T08:10:00",
+      "stn": "253",
+      "value": 97258343.56,
+      "sigma": 0.2,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-14T08:10:00",
+      "stn": "253",
+      "value": -30561.776,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-11T07:20:00",
+      "stn": "253",
+      "value": -1589.599,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-10T09:40:00",
+      "stn": "253",
+      "value": 96473924.8,
+      "sigma": 0.2,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-10T08:00:00",
+      "stn": "253",
+      "value": 96472652.72,
+      "sigma": 0.2,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-10T08:00:00",
+      "stn": "253",
+      "value": 2590.857,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-09T09:20:00",
+      "stn": "253",
+      "value": 2690.401,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-09T08:00:00",
+      "stn": "253",
+      "value": 96451449.73,
+      "sigma": 0.2,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-09T08:00:00",
+      "stn": "253",
+      "value": 9670.119,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-08T08:10:00",
+      "stn": "253",
+      "value": 15496.441,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-06T09:30:00",
+      "stn": "253",
+      "value": 20775.144,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-06T08:20:00",
+      "stn": "253",
+      "value": 26660.815,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-05T10:50:00",
+      "stn": "253",
+      "value": 96910218.03,
+      "sigma": 3.0,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-05T10:40:00",
+      "stn": "253",
+      "value": 96911591.52,
+      "sigma": 0.25,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-05T10:40:00",
+      "stn": "253",
+      "value": 20031.16,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-05T08:40:00",
+      "stn": "253",
+      "value": 30404.009,
+      "sigma": 0.2,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-03T10:50:00",
+      "stn": "253",
+      "value": 97428425.46,
+      "sigma": 0.25,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-03T10:00:00",
+      "stn": "253",
+      "value": 97439308.71,
+      "sigma": 3.0,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-03T09:20:00",
+      "stn": "253",
+      "value": 97449107.61,
+      "sigma": 0.25,
+      "units": "us",
+      "freqTx_hz": 8560000000.0
+    },
+    {
+      "obsTime": "2013-01-03T09:20:00",
+      "stn": "253",
+      "value": 36629.285,
+      "sigma": 0.1,
+      "units": "Hz",
+      "freqTx_hz": 8560000000.0
+    }
+  ]
+}

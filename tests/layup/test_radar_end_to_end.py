@@ -65,16 +65,19 @@ _OBS_TIMES = [
 ]
 
 
-def _radar_observables(ephem, true_state, epoch, obs_jd_tdb, r_obs, v_obs):
-    """Round-trip delay (days) and Doppler (au/day) at the C++ light-time convention.
+def _radar_observables(ephem, true_state, epoch, obs_jd_tdb, r_obs, v_obs, a_obs):
+    """Two-leg round-trip delay (days) and Doppler (au/day).
 
-    Mirrors predict.cpp::integrate_light_time: iterate to the retarded emission
-    time t_obs - rho/c, then ``delay = 2 rho/c`` and ``doppler = 2 rho_hat.v_rel``.
+    Mirrors the C++ orbit_fit.cpp radar model exactly so the noise-free fit
+    reaches ~0 chi-squared: down leg to the retarded bounce time with the station
+    at receive, up leg with the station Taylor-extrapolated (pos+vel) to the
+    transmit time t - tau using the observer acceleration ``a_obs``.
     """
     import rebound
 
     r_obs = np.asarray(r_obs, dtype=float)
     v_obs = np.asarray(v_obs, dtype=float)
+    a_obs = np.asarray(a_obs, dtype=float)
     jd_ref = ephem.jd_ref
 
     def state_at(t_jd):
@@ -98,15 +101,25 @@ def _radar_observables(ephem, true_state, epoch, obs_jd_tdb, r_obs, v_obs):
         ax.detach(sim)
         return r, v
 
-    lt = 0.0
-    for _ in range(4):  # match integrate_light_time's 4 iterations from lt0 = 0
-        r_ast, v_ast = state_at(obs_jd_tdb - lt)
-        rho_vec = r_ast - r_obs
-        rho = float(np.linalg.norm(rho_vec))
-        lt = rho / SPEED_OF_LIGHT
-    rho_hat = rho_vec / rho
-    q = float(rho_hat @ (v_ast - v_obs))
-    return 2.0 * rho / SPEED_OF_LIGHT, 2.0 * q
+    tau_d = 0.0
+    for _ in range(4):  # down leg, station at receive
+        r_ast, v_ast = state_at(obs_jd_tdb - tau_d)
+        rho_d_vec = r_ast - r_obs
+        rho_d = float(np.linalg.norm(rho_d_vec))
+        tau_d = rho_d / SPEED_OF_LIGHT
+    rho_hat_d = rho_d_vec / rho_d
+    tau_u = tau_d
+    for _ in range(5):  # up leg, station Taylor-extrapolated to transmit
+        tau = tau_d + tau_u
+        r_tx = r_obs - v_obs * tau - 0.5 * a_obs * tau * tau
+        rho_u_vec = r_ast - r_tx
+        rho_u = float(np.linalg.norm(rho_u_vec))
+        tau_u = rho_u / SPEED_OF_LIGHT
+    rho_hat_u = rho_u_vec / rho_u
+    v_tx = v_obs - a_obs * (tau_d + tau_u)
+    delay = tau_d + tau_u
+    doppler = float(rho_hat_d @ (v_ast - v_obs)) + float(rho_hat_u @ (v_ast - v_tx))
+    return delay, doppler
 
 
 def _build_radar_data(has_delay=True, has_doppler=True):
@@ -139,6 +152,16 @@ def _build_radar_data(has_delay=True, has_doppler=True):
     base_et = rfn.append_fields(base, "et", et, usemask=False, asrecarray=True)
     pos_vel = np.atleast_1d(lo.obscodes_to_barycentric(base_et))
 
+    # Observer acceleration via the same finite-difference the driver uses, so the
+    # in-test two-leg truth matches the C++ model and the noise-free fit -> csq 0.
+    def _vel(shift_sec):
+        b = base_et.copy()
+        b["et"] = et + shift_sec
+        pv = np.atleast_1d(lo.obscodes_to_barycentric(b))
+        return np.stack([pv["vx"], pv["vy"], pv["vz"]], axis=-1)
+
+    acc = (_vel(2.0) - _vel(-2.0)) * (86400.0 / 4.0)
+
     delay_us = np.full(n, np.nan)
     rms_delay = np.full(n, np.nan)
     doppler_hz = np.full(n, np.nan)
@@ -147,7 +170,7 @@ def _build_radar_data(has_delay=True, has_doppler=True):
         jd_tdb = convert_tdb_date_to_julian_date(base[i]["obsTime"], CACHE)
         r_obs = [pos_vel[i]["x"], pos_vel[i]["y"], pos_vel[i]["z"]]
         v_obs = [pos_vel[i]["vx"], pos_vel[i]["vy"], pos_vel[i]["vz"]]
-        delay_days, doppler_audy = _radar_observables(ephem, true_state, epoch, jd_tdb, r_obs, v_obs)
+        delay_days, doppler_audy = _radar_observables(ephem, true_state, epoch, jd_tdb, r_obs, v_obs, acc[i])
         if has_delay:
             delay_us[i] = delay_days / US_TO_DAYS
             rms_delay[i] = 1.0  # us
