@@ -1,11 +1,7 @@
 from __future__ import annotations
-import os
-from pathlib import Path
 
-# temporarily change the working directory to help MacOS find
-# the library objects, if running in a different directory.
-cwd = os.getcwd()
-os.chdir(Path(__file__).parent.parent.parent.parent)
+# The compiled extension is linked with an RPATH (``$ORIGIN/..`` on Linux,
+# ``@loader_path/..`` on macOS, set in CMakeLists.txt) so the dynamic loader
+# finds librebound/libassist in site-packages regardless of the working
+# directory. The previous os.chdir() dance is therefore no longer needed (#75).
 from _layup_cpp._core import *
-
-os.chdir(cwd)
