@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-
 import numpy as np
 import pytest
 
 from layup import iod, orbitfit
 from layup.routines import FitResult, Observation
+
+from _bk_guards import (
+    EPHEM_CACHE,
+    load_diagnostic_case,
+    requires_diagnostic,
+    requires_ephem,
+)
 
 
 def test_registry_has_gauss():
@@ -183,19 +186,16 @@ def test_do_fit_accepts_callable_iod():
 
 
 # --- Integration: multi-root picker on a diagnostic case --- #
-# These tests need the diagnostic/scan dataset and a built liborbfit.so.
-# They skip gracefully when either is missing.
+# These tests run the C++ fitter (via the gauss IOD path) against the
+# in-repo diagnostic-scan truth set shipped in tests/data/bk_scan_truth.json
+# (see _bk_guards). They skip when the truth set or the ASSIST ephemeris
+# is missing, rather than depending on a dataset outside the repo.
 
-DIAGNOSTIC_SCAN = Path(__file__).resolve().parent.parent.parent.parent / "diagnostic" / "scan" / "truth"
-CACHE = os.path.expanduser("~/Library/Caches/layup")
-
-
-def _have_truth(name: str) -> bool:
-    return (DIAGNOSTIC_SCAN / f"{name}.json").exists()
+CACHE = str(EPHEM_CACHE)
 
 
 def _build_obs(name: str):
-    truth = json.loads((DIAGNOSTIC_SCAN / f"{name}.json").read_text())
+    truth = load_diagnostic_case(name)
     sigma_rad = float(truth["sigma_arcsec"]) / 206265.0
     obs = []
     for r in truth["observations"]:
@@ -212,9 +212,8 @@ def _build_obs(name: str):
     return obs, truth
 
 
-@pytest.mark.skipif(
-    not _have_truth("classical_42AU_arc_010.00d"), reason="diagnostic/scan dataset not present"
-)
+@requires_ephem
+@requires_diagnostic
 def test_picker_converges_on_distant_kbo():
     """A 42 AU KBO should yield a converged Cartesian fit at small r-error."""
     obs, _ = _build_obs("classical_42AU_arc_010.00d")
@@ -225,9 +224,8 @@ def test_picker_converges_on_distant_kbo():
     assert 40.0 < r < 44.0, f"unexpected fit r={r}"
 
 
-@pytest.mark.skipif(
-    not _have_truth("mainbelt_2.5AU_arc_007.00d"), reason="diagnostic/scan dataset not present"
-)
+@requires_ephem
+@requires_diagnostic
 def test_picker_handles_mainbelt():
     """A 2.5 AU mainbelt should also converge under the picker."""
     obs, _ = _build_obs("mainbelt_2.5AU_arc_007.00d")
@@ -238,9 +236,8 @@ def test_picker_handles_mainbelt():
     assert 2.0 < r < 3.0, f"unexpected fit r={r}"
 
 
-@pytest.mark.skipif(
-    not _have_truth("classical_42AU_arc_010.00d"), reason="diagnostic/scan dataset not present"
-)
+@requires_ephem
+@requires_diagnostic
 def test_screen_iter_max_param_is_honored():
     """Passing a tiny screen_iter_max budget makes the LM step count drop.
 
