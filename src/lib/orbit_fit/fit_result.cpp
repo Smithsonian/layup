@@ -22,6 +22,14 @@ namespace orbit_fit
         int niter;                     // Number of iterations
         std::string method;            // Method used for fitting
         int flag;                      // Flag indicating the success of the fit
+        // Non-gravitational A2 (transverse Marsden term, au/day^2). Used both as
+        // a seed (when fitting non-gravs) and as the fitted result. fit_a2 marks
+        // whether A2 was a fitted parameter; a2_unc is its 1-sigma formal
+        // uncertainty (sqrt of the A2 diagonal of the joint 7x7 covariance).
+        // Default-zero, so the 6-parameter path is unchanged.
+        bool fit_a2 = false;
+        double a2 = 0.0;
+        double a2_unc = 0.0;
     } FitResult;
 
     static void orbit_fit_result_bindings(py::module &m)
@@ -36,7 +44,10 @@ namespace orbit_fit
             .def_readwrite("cov", &orbit_fit::FitResult::cov, "Covariance matrix")
             .def_readwrite("niter", &orbit_fit::FitResult::niter, "Number of iterations")
             .def_readwrite("method", &orbit_fit::FitResult::method, "Method used for fitting")
-            .def_readwrite("flag", &orbit_fit::FitResult::flag, "Flag indicating the success of the fit");
+            .def_readwrite("flag", &orbit_fit::FitResult::flag, "Flag indicating the success of the fit")
+            .def_readwrite("fit_a2", &orbit_fit::FitResult::fit_a2, "Whether the non-grav A2 was fitted")
+            .def_readwrite("a2", &orbit_fit::FitResult::a2, "Non-grav A2 transverse term (au/day^2)")
+            .def_readwrite("a2_unc", &orbit_fit::FitResult::a2_unc, "1-sigma uncertainty on A2 (au/day^2)");
     }
 
 } // namespace orbit_fit

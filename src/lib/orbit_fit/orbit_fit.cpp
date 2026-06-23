@@ -234,8 +234,15 @@ namespace orbit_fit
                                   int var,
                                   Observation this_det,
                                   residuals &resid,
-                                  partials &parts)
+                                  partials &parts,
+                                  int npar = 6)
     {
+        // npar is the number of fitted parameters: 6 (state) or 6+N when fitting
+        // non-gravitational parameters. The extra variational particles for those
+        // params are contiguous after the 6 state ones (var+6, var+7, ...; see
+        // add_variational_particles / issue #351), so every partial loop below
+        // simply runs to npar and reads var+i uniformly -- ASSIST drives the param
+        // particles via particle_params while the state ones use their seeds.
 
         // Takes a detection/observation and
         // a simulation as arguments.
@@ -293,10 +300,10 @@ namespace orbit_fit
         // 6. Calculate the partial deriviatives of the model
         //    observations with respect to the initial conditions
 
-        double dxk[6], dyk[6], dzk[6];
-        double drho_x[6], drho_y[6], drho_z[6];
+        double dxk[7], dyk[7], dzk[7];
+        double drho_x[7], drho_y[7], drho_z[7];
 
-        for (size_t i = 0; i < 6; i++)
+        for (int i = 0; i < npar; i++)
         {
             size_t vn = var + i;
             dxk[i] = r->particles[vn].x;
@@ -306,10 +313,10 @@ namespace orbit_fit
 
         double invd = 1. / rho;
 
-        double ddist[6];
-        double dx_resid[6];
-        double dy_resid[6];
-        for (size_t i = 0; i < 6; i++)
+        double ddist[7];
+        double dx_resid[7];
+        double dy_resid[7];
+        for (int i = 0; i < npar; i++)
         {
 
             // Derivative of topocentric distance w.r.t. parameters
@@ -326,11 +333,11 @@ namespace orbit_fit
         // Likewise, put the partials into a struct so that they can be more easily
         // managed.
 
-        for (size_t i = 0; i < 6; i++)
+        for (int i = 0; i < npar; i++)
         {
             parts.x_partials.push_back(dx_resid[i]);
         }
-        for (size_t i = 0; i < 6; i++)
+        for (int i = 0; i < npar; i++)
         {
             parts.y_partials.push_back(dy_resid[i]);
         }
@@ -391,7 +398,7 @@ namespace orbit_fit
                                -(q * Dz + pD * vrz + (sD - 3 * pD * q) * rho_z) * invd2};
             double dRdvD[3] = {(Dx - pD * rho_x) * invd, (Dy - pD * rho_y) * invd, (Dz - pD * rho_z) * invd};
 
-            for (size_t i = 0; i < 6; i++)
+            for (int i = 0; i < npar; i++)
             {
                 size_t vn = var + i;
                 // d r_obj/d param_i: variational position + light-time shift of
@@ -431,7 +438,8 @@ namespace orbit_fit
                                     std::vector<residuals> &resid_vec,
                                     std::vector<partials> &partials_vec,
                                     std::vector<size_t> &in_seq,
-                                    std::vector<size_t> &out_seq)
+                                    std::vector<size_t> &out_seq,
+                                    bool fit_a2 = false, double a2 = 0.0)
     {
 
         // Pass in this simulation stuff to keep it flexible
@@ -446,9 +454,34 @@ namespace orbit_fit
         // 1. Add the main particle to the REBOUND simulation.
         reb_simulation_add(r, p0);
 
-        // 2. incorporate the variational particles
+        // 2. incorporate the variational particles. When fitting the non-grav A2
+        //    we add one extra (zero-seed) variational particle for d(state)/dA2.
+        int npar = fit_a2 ? 7 : 6;
         int var;
-        add_variational_particles(r, 0, &var);
+        add_variational_particles(r, 0, &var, fit_a2 ? 1 : 0);
+
+        // 2b. Non-gravitational A2 setup (issue #351). Enable the Marsden non-grav
+        //     force with the standard 1/r^2 g(r), set the asteroid's A2, and point
+        //     the A2 variational particle's parameter direction (dA2 = 1) via
+        //     particle_params. ASSIST then integrates d(state)/dA2 into that var
+        //     particle. particle_params is laid out as 3*(N_real + N_var): the
+        //     first triple is the real particle's [A1,A2,A3]; the triple for
+        //     variational particle v is its [dA1,dA2,dA3]. NB: ASSIST skips the
+        //     whole non-grav block (incl. its variational source) when A1=A2=A3=0,
+        //     so the caller seeds A2 with a tiny nonzero value to keep the column
+        //     non-degenerate. The pp buffer must outlive the integrations below.
+        std::vector<double> pp;
+        if (fit_a2)
+        {
+            ax->forces = (enum ASSIST_FORCES)(ax->forces | ASSIST_FORCE_NON_GRAVITATIONAL);
+            ax->alpha = 1.0; ax->nm = 2.0; ax->nk = 0.0; ax->nn = 1.0; ax->r0 = 1.0; // g(r) = (r/r0)^-2
+            int nreal = 1;
+            int nvar = npar; // 6 state + 1 A2
+            pp.assign(3 * (nreal + nvar), 0.0);
+            pp[1] = a2;                       // real particle A2
+            pp[3 * (nreal + 6) + 1] = 1.0;    // A2 var particle (7th var): dA2 = 1
+            ax->particle_params = pp.data();
+        }
 
         // 3. iterate over a sequence of detections.
         for (size_t i = 0; i < in_seq.size(); ++i)
@@ -463,7 +496,8 @@ namespace orbit_fit
             compute_single_residuals(ephem, ax, var,
                                      this_det,
                                      resids,
-                                     parts);
+                                     parts,
+                                     npar);
             resid_vec[k] = resids;
             partials_vec[k] = parts;
         }
@@ -482,7 +516,8 @@ namespace orbit_fit
                            std::vector<size_t> &forward_in_seq,
                            std::vector<size_t> &forward_out_seq,
                            std::vector<size_t> &reverse_in_seq,
-                           std::vector<size_t> &reverse_out_seq)
+                           std::vector<size_t> &reverse_out_seq,
+                           bool fit_a2 = false, double a2 = 0.0)
     {
 
         compute_residuals_sequence(ephem, p0, epoch,
@@ -490,14 +525,16 @@ namespace orbit_fit
                                    resid_vec,
                                    partials_vec,
                                    forward_in_seq,
-                                   forward_out_seq);
+                                   forward_out_seq,
+                                   fit_a2, a2);
 
         compute_residuals_sequence(ephem, p0, epoch,
                                    detections,
                                    resid_vec,
                                    partials_vec,
                                    reverse_in_seq,
-                                   reverse_out_seq);
+                                   reverse_out_seq,
+                                   fit_a2, a2);
     }
 
     // Consider having this accept Eigen matrices as
@@ -508,13 +545,14 @@ namespace orbit_fit
                     Eigen::MatrixXd &dX,
                     Eigen::MatrixXd &C,
                     Eigen::MatrixXd &chi2,
-                    Eigen::Matrix<double, 6, 1> &grad,
-                    double lambda)
+                    Eigen::MatrixXd &grad,
+                    double lambda,
+                    int npar = 6)
     {
 
         const int mlength = (int)partials_vec.size();
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> B;
-        Eigen::MatrixXd eye = MatrixXd::Identity(6, 6);
+        Eigen::MatrixXd eye = MatrixXd::Identity(npar, npar);
 
         // Each observation contributes n_resid rows (2 for astrometry, 4 for a
         // streak: ra/dec position + ra/dec rate). Lay them out with a per-obs
@@ -527,12 +565,12 @@ namespace orbit_fit
             total_rows += partials_vec[i].n_resid;
         }
 
-        B.resize(total_rows, 6);
+        B.resize(total_rows, npar);
         Eigen::MatrixXd resid_v(total_rows, 1);
         for (size_t i = 0; i < partials_vec.size(); i++)
         {
             const int r0 = row_off[i];
-            for (size_t j = 0; j < 6; j++)
+            for (int j = 0; j < npar; j++)
             {
                 B(r0, j) = partials_vec[i].x_partials[j];
                 B(r0 + 1, j) = partials_vec[i].y_partials[j];
@@ -542,7 +580,7 @@ namespace orbit_fit
 
             if (partials_vec[i].n_resid == 4)
             {
-                for (size_t j = 0; j < 6; j++)
+                for (int j = 0; j < npar; j++)
                 {
                     B(r0 + 2, j) = partials_vec[i].ra_rate_partials[j];
                     B(r0 + 3, j) = partials_vec[i].dec_rate_partials[j];
@@ -714,8 +752,20 @@ namespace orbit_fit
                   double &chi2_final,                    // result
                   Eigen::MatrixXd &cov,
                   double eps, // constant
-                  size_t iter_max)
+                  size_t iter_max,
+                  bool fit_a2 = false,   // also fit the non-grav A2 (issue #351)
+                  double *a2io = nullptr) // A2 seed in / fitted A2 out
     { // runtime
+
+        // Number of fitted parameters: 6 (state) or 7 (state + A2). ASSIST skips
+        // the non-grav block when A2 == 0, which would zero the A2 column; seed a
+        // tiny nonzero value so the column is non-degenerate (the partial itself
+        // is independent of A2's magnitude, and 1e-15 au/day^2 is dynamically
+        // negligible).
+        int npar = fit_a2 ? 7 : 6;
+        double a2 = (fit_a2 && a2io) ? *a2io : 0.0;
+        if (fit_a2 && a2 == 0.0)
+            a2 = 1e-15;
 
         std::vector<size_t> reverse_in_seq;
         std::vector<size_t> reverse_out_seq;
@@ -758,10 +808,11 @@ namespace orbit_fit
                               forward_in_seq,
                               forward_out_seq,
                               reverse_in_seq,
-                              reverse_out_seq);
+                              reverse_out_seq,
+                              fit_a2, a2);
 
-            Eigen::Matrix<double, 6, 1> grad;
-            compute_dX(resid_vec, partials_vec, W, dX, C, chi2, grad, lambda);
+            Eigen::MatrixXd grad;
+            compute_dX(resid_vec, partials_vec, W, dX, C, chi2, grad, lambda, npar);
 
             double chi2_d = chi2(0, 0);
 
@@ -792,6 +843,8 @@ namespace orbit_fit
                 p0.vx += dX(3);
                 p0.vy += dX(4);
                 p0.vz += dX(5);
+                if (fit_a2)
+                    a2 += dX(6);
                 chi2_prev = chi2_d;
             }
             else
@@ -805,7 +858,7 @@ namespace orbit_fit
                 lambda *= 2.0;
             }
 
-            size_t ndof = total_residual_rows(detections) - 6;
+            size_t ndof = total_residual_rows(detections) - npar;
             double thresh = 10;
             int cflag = converged(dX, eps, chi2_d, ndof, thresh);
             if (cflag)
@@ -816,7 +869,7 @@ namespace orbit_fit
             }
         }
 
-        size_t ndof = total_residual_rows(detections) - 6;
+        size_t ndof = total_residual_rows(detections) - npar;
         double thresh = 10.0;
         if ((chi2_final / ndof) > thresh)
         {
@@ -824,6 +877,11 @@ namespace orbit_fit
         }
 
         cov = C.inverse();
+
+        // Report the fitted A2 back to the caller. cov is the joint npar x npar
+        // covariance; the caller reads cov(6,6) for the A2 uncertainty.
+        if (fit_a2 && a2io)
+            *a2io = a2;
 
         return flag;
     }
@@ -919,7 +977,8 @@ namespace orbit_fit
     FitResult run_from_vector_with_initial_guess(struct assist_ephem *ephem,
                                                   FitResult initial_guess,
                                                   std::vector<Observation> &detections,
-                                                  size_t iter_max = 100)
+                                                  size_t iter_max = 100,
+                                                  bool fit_a2 = false)
     {
         int success = 1;
         size_t iters;
@@ -944,6 +1003,9 @@ namespace orbit_fit
         p1.vz = initial_guess.state[5];
         double epoch = initial_guess.epoch;
 
+        // Seed A2 from the initial guess when fitting it (issue #351).
+        double a2 = fit_a2 ? initial_guess.a2 : 0.0;
+
         flag = orbit_fit(
             ephem,
             p1,
@@ -955,9 +1017,12 @@ namespace orbit_fit
             chi2_final,
             cov,
             eps,
-            iter_max);
+            iter_max,
+            fit_a2,
+            &a2);
 
-        dof = total_residual_rows(detections) - 6;
+        int npar = fit_a2 ? 7 : 6;
+        dof = total_residual_rows(detections) - npar;
 
         FitResult result;
 	
@@ -976,7 +1041,9 @@ namespace orbit_fit
         result.state[5] = p1.vz;
 
 	if (flag == 0) {
-            // Populate our covariance matrix
+            // Populate our covariance matrix (the 6x6 state block; for a joint
+            // state+A2 fit this is the marginal state covariance, the top-left
+            // block of the 7x7 inverse).
             for (int i = 0; i < 6; i++)
             {
                 for (int j = 0; j < 6; j++)
@@ -985,6 +1052,15 @@ namespace orbit_fit
                     result.cov[(i * 6) + j] = cov(i, j);
                 }
             }
+        }
+
+        // Non-grav A2 result (issue #351): fitted value + 1-sigma from the A2
+        // diagonal of the joint covariance.
+        result.fit_a2 = fit_a2;
+        if (fit_a2)
+        {
+            result.a2 = a2;
+            result.a2_unc = (flag == 0 && cov.rows() >= 7) ? std::sqrt(cov(6, 6)) : NAN;
         }
 
 	return result;
@@ -1015,6 +1091,7 @@ namespace orbit_fit
               &orbit_fit::run_from_vector_with_initial_guess,
               py::arg("ephem"), py::arg("initial_guess"),
               py::arg("detections"), py::arg("iter_max") = 100,
+              py::arg("fit_a2") = false,
               R"pbdoc(
                 Takes an assist_ephem object, a vector of observations, an
                 initial guess, and (optionally) a cap on LM iterations
