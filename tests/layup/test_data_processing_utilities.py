@@ -640,6 +640,136 @@ def test_moving_observatory_barycentric_position():
     np.testing.assert_allclose(offset_km, geocentric_km, atol=1.0)
 
 
+def test_obs_vel_to_km_s_units():
+    """Pin the ADES OBS_VEL unit convention used by issue #147: ICRF_KM is km/s
+    (unchanged) and ICRF_AU is au/day -> km/s."""
+    vel = np.array([1.0, -2.0, 0.5])
+    assert_array_equal(LayupObservatory._obs_vel_to_km_s(vel, "ICRF_KM"), vel)
+    np.testing.assert_allclose(
+        LayupObservatory._obs_vel_to_km_s(vel, "ICRF_AU"), vel * AU_KM / (24 * 60 * 60)
+    )
+
+
+def test_moving_observatory_velocity_uses_user_value():
+    """When ADES vel1/vel2/vel3 are supplied for a moving observer, the barycentric
+    velocity is Earth's barycentric velocity plus the geocentric observer velocity
+    (issue #147), not Earth's velocity alone."""
+    observatory = LayupObservatory()
+    et = spice.str2et("2003-01-26T00:24:24.480Z")
+    geocentric_km = np.array([-6905.9, -673.9, -353.1])
+    # An LEO-like geocentric velocity (km/s, ICRF), |v| ~ 7.6 km/s.
+    geocentric_vel_km_s = np.array([0.73, -5.41, -5.30])
+    row = np.array(
+        [("250", et, "ICRF_KM", 399, *geocentric_km, *geocentric_vel_km_s)],
+        dtype=[
+            ("stn", "U4"),
+            ("et", "<f8"),
+            ("sys", "U7"),
+            ("ctr", "i4"),
+            ("pos1", "<f8"),
+            ("pos2", "<f8"),
+            ("pos3", "<f8"),
+            ("vel1", "<f8"),
+            ("vel2", "<f8"),
+            ("vel3", "<f8"),
+        ],
+    )
+
+    bary = np.atleast_1d(observatory.obscodes_to_barycentric(row))
+    # obscodes_to_barycentric returns velocity in AU/day; convert back to km/s.
+    obs_vel_km_s = np.array([bary["vx"][0], bary["vy"][0], bary["vz"][0]]) * AU_KM / (24 * 60 * 60)
+
+    earth_state, _ = spice.spkezr("EARTH", et, "J2000", "NONE", "SSB")
+    earth_vel_km_s = np.array(earth_state[3:6])
+
+    np.testing.assert_allclose(obs_vel_km_s - earth_vel_km_s, geocentric_vel_km_s, atol=1e-6)
+
+
+def test_moving_observatory_velocity_icrf_au_units():
+    """An ICRF_AU observer velocity (au/day) yields the same barycentric velocity
+    as the equivalent ICRF_KM (km/s) input -- guards the #147 unit conversion
+    end-to-end."""
+    observatory = LayupObservatory()
+    et = spice.str2et("2003-01-26T00:24:24.480Z")
+    geocentric_km = np.array([-6905.9, -673.9, -353.1])
+    geocentric_vel_km_s = np.array([0.73, -5.41, -5.30])
+    # Same physical state expressed in AU and AU/day.
+    pos_au = geocentric_km / AU_KM
+    vel_au_day = geocentric_vel_km_s * (24 * 60 * 60) / AU_KM
+    row = np.array(
+        [("250", et, "ICRF_AU", 399, *pos_au, *vel_au_day)],
+        dtype=[
+            ("stn", "U4"),
+            ("et", "<f8"),
+            ("sys", "U7"),
+            ("ctr", "i4"),
+            ("pos1", "<f8"),
+            ("pos2", "<f8"),
+            ("pos3", "<f8"),
+            ("vel1", "<f8"),
+            ("vel2", "<f8"),
+            ("vel3", "<f8"),
+        ],
+    )
+
+    bary = np.atleast_1d(observatory.obscodes_to_barycentric(row))
+    obs_vel_km_s = np.array([bary["vx"][0], bary["vy"][0], bary["vz"][0]]) * AU_KM / (24 * 60 * 60)
+
+    earth_state, _ = spice.spkezr("EARTH", et, "J2000", "NONE", "SSB")
+    np.testing.assert_allclose(obs_vel_km_s - np.array(earth_state[3:6]), geocentric_vel_km_s, atol=1e-6)
+
+
+def test_moving_observatory_velocity_absent_falls_back_to_earth():
+    """Without ADES velocity columns, a moving observer's barycentric velocity
+    falls back to Earth's barycentric velocity (the pre-#147 behavior)."""
+    observatory = LayupObservatory()
+    et = spice.str2et("2003-01-26T00:24:24.480Z")
+    geocentric_km = np.array([-6905.9, -673.9, -353.1])
+    row = np.array(
+        [("250", et, "ICRF_KM", 399, *geocentric_km)],
+        dtype=[
+            ("stn", "U4"),
+            ("et", "<f8"),
+            ("sys", "U7"),
+            ("ctr", "i4"),
+            ("pos1", "<f8"),
+            ("pos2", "<f8"),
+            ("pos3", "<f8"),
+        ],
+    )
+
+    bary = np.atleast_1d(observatory.obscodes_to_barycentric(row))
+    obs_vel_km_s = np.array([bary["vx"][0], bary["vy"][0], bary["vz"][0]]) * AU_KM / (24 * 60 * 60)
+
+    earth_state, _ = spice.spkezr("EARTH", et, "J2000", "NONE", "SSB")
+    np.testing.assert_allclose(obs_vel_km_s, np.array(earth_state[3:6]), atol=1e-6)
+
+
+def test_observatory_velocity_inconsistent_at_same_epoch_raises():
+    """Two different velocities for the same moving observer at the same epoch is
+    an error, mirroring the existing position-consistency check."""
+    observatory = LayupObservatory()
+    et = spice.str2et("2003-01-26T00:24:24.480Z")
+    dtype = [
+        ("stn", "U4"),
+        ("et", "<f8"),
+        ("sys", "U7"),
+        ("ctr", "i4"),
+        ("pos1", "<f8"),
+        ("pos2", "<f8"),
+        ("pos3", "<f8"),
+        ("vel1", "<f8"),
+        ("vel2", "<f8"),
+        ("vel3", "<f8"),
+    ]
+    row1 = np.array([("250", et, "ICRF_KM", 399, 1000.0, 0.0, 0.0, 1.0, 0.0, 0.0)], dtype=dtype)[0]
+    row2 = np.array([("250", et, "ICRF_KM", 399, 1000.0, 0.0, 0.0, 2.0, 0.0, 0.0)], dtype=dtype)[0]
+
+    observatory.populate_observatory("250", et, row1)
+    with pytest.raises(ValueError):
+        observatory.populate_observatory("250", et, row2)
+
+
 def test_skyplane_cov_to_radec_cov():
     """The sky-plane covariance is already an on-sky (great-circle) covariance,
     so the error ellipse is the eigen-decomposition of the 2x2 matrix with no

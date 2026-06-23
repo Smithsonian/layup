@@ -378,6 +378,13 @@ class LayupObservatory(SorchaObservatory):
         # A cache of barycentric positions for observatories of the form {obscode: {et: (x, y, z)}}
         self.cached_obs = {}
 
+        # Optional user-supplied geocentric observer velocities (km/s, ICRF),
+        # keyed by the same per-epoch cache key as ObservatoryXYZ (issue #147).
+        # Empty unless ADES vel1/vel2/vel3 columns are provided for a moving
+        # observer; _barycentric_moving_observatory falls back to Earth's
+        # velocity for keys that are absent here.
+        self.ObservatoryVel = {}
+
     def convert_to_geocentric(self, obs_location: dict) -> tuple:
         """Convert an observatory's parallax constants to geocentric coordinates.
 
@@ -512,7 +519,68 @@ class LayupObservatory(SorchaObservatory):
                     )
             # Save the coordinates in the cache for the given obscode and epoch
             self.ObservatoryXYZ[obscode_cache_key] = coords
+
+            # Optionally cache a user-supplied observer velocity. ADES permits the
+            # velocity columns (vel1/vel2/vel3) only for space-based observers, so
+            # we read them here, inside the moving-observer branch, reusing the
+            # sys/ctr already validated for the position (issue #147).
+            self._populate_observatory_velocity(obscode_cache_key, data)
         return obscode_cache_key
+
+    def _populate_observatory_velocity(self, obscode_cache_key, data):
+        """Cache an optional user-supplied geocentric observer velocity (km/s).
+
+        ADES allows optional velocity columns (vel1/vel2/vel3) alongside the
+        position of a space-based observer (issue #147). They share the
+        position's reference frame (``sys``) and center (``ctr``), both already
+        validated for the position in :meth:`populate_observatory`. We convert to
+        km/s and store under the same per-epoch cache key as the position;
+        :meth:`_barycentric_moving_observatory` then adds Earth's barycentric
+        velocity to it. Velocity is optional: if the columns are absent or NaN we
+        leave the cache untouched and fall back to Earth's velocity.
+
+        Parameters
+        ----------
+        obscode_cache_key : str
+            The per-epoch cache key the position was stored under.
+        data : numpy structured array
+            The observation row (already known to be a moving observer).
+        """
+        vel_fields = ("vel1", "vel2", "vel3")
+        if not all(field in data.dtype.names for field in vel_fields):
+            return
+        vel = np.array([data["vel1"], data["vel2"], data["vel3"]], dtype=float)
+        # Velocity is optional even when the columns exist (e.g. blank/NaN rows).
+        if np.isnan(vel).any():
+            return
+
+        vel_km_s = self._obs_vel_to_km_s(vel, data["sys"])
+        if obscode_cache_key in self.ObservatoryVel and not np.allclose(
+            self.ObservatoryVel[obscode_cache_key], vel_km_s
+        ):
+            raise ValueError(
+                f"Observatory velocity reported inconsistently at the same epoch for "
+                f"cache key {obscode_cache_key}: previously "
+                f"{self.ObservatoryVel[obscode_cache_key]}, now {vel_km_s} (km/s)."
+            )
+        self.ObservatoryVel[obscode_cache_key] = vel_km_s
+
+    @staticmethod
+    def _obs_vel_to_km_s(vel, sys):
+        """Convert an ADES OBS_VEL observer velocity to km/s.
+
+        Unit convention (matches the SPICE km/s state that
+        :meth:`_barycentric_moving_observatory` uses for Earth):
+
+        * ``ICRF_KM`` -> km/s (no conversion; SPICE-native)
+        * ``ICRF_AU`` -> au/day -> km/s
+
+        ``sys`` has already been validated to one of these two values in
+        :meth:`populate_observatory`.
+        """
+        if sys == "ICRF_AU":
+            return vel * AU_KM / (24 * 60 * 60)
+        return vel
 
     def _barycentric_moving_observatory(self, et, obscode_cache_key):
         """Barycentric position and velocity (km, km/s) of a moving observatory.
@@ -529,16 +597,24 @@ class LayupObservatory(SorchaObservatory):
         barycentricObservatoryRates would apply and which would misplace the
         observatory by a factor of the Earth radius (~6378x).
 
-        The observatory's own geocentric velocity is not provided per
-        observation, so Earth's barycentric velocity is used; the satellite's
-        orbital velocity (~km/s) is a small correction that only enters through
-        aberration.
+        The observatory's own geocentric velocity is used when the user supplies
+        it via the ADES vel1/vel2/vel3 columns (cached in ObservatoryVel, km/s,
+        issue #147): the barycentric velocity is then Earth's velocity plus the
+        geocentric observer velocity, mirroring the position. When no velocity is
+        supplied we fall back to Earth's barycentric velocity alone; the
+        satellite's orbital velocity (~km/s) is then a small correction that only
+        enters through aberration.
         """
         posvel, _ = spice.spkezr("EARTH", et, "J2000", "NONE", "SSB")
         earth_pos = np.array(posvel[0:3])  # km, J2000
         earth_vel = np.array(posvel[3:6])  # km/s, J2000
         obs_geocentric = np.array(self.ObservatoryXYZ[obscode_cache_key])  # km, J2000
-        return earth_pos + obs_geocentric, earth_vel
+
+        bary_pos = earth_pos + obs_geocentric
+        obs_geocentric_vel = self.ObservatoryVel.get(obscode_cache_key)  # km/s or None
+        if obs_geocentric_vel is not None:
+            return bary_pos, earth_vel + obs_geocentric_vel
+        return bary_pos, earth_vel
 
     def obscodes_to_barycentric(self, data):
         """
