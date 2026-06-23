@@ -616,7 +616,12 @@ def universal_keplerian(mu, x, y, z, vx, vy, vz, epochMJD_TDB):
     """
     q, e, incl, longnode, argperi, tp = universal_cometary(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
     a = q / (1 - e)
-    M = (epochMJD_TDB - tp) * jnp.sqrt(mu / a**3)
+    # Mean motion n = sqrt(mu / |a|^3).  Using |a| keeps n real for hyperbolic
+    # orbits (a < 0), where M is the hyperbolic mean anomaly n*(t - tp); for
+    # elliptic orbits |a| = a so this is unchanged.  Without the abs, a < 0
+    # gives the square root of a negative number -> NaN, which propagates into
+    # the KEP covariance Jacobian (issue #288).
+    M = (epochMJD_TDB - tp) * jnp.sqrt(mu / jnp.abs(a) ** 3)
     return a, e, incl, longnode, argperi, M
 
 
@@ -705,7 +710,10 @@ def covariance_xyz_cometary(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB,
 # Note that this function is not jax compatible since it uses universal_cartesian
 def covariance_xyz_keplerian(mu, a, e, incl, longnode, argperi, M, epochMJD_TDB, covariance):
     q = a * (1 - e)
-    tp = epochMJD_TDB - M * np.sqrt(a**3 / mu)
+    # tp = epoch - M / n with mean motion n = sqrt(mu / |a|^3); the abs keeps
+    # this real for hyperbolic orbits (a < 0).  Inverse of the |a| convention
+    # in universal_keplerian (issue #288).
+    tp = epochMJD_TDB - M * np.sqrt(np.abs(a) ** 3 / mu)
     x, y, z, vx, vy, vz = universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB)
     jac = jac_keplerian_xyz(mu, x, y, z, vx, vy, vz, epochMJD_TDB)
     jac_inv = np.linalg.inv(jac)

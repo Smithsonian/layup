@@ -12,6 +12,7 @@ from layup.utilities.data_processing_utilities import (
     parse_fit_result,
     process_data,
     skyplane_cov_to_radec_cov,
+    write_fallback_obscodes,
 )
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
@@ -600,3 +601,43 @@ def test_skyplane_cov_to_radec_cov():
         assert np.isclose(a[0], np.sqrt(eigvals[1]) * rad_to_arcsec)
         assert np.isclose(b[0], np.sqrt(eigvals[0]) * rad_to_arcsec)
         assert a[0] >= b[0] > 0.0
+
+
+def test_write_fallback_obscodes():
+    """The obscodes copy bundled with layup decompresses to valid JSON that
+    sorcha's Observatory can read directly (network-outage fallback)."""
+    import json
+
+    path = write_fallback_obscodes()
+    with open(path) as f:
+        obs = json.load(f)
+    assert len(obs) > 2000
+    assert "X05" in obs and "500" in obs  # Rubin + geocenter
+
+
+def test_layup_observatory_falls_back_on_mpc_failure(monkeypatch):
+    """If the MPC obscodes download fails (e.g. server unreachable), the
+    LayupObservatory should fall back to the bundled copy instead of raising."""
+    import requests
+
+    import layup.utilities.data_processing_utilities as dpu
+
+    orig_init = dpu.SorchaObservatory.__init__
+    calls = []
+
+    def fake_init(self, args, auxconfigs, oc_file=None):
+        calls.append(oc_file)
+        if oc_file is None:
+            # Simulate the MPC download failing.
+            raise requests.exceptions.ConnectTimeout("simulated MPC outage")
+        # The fallback path supplies a local oc_file; let the real init read it.
+        orig_init(self, args, auxconfigs, oc_file=oc_file)
+
+    monkeypatch.setattr(dpu.SorchaObservatory, "__init__", fake_init)
+
+    observatory = LayupObservatory()
+
+    # First attempt (download) raised; the second used the bundled fallback.
+    assert calls[0] is None and calls[1] is not None
+    assert "X05" in observatory.ObservatoryXYZ
+    assert len(observatory.ObservatoryXYZ) > 2000
