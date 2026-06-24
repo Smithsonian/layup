@@ -46,19 +46,29 @@ _STATE = np.array(
         -3.263604704470501e-03,
     ]
 )
+# A2 (transverse) is the best-constrained term astrometrically, so a realistic
+# Apophis-scale value is recoverable; A1 (radial) and A3 (normal) are far more
+# weakly constrained by astrometry alone, so the tests use larger magnitudes
+# where a noise-free arc actually pins them -- the point is to exercise each
+# parameter's variational partial, not to claim physical magnitudes.
+_TRUE_A1 = 2.0e-12  # au/day^2, radial
 _TRUE_A2 = -5.0e-14  # au/day^2, transverse
+_TRUE_A3 = 2.0e-12  # au/day^2, normal
+# Bitmask bits (must match the C++ / orbitfit convention): A1=1, A2=2, A3=4.
+_BIT = {"A1": 1, "A2": 2, "A3": 4}
 # g(r) = (r/r0)^-2: the standard small-body 1/r^2 non-grav model. Must match the
 # C++ fitter's setup (orbit_fit.cpp).
 _GR = dict(alpha=1.0, nm=2.0, nk=0.0, nn=1.0, r0=1.0)
 _C = 2.99792458e8 * 86400.0 / 1.495978707e11  # au/day
 
 
-def _build_arc(arc_days=4 * 365.25, n=40):
+def _build_arc(arc_days=4 * 365.25, n=40, a123=(0.0, _TRUE_A2, 0.0)):
     import assist
     import rebound
 
     ephem = assist.Ephem(os.path.join(CACHE, _EPHEM[0]), os.path.join(CACHE, _EPHEM[1]))
     jr = ephem.jd_ref
+    params = np.array(a123, dtype=float)
 
     def ast_at(t_jd):
         sim = rebound.Simulation()
@@ -68,7 +78,7 @@ def _build_arc(arc_days=4 * 365.25, n=40):
         ax.forces = ["SUN", "PLANETS", "ASTEROIDS", "NON_GRAVITATIONAL", "GR_SIMPLE"]
         for k, v in _GR.items():
             setattr(ax, k, v)
-        ax.particle_params = np.array([0.0, _TRUE_A2, 0.0])
+        ax.particle_params = params
         sim.integrate(t_jd - jr)
         p = sim.particles[0]
         return np.array([p.x, p.y, p.z])
@@ -92,26 +102,28 @@ def _build_arc(arc_days=4 * 365.25, n=40):
     return obs
 
 
-def _seed(state, a2=0.0):
+def _seed(state):
     g = FitResult()
     g.state = list(state)
     g.epoch = _EPOCH
     g.flag = 0
-    g.a2 = a2
     return g
+
+
+def _perturbed_seed():
+    pert = _STATE.copy()
+    pert[:3] += 1.0e-7
+    pert[3:] += 1.0e-9
+    return _seed(pert)
 
 
 def test_a2_joint_fit_recovers_state_and_a2():
     obs = _build_arc()
     ephem = get_ephem(CACHE)
-    # Perturbed seed so the fit must converge via the partials (incl. A2).
-    pert = _STATE.copy()
-    pert[:3] += 1.0e-7
-    pert[3:] += 1.0e-9
-
-    fit = run_from_vector_with_initial_guess(ephem, _seed(pert, 0.0), obs, 100, True)
+    # mask=2 -> A2. Perturbed seed so the fit must converge via the partials.
+    fit = run_from_vector_with_initial_guess(ephem, _perturbed_seed(), obs, 100, _BIT["A2"])
     assert fit.flag == 0
-    assert fit.fit_a2 is True
+    assert fit.nongrav_mask == _BIT["A2"]
     assert fit.ndof == 2 * len(obs) - 7
 
     state = np.array(fit.state)
@@ -125,20 +137,55 @@ def test_a2_joint_fit_recovers_state_and_a2():
     assert np.isfinite(fit.a2_unc) and fit.a2_unc > 0.0
 
 
+def test_a1_joint_fit_recovers_a1():
+    """A1 (radial) recovery -- exercises the A1 variational partial (mask=1)."""
+    obs = _build_arc(a123=(_TRUE_A1, 0.0, 0.0))
+    ephem = get_ephem(CACHE)
+    fit = run_from_vector_with_initial_guess(ephem, _perturbed_seed(), obs, 100, _BIT["A1"])
+    assert fit.flag == 0
+    assert fit.nongrav_mask == _BIT["A1"]
+    assert fit.ndof == 2 * len(obs) - 7
+    assert abs(fit.a1 - _TRUE_A1) / abs(_TRUE_A1) < 1e-2, f"recovered A1 {fit.a1:.4e} vs {_TRUE_A1:.4e}"
+    assert fit.csq < 1e-5
+
+
+def test_a3_joint_fit_recovers_a3():
+    """A3 (normal) recovery -- exercises the A3 variational partial (mask=4)."""
+    obs = _build_arc(a123=(0.0, 0.0, _TRUE_A3))
+    ephem = get_ephem(CACHE)
+    fit = run_from_vector_with_initial_guess(ephem, _perturbed_seed(), obs, 100, _BIT["A3"])
+    assert fit.flag == 0
+    assert fit.nongrav_mask == _BIT["A3"]
+    assert abs(fit.a3 - _TRUE_A3) / abs(_TRUE_A3) < 1e-2, f"recovered A3 {fit.a3:.4e} vs {_TRUE_A3:.4e}"
+    assert fit.csq < 1e-5
+
+
+def test_a1a2a3_joint_fit_recovers_all_three():
+    """Fitting A1+A2+A3 together (mask=7) recovers all three from an arc that
+    carries all three -- exercises the multi-parameter packing/solve."""
+    obs = _build_arc(a123=(_TRUE_A1, _TRUE_A2, _TRUE_A3))
+    ephem = get_ephem(CACHE)
+    mask = _BIT["A1"] | _BIT["A2"] | _BIT["A3"]
+    fit = run_from_vector_with_initial_guess(ephem, _perturbed_seed(), obs, 100, mask)
+    assert fit.flag == 0
+    assert fit.nongrav_mask == mask
+    assert fit.ndof == 2 * len(obs) - 9
+    assert abs(fit.a1 - _TRUE_A1) / abs(_TRUE_A1) < 1e-2, f"A1 {fit.a1:.4e}"
+    assert abs(fit.a2 - _TRUE_A2) / abs(_TRUE_A2) < 1e-2, f"A2 {fit.a2:.4e}"
+    assert abs(fit.a3 - _TRUE_A3) / abs(_TRUE_A3) < 1e-2, f"A3 {fit.a3:.4e}"
+    assert fit.csq < 1e-5
+
+
 def test_six_param_fit_unaffected_and_biased_by_a2():
-    """fit_a2=False is the unchanged 6-parameter path; on an arc with a real A2
-    drift it cannot reach ~0 chi-square (so the 7-parameter fit is a clear
-    improvement), and it reports no fitted A2."""
+    """nongrav_mask=0 is the unchanged 6-parameter path; on an arc with a real A2
+    drift it cannot reach ~0 chi-square (so the joint fit is a clear improvement),
+    and it reports no fitted non-grav params."""
     obs = _build_arc()
     ephem = get_ephem(CACHE)
-    pert = _STATE.copy()
-    pert[:3] += 1.0e-7
-    pert[3:] += 1.0e-9
-
-    fit6 = run_from_vector_with_initial_guess(ephem, _seed(pert, 0.0), obs, 100, False)
-    fit7 = run_from_vector_with_initial_guess(ephem, _seed(pert, 0.0), obs, 100, True)
+    fit6 = run_from_vector_with_initial_guess(ephem, _perturbed_seed(), obs, 100, 0)
+    fit7 = run_from_vector_with_initial_guess(ephem, _perturbed_seed(), obs, 100, _BIT["A2"])
     assert fit6.flag == 0
-    assert fit6.fit_a2 is False
+    assert fit6.nongrav_mask == 0
     assert fit6.ndof == 2 * len(obs) - 6
     # The unmodeled A2 drift leaves the 6-parameter fit with a much larger
     # chi-square than the 7-parameter fit that absorbs it.
@@ -151,11 +198,11 @@ def test_a2_weak_constraint_guard_on_short_arc():
     returning a contaminated, over-confident solution."""
     obs = _build_arc(arc_days=10.0, n=10)  # ~10 days: A2 not separable from state
     ephem = get_ephem(CACHE)
-    fit = run_from_vector_with_initial_guess(ephem, _seed(_STATE, 0.0), obs, 100, True)
+    fit = run_from_vector_with_initial_guess(ephem, _seed(_STATE), obs, 100, _BIT["A2"])
     assert fit.flag == 6, f"expected weak-constraint flag 6, got {fit.flag}"
 
 
-def _build_arc_array(arc_days=4 * 365.0, n=36):
+def _build_arc_array(arc_days=4 * 365.0, n=36, a123=(0.0, _TRUE_A2, 0.0)):
     """The same A2 arc as a structured ra/dec array (obsTime/stn) for the
     orbitfit() driver. Truth ra/dec are generated against the driver's *own*
     obscodes_to_barycentric observer states (geocenter, code 500) so the
@@ -174,6 +221,7 @@ def _build_arc_array(arc_days=4 * 365.0, n=36):
 
     ephem = assist.Ephem(os.path.join(CACHE, _EPHEM[0]), os.path.join(CACHE, _EPHEM[1]))
     jr = ephem.jd_ref
+    params = np.array(a123, dtype=float)
 
     def ast_at(t_jd):
         sim = rebound.Simulation()
@@ -183,7 +231,7 @@ def _build_arc_array(arc_days=4 * 365.0, n=36):
         ax.forces = ["SUN", "PLANETS", "ASTEROIDS", "NON_GRAVITATIONAL", "GR_SIMPLE"]
         for k, v in _GR.items():
             setattr(ax, k, v)
-        ax.particle_params = np.array([0.0, _TRUE_A2, 0.0])
+        ax.particle_params = params
         sim.integrate(t_jd - jr)
         p = sim.particles[0]
         return np.array([p.x, p.y, p.z])
@@ -274,3 +322,18 @@ def test_orbitfit_driver_short_arc_reports_a2_nan():
     state = np.array([row["x"], row["y"], row["z"], row["xdot"], row["ydot"], row["zdot"]])
     pos_rel = np.linalg.norm(state[:3] - _STATE[:3]) / np.linalg.norm(_STATE[:3])
     assert pos_rel < 1e-6
+
+
+def test_orbitfit_driver_fits_a1a2a3():
+    """The driver accepts a multi-param spec ("A1A2A3"), adds a column pair per
+    param, and recovers all three through the full orbitfit() path."""
+    data, guess = _build_arc_array(a123=(_TRUE_A1, _TRUE_A2, _TRUE_A3))
+    fit = orbitfit(data, cache_dir=CACHE, initial_guess=guess, fit_nongrav="A1A2A3")
+    for col in ("a1", "a1_unc", "a2", "a2_unc", "a3", "a3_unc"):
+        assert col in fit.dtype.names, f"missing column {col}"
+    row = fit[0]
+    assert row["flag"] == 0
+    assert row["ndof"] == 2 * len(data) - 9
+    assert abs(row["a1"] - _TRUE_A1) / abs(_TRUE_A1) < 1e-2
+    assert abs(row["a2"] - _TRUE_A2) / abs(_TRUE_A2) < 1e-2
+    assert abs(row["a3"] - _TRUE_A3) / abs(_TRUE_A3) < 1e-2

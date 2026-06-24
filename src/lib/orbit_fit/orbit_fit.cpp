@@ -306,8 +306,9 @@ namespace orbit_fit
         // 6. Calculate the partial deriviatives of the model
         //    observations with respect to the initial conditions
 
-        double dxk[7], dyk[7], dzk[7];
-        double drho_x[7], drho_y[7], drho_z[7];
+        // Sized for the maximum parameter count: 6 state + 3 non-grav (A1,A2,A3).
+        double dxk[9], dyk[9], dzk[9];
+        double drho_x[9], drho_y[9], drho_z[9];
 
         for (int i = 0; i < npar; i++)
         {
@@ -319,9 +320,9 @@ namespace orbit_fit
 
         double invd = 1. / rho;
 
-        double ddist[7];
-        double dx_resid[7];
-        double dy_resid[7];
+        double ddist[9];
+        double dx_resid[9];
+        double dy_resid[9];
         for (int i = 0; i < npar; i++)
         {
 
@@ -445,7 +446,7 @@ namespace orbit_fit
                                     std::vector<partials> &partials_vec,
                                     std::vector<size_t> &in_seq,
                                     std::vector<size_t> &out_seq,
-                                    bool fit_a2 = false, double a2 = 0.0)
+                                    int nongrav_mask = 0, const double *a123 = nullptr)
     {
 
         // Pass in this simulation stuff to keep it flexible
@@ -460,32 +461,42 @@ namespace orbit_fit
         // 1. Add the main particle to the REBOUND simulation.
         reb_simulation_add(r, p0);
 
-        // 2. incorporate the variational particles. When fitting the non-grav A2
-        //    we add one extra (zero-seed) variational particle for d(state)/dA2.
-        int npar = fit_a2 ? 7 : 6;
+        // 2. incorporate the variational particles. When fitting non-grav params we
+        //    add one extra (zero-seed) variational particle per active parameter
+        //    for d(state)/dA_i. active[] holds the param indices (0=A1,1=A2,2=A3).
+        std::vector<int> active;
+        for (int i = 0; i < 3; i++)
+            if (nongrav_mask & (1 << i))
+                active.push_back(i);
+        int nactive = (int)active.size();
+        int npar = 6 + nactive;
         int var;
-        add_variational_particles(r, 0, &var, fit_a2 ? 1 : 0);
+        add_variational_particles(r, 0, &var, nactive);
 
-        // 2b. Non-gravitational A2 setup (issue #351). Enable the Marsden non-grav
-        //     force with the standard 1/r^2 g(r), set the asteroid's A2, and point
-        //     the A2 variational particle's parameter direction (dA2 = 1) via
-        //     particle_params. ASSIST then integrates d(state)/dA2 into that var
-        //     particle. particle_params is laid out as 3*(N_real + N_var): the
-        //     first triple is the real particle's [A1,A2,A3]; the triple for
-        //     variational particle v is its [dA1,dA2,dA3]. NB: ASSIST skips the
-        //     whole non-grav block (incl. its variational source) when A1=A2=A3=0,
-        //     so the caller seeds A2 with a tiny nonzero value to keep the column
-        //     non-degenerate. The pp buffer must outlive the integrations below.
+        // 2b. Non-gravitational setup (issue #351). Enable the Marsden non-grav
+        //     force with the standard 1/r^2 g(r), set the asteroid's [A1,A2,A3], and
+        //     point each parameter variational particle's direction (dA_i = 1) via
+        //     particle_params. ASSIST then integrates d(state)/dA_i into that var
+        //     particle. particle_params is laid out as 3*(N_real + N_var): the first
+        //     triple is the real particle's [A1,A2,A3]; the triple for variational
+        //     particle v is its [dA1,dA2,dA3]. NB: ASSIST skips the whole non-grav
+        //     block (incl. its variational source) when A1=A2=A3=0, so the caller
+        //     seeds the active params with a tiny nonzero value to keep their
+        //     columns non-degenerate. The pp buffer must outlive the integrations.
         std::vector<double> pp;
-        if (fit_a2)
+        if (nactive > 0)
         {
             ax->forces = (enum ASSIST_FORCES)(ax->forces | ASSIST_FORCE_NON_GRAVITATIONAL);
             ax->alpha = 1.0; ax->nm = 2.0; ax->nk = 0.0; ax->nn = 1.0; ax->r0 = 1.0; // g(r) = (r/r0)^-2
             int nreal = 1;
-            int nvar = npar; // 6 state + 1 A2
+            int nvar = npar; // 6 state + nactive param particles
             pp.assign(3 * (nreal + nvar), 0.0);
-            pp[1] = a2;                       // real particle A2
-            pp[3 * (nreal + 6) + 1] = 1.0;    // A2 var particle (7th var): dA2 = 1
+            if (a123)
+                for (int i = 0; i < 3; i++)
+                    pp[i] = a123[i]; // real particle [A1,A2,A3]
+            for (int k = 0; k < nactive; k++)
+                // k-th param var particle (var particle index 6+k) tracks active[k]
+                pp[3 * (nreal + 6 + k) + active[k]] = 1.0;
             ax->particle_params = pp.data();
         }
 
@@ -523,7 +534,7 @@ namespace orbit_fit
                            std::vector<size_t> &forward_out_seq,
                            std::vector<size_t> &reverse_in_seq,
                            std::vector<size_t> &reverse_out_seq,
-                           bool fit_a2 = false, double a2 = 0.0)
+                           int nongrav_mask = 0, const double *a123 = nullptr)
     {
 
         compute_residuals_sequence(ephem, p0, epoch,
@@ -532,7 +543,7 @@ namespace orbit_fit
                                    partials_vec,
                                    forward_in_seq,
                                    forward_out_seq,
-                                   fit_a2, a2);
+                                   nongrav_mask, a123);
 
         compute_residuals_sequence(ephem, p0, epoch,
                                    detections,
@@ -540,7 +551,7 @@ namespace orbit_fit
                                    partials_vec,
                                    reverse_in_seq,
                                    reverse_out_seq,
-                                   fit_a2, a2);
+                                   nongrav_mask, a123);
     }
 
     // Consider having this accept Eigen matrices as
@@ -759,19 +770,29 @@ namespace orbit_fit
                   Eigen::MatrixXd &cov,
                   double eps, // constant
                   size_t iter_max,
-                  bool fit_a2 = false,   // also fit the non-grav A2 (issue #351)
-                  double *a2io = nullptr) // A2 seed in / fitted A2 out
+                  int nongrav_mask = 0,    // bitmask of non-grav params to fit (1=A1,2=A2,4=A3)
+                  double *a123io = nullptr) // [A1,A2,A3] seed in / fitted out (3 doubles)
     { // runtime
 
-        // Number of fitted parameters: 6 (state) or 7 (state + A2). ASSIST skips
-        // the non-grav block when A2 == 0, which would zero the A2 column; seed a
-        // tiny nonzero value so the column is non-degenerate (the partial itself
-        // is independent of A2's magnitude, and 1e-15 au/day^2 is dynamically
-        // negligible).
-        int npar = fit_a2 ? 7 : 6;
-        double a2 = (fit_a2 && a2io) ? *a2io : 0.0;
-        if (fit_a2 && a2 == 0.0)
-            a2 = 1e-15;
+        // Number of fitted parameters: 6 (state) + one per active non-grav param.
+        // active[] holds the param indices (0=A1,1=A2,2=A3) in column order. ASSIST
+        // skips the non-grav block when A1=A2=A3=0, which would zero the param
+        // columns; seed each active param with a tiny nonzero value so its column
+        // is non-degenerate (the partial is independent of the param's magnitude,
+        // and 1e-15 au/day^2 is dynamically negligible).
+        std::vector<int> active;
+        for (int i = 0; i < 3; i++)
+            if (nongrav_mask & (1 << i))
+                active.push_back(i);
+        int nactive = (int)active.size();
+        int npar = 6 + nactive;
+        double a123[3] = {0.0, 0.0, 0.0};
+        if (a123io)
+            for (int i = 0; i < 3; i++)
+                a123[i] = a123io[i];
+        for (int k = 0; k < nactive; k++)
+            if (a123[active[k]] == 0.0)
+                a123[active[k]] = 1e-15;
 
         std::vector<size_t> reverse_in_seq;
         std::vector<size_t> reverse_out_seq;
@@ -815,7 +836,7 @@ namespace orbit_fit
                               forward_out_seq,
                               reverse_in_seq,
                               reverse_out_seq,
-                              fit_a2, a2);
+                              nongrav_mask, a123);
 
             Eigen::MatrixXd grad;
             compute_dX(resid_vec, partials_vec, W, dX, C, chi2, grad, lambda, npar);
@@ -849,8 +870,8 @@ namespace orbit_fit
                 p0.vx += dX(3);
                 p0.vy += dX(4);
                 p0.vz += dX(5);
-                if (fit_a2)
-                    a2 += dX(6);
+                for (int k = 0; k < nactive; k++)
+                    a123[active[k]] += dX(6 + k);
                 chi2_prev = chi2_d;
             }
             else
@@ -885,15 +906,15 @@ namespace orbit_fit
         cov = C.inverse();
 
         // Weak-constraint guard for the non-grav fit (issue #351). On a short arc
-        // the A2 column becomes nearly collinear with the state directions, so the
-        // joint solve yields a garbage A2 and a contaminated state. Detect this via
-        // the conditioning of the CORRELATION matrix of the normal matrix C -- the
-        // raw rcond(C) is useless here because C mixes AU and AU/day^2 scales, but
-        // the correlation matrix (C normalized by its diagonal) is unit-invariant
-        // and measures genuine collinearity. If it is near-singular, mark the fit
-        // weakly constrained (flag = 6) so the driver falls back to the
-        // 6-parameter solution and reports A2 as NaN.
-        if (fit_a2 && flag == 0)
+        // a non-grav column becomes nearly collinear with the state directions, so
+        // the joint solve yields garbage params and a contaminated state. Detect
+        // this via the conditioning of the CORRELATION matrix of the normal matrix
+        // C -- the raw rcond(C) is useless here because C mixes AU and AU/day^2
+        // scales, but the correlation matrix (C normalized by its diagonal) is
+        // unit-invariant and measures genuine collinearity. If it is near-singular,
+        // mark the fit weakly constrained (flag = 6) so the driver falls back to
+        // the 6-parameter solution and reports the non-grav params as NaN.
+        if (nactive > 0 && flag == 0)
         {
             Eigen::VectorXd diag = C.diagonal();
             if ((diag.array() > 0.0).all())
@@ -912,10 +933,12 @@ namespace orbit_fit
             }
         }
 
-        // Report the fitted A2 back to the caller. cov is the joint npar x npar
-        // covariance; the caller reads cov(6,6) for the A2 uncertainty.
-        if (fit_a2 && a2io)
-            *a2io = a2;
+        // Report the fitted non-grav params back to the caller. cov is the joint
+        // npar x npar covariance; the caller reads its non-grav diagonal entries
+        // for the parameter uncertainties.
+        if (nactive > 0 && a123io)
+            for (int i = 0; i < 3; i++)
+                a123io[i] = a123[i];
 
         return flag;
     }
@@ -1012,7 +1035,7 @@ namespace orbit_fit
                                                   FitResult initial_guess,
                                                   std::vector<Observation> &detections,
                                                   size_t iter_max = 100,
-                                                  bool fit_a2 = false)
+                                                  int nongrav_mask = 0)
     {
         int success = 1;
         size_t iters;
@@ -1037,8 +1060,8 @@ namespace orbit_fit
         p1.vz = initial_guess.state[5];
         double epoch = initial_guess.epoch;
 
-        // Seed A2 from the initial guess when fitting it (issue #351).
-        double a2 = fit_a2 ? initial_guess.a2 : 0.0;
+        // Seed [A1,A2,A3] from the initial guess for the params being fit (#351).
+        double a123[3] = {initial_guess.a1, initial_guess.a2, initial_guess.a3};
 
         flag = orbit_fit(
             ephem,
@@ -1052,10 +1075,18 @@ namespace orbit_fit
             cov,
             eps,
             iter_max,
-            fit_a2,
-            &a2);
+            nongrav_mask,
+            a123);
 
-        int npar = fit_a2 ? 7 : 6;
+        int nactive = 0;
+        std::vector<int> active;
+        for (int i = 0; i < 3; i++)
+            if (nongrav_mask & (1 << i))
+            {
+                active.push_back(i);
+                nactive++;
+            }
+        int npar = 6 + nactive;
         dof = total_residual_rows(detections) - npar;
 
         FitResult result;
@@ -1088,14 +1119,17 @@ namespace orbit_fit
             }
         }
 
-        // Non-grav A2 result (issue #351): fitted value + 1-sigma from the A2
-        // diagonal of the joint covariance.
-        result.fit_a2 = fit_a2;
-        if (fit_a2)
-        {
-            result.a2 = a2;
-            result.a2_unc = (flag == 0 && cov.rows() >= 7) ? std::sqrt(cov(6, 6)) : NAN;
-        }
+        // Non-grav results (issue #351): fitted values + 1-sigma uncertainties
+        // from the corresponding diagonal entries of the joint covariance. Active
+        // params are column 6+k for the k-th active param; inactive stay at zero.
+        result.nongrav_mask = nongrav_mask;
+        result.a1 = a123[0];
+        result.a2 = a123[1];
+        result.a3 = a123[2];
+        double *unc[3] = {&result.a1_unc, &result.a2_unc, &result.a3_unc};
+        for (int k = 0; k < nactive; k++)
+            *unc[active[k]] =
+                (flag == 0 && cov.rows() >= npar) ? std::sqrt(cov(6 + k, 6 + k)) : NAN;
 
 	return result;
 
@@ -1125,7 +1159,7 @@ namespace orbit_fit
               &orbit_fit::run_from_vector_with_initial_guess,
               py::arg("ephem"), py::arg("initial_guess"),
               py::arg("detections"), py::arg("iter_max") = 100,
-              py::arg("fit_a2") = false,
+              py::arg("nongrav_mask") = 0,
               R"pbdoc(
                 Takes an assist_ephem object, a vector of observations, an
                 initial guess, and (optionally) a cap on LM iterations
