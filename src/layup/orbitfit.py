@@ -716,9 +716,7 @@ def _orbitfit(
     # which only the Cartesian engine supports; the BK-native engine assumes a 6D
     # state. Override with a warning, mirroring the radar path.
     if fit_nongrav and engine != "cartesian":
-        logger.warning(
-            "Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine
-        )
+        logger.warning("Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine)
         engine = "cartesian"
 
     _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, fit_nongrav)
