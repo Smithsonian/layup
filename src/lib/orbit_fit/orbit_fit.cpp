@@ -117,6 +117,12 @@ namespace py = pybind11;
 
 namespace orbit_fit
 {
+    // Minimum reciprocal condition number of the normal-matrix CORRELATION matrix
+    // for a non-grav (A2) fit to be considered well constrained (issue #351).
+    // Below this the A2 column is effectively collinear with the state (typical on
+    // short arcs) and the fit is reported as weakly constrained (flag = 6).
+    static constexpr double WEAK_NONGRAV_RCOND = 1e-8;
+
     struct reb_particle read_initial_conditions(const char *ic_file_name, double *epoch)
     {
 
@@ -877,6 +883,34 @@ namespace orbit_fit
         }
 
         cov = C.inverse();
+
+        // Weak-constraint guard for the non-grav fit (issue #351). On a short arc
+        // the A2 column becomes nearly collinear with the state directions, so the
+        // joint solve yields a garbage A2 and a contaminated state. Detect this via
+        // the conditioning of the CORRELATION matrix of the normal matrix C -- the
+        // raw rcond(C) is useless here because C mixes AU and AU/day^2 scales, but
+        // the correlation matrix (C normalized by its diagonal) is unit-invariant
+        // and measures genuine collinearity. If it is near-singular, mark the fit
+        // weakly constrained (flag = 6) so the driver falls back to the
+        // 6-parameter solution and reports A2 as NaN.
+        if (fit_a2 && flag == 0)
+        {
+            Eigen::VectorXd diag = C.diagonal();
+            if ((diag.array() > 0.0).all())
+            {
+                Eigen::VectorXd s = diag.array().rsqrt(); // 1/sqrt(C_ii)
+                Eigen::MatrixXd R = s.asDiagonal() * C * s.asDiagonal();
+                Eigen::JacobiSVD<Eigen::MatrixXd> svd(R);
+                const Eigen::VectorXd &sv = svd.singularValues();
+                double rcond = sv(sv.size() - 1) / sv(0);
+                if (!(rcond >= WEAK_NONGRAV_RCOND)) // also catches NaN
+                    flag = 6;
+            }
+            else
+            {
+                flag = 6; // non-positive variance -> degenerate
+            }
+        }
 
         // Report the fitted A2 back to the caller. cov is the joint npar x npar
         // covariance; the caller reads cov(6,6) for the A2 uncertainty.

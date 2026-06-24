@@ -53,7 +53,7 @@ _GR = dict(alpha=1.0, nm=2.0, nk=0.0, nn=1.0, r0=1.0)
 _C = 2.99792458e8 * 86400.0 / 1.495978707e11  # au/day
 
 
-def _build_arc():
+def _build_arc(arc_days=4 * 365.25, n=40):
     import assist
     import rebound
 
@@ -74,7 +74,7 @@ def _build_arc():
         return np.array([p.x, p.y, p.z])
 
     obs = []
-    for dt in np.linspace(0.0, 4 * 365.25, 40):
+    for dt in np.linspace(0.0, arc_days, n):
         t_jd = _EPOCH + dt
         e = ephem.get_particle("Earth", t_jd - jr)
         r_obs = np.array([e.x, e.y, e.z])
@@ -145,7 +145,17 @@ def test_six_param_fit_unaffected_and_biased_by_a2():
     assert fit6.csq > 1e3 * fit7.csq
 
 
-def _build_arc_array():
+def test_a2_weak_constraint_guard_on_short_arc():
+    """On a short arc the A2 column is nearly collinear with the state, so the
+    joint fit is rank-deficient. The fitter must flag this (flag=6) rather than
+    returning a contaminated, over-confident solution."""
+    obs = _build_arc(arc_days=10.0, n=10)  # ~10 days: A2 not separable from state
+    ephem = get_ephem(CACHE)
+    fit = run_from_vector_with_initial_guess(ephem, _seed(_STATE, 0.0), obs, 100, True)
+    assert fit.flag == 6, f"expected weak-constraint flag 6, got {fit.flag}"
+
+
+def _build_arc_array(arc_days=4 * 365.0, n=36):
     """The same A2 arc as a structured ra/dec array (obsTime/stn) for the
     orbitfit() driver. Truth ra/dec are generated against the driver's *own*
     obscodes_to_barycentric observer states (geocenter, code 500) so the
@@ -180,7 +190,7 @@ def _build_arc_array():
 
     obstimes = [
         (datetime(2013, 1, 31) + timedelta(days=float(d))).strftime("%Y-%m-%dT%H:%M:%S")
-        for d in np.linspace(0.0, 4 * 365.0, 36)
+        for d in np.linspace(0.0, arc_days, n)
     ]
     lo = LayupObservatory(cache_dir=CACHE)
     base = np.array(
@@ -249,3 +259,18 @@ def test_orbitfit_default_schema_unchanged():
     assert "a2" not in fit.dtype.names
     assert "a2_unc" not in fit.dtype.names
     assert fit[0]["flag"] == 0
+
+
+def test_orbitfit_driver_short_arc_reports_a2_nan():
+    """Through the driver, a short arc that cannot constrain A2 falls back to the
+    6-parameter solution: flag is success, the state is still recovered, and a2 is
+    reported as NaN (not a contaminated value)."""
+    data, guess = _build_arc_array(arc_days=10.0, n=10)
+    fit = orbitfit(data, cache_dir=CACHE, initial_guess=guess, fit_nongrav=True)
+    row = fit[0]
+    assert row["flag"] == 0  # 6-parameter fallback succeeded
+    assert np.isnan(row["a2"]) and np.isnan(row["a2_unc"])
+    # The fallback state is the clean 6-parameter orbit, still near truth.
+    state = np.array([row["x"], row["y"], row["z"], row["xdot"], row["ydot"], row["zdot"]])
+    pos_rel = np.linalg.norm(state[:3] - _STATE[:3]) / np.linalg.norm(_STATE[:3])
+    assert pos_rel < 1e-6
