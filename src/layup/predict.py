@@ -16,6 +16,7 @@ from sorcha.ephemeris.simulation_driver import (
 from pandas import DataFrame, Series
 from numpy.lib.recfunctions import join_by
 
+from layup.constants import AU_KM, SPEED_OF_LIGHT
 from layup.convert import convert
 from layup.routines import Observation, get_ephem, numpy_to_eigen, predict_sequence
 from layup.utilities.data_processing_utilities import (
@@ -36,9 +37,6 @@ logger = logging.getLogger(__name__)
 
 # The list of required input column names. Note: This should not include the
 # primary id column name.
-AU_M = 149597870700
-AU_KM = AU_M / 1000.0
-SPEED_OF_LIGHT = 2.99792458e5 * 86400.0 / AU_KM
 REQUIRED_INPUT_COLUMN_NAMES = [
     "epochMJD_TDB",
     "FORMAT",

@@ -14,6 +14,7 @@ from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
 
+from layup.constants import AU_KM
 from layup.routines import FitResult
 from layup.utilities.layup_configs import LayupConfigs
 
@@ -35,9 +36,6 @@ from layup.utilities.layup_configs import LayupConfigs
 # makes every platform behave the same.  ("forkserver" would also work and is
 # cheaper, but "spawn" is the most portable and matches the macOS default.)
 _MP_CONTEXT = multiprocessing.get_context("spawn")
-
-AU_M = 149597870700
-AU_KM = AU_M / 1000.0
 
 logger = logging.getLogger(__name__)
 
