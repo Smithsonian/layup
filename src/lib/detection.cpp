@@ -102,6 +102,11 @@ namespace orbit_fit
 
     using ObservationType = std::variant<AstrometryObservation, StreakObservation, RadarObservation>;
 
+    // Default astrometric 1-sigma uncertainty: 1 arcsecond expressed in radians
+    // (206265 arcsec per radian). Used when a caller supplies no per-observation
+    // RA/Dec uncertainties.
+    constexpr double DEFAULT_ASTROMETRY_UNC_RAD = 1.0 / 206265.0;
+
     // --- Main Observation Structure ---
     // Now, Observation has private constructors and public static factory methods.
     struct Observation
@@ -151,6 +156,8 @@ namespace orbit_fit
         }
 
     public:
+        // Astrometry observation with the default RA/Dec uncertainties; delegates
+        // to the explicit-uncertainty constructor below.
         Observation(
             double ep,
             std::array<double, 3> obs_position,
@@ -158,26 +165,9 @@ namespace orbit_fit
             std::array<double, 3> rho,
             std::array<double, 3> avec,
             std::array<double, 3> dvec)
+            : Observation(ep, obs_position, obs_velocity, rho, avec, dvec,
+                          DEFAULT_ASTROMETRY_UNC_RAD, DEFAULT_ASTROMETRY_UNC_RAD)
         {
-            epoch = ep;
-            observer_position = obs_position;
-            observer_velocity = obs_velocity;
-            observation_type = AstrometryObservation();
-
-            rho_hat.x() = rho[0];
-            rho_hat.y() = rho[1];
-            rho_hat.z() = rho[2];
-
-            a_vec.x() = avec[0];
-            a_vec.y() = avec[1];
-            a_vec.z() = avec[2];
-
-            d_vec.x() = dvec[0];
-            d_vec.y() = dvec[1];
-            d_vec.z() = dvec[2];
-
-            ra_unc = 1.0 / 206265;
-            dec_unc = 1.0 / 206265;
         }
 
         Observation(
@@ -220,27 +210,21 @@ namespace orbit_fit
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
             obs.observation_type = AstrometryObservation();
-            obs.ra_unc = 1.0 / 206265;
-            obs.dec_unc = 1.0 / 206265;
+            obs.ra_unc = DEFAULT_ASTROMETRY_UNC_RAD;
+            obs.dec_unc = DEFAULT_ASTROMETRY_UNC_RAD;
             obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
             obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
             obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
             return obs;
         }
 
-        // Factory method for an Astrometry observation.
+        // Factory method for an Astrometry observation with an object ID.
         static Observation from_astrometry_with_id(std::string objID,
                                                    double ra, double dec, double epoch_val,
                                                    const std::array<double, 3> &obs_position,
                                                    const std::array<double, 3> &obs_velocity)
         {
-            Observation obs(epoch_val, obs_position, obs_velocity);
-            obs.observation_type = AstrometryObservation();
-            obs.ra_unc = 1.0 / 206265;
-            obs.dec_unc = 1.0 / 206265;
-            obs.rho_hat = rho_hat_from_ra_dec(ra, dec);
-            obs.a_vec = a_vec_from_rho_hat(obs.rho_hat);
-            obs.d_vec = d_vec_from_rho_hat(obs.rho_hat);
+            Observation obs = from_astrometry(ra, dec, epoch_val, obs_position, obs_velocity);
             obs.objID = objID;
             return obs;
         }
