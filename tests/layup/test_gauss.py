@@ -156,6 +156,21 @@ def test_gauss_recovers_two_body_state(half_arc_days):
     assert vel_err < 5e-2, f"velocity rel err {vel_err:.2e} (arc {2*half_arc_days}d)"
 
 
+def test_gauss_returns_none_for_degenerate_collinear_lines():
+    """Coplanar/identical lines of sight have an indeterminate range.
+
+    The scalar triple product d0 = rho1 . (rho2 x rho3) vanishes, so the range
+    cannot be solved; gauss must report no solution rather than emit a
+    non-finite state (the d0 floor guard in gauss.cpp).
+    """
+    obs = [_make_observation(_R2_TRUTH, ti) for ti in (-2.0, 0.0, 2.0)]
+    # Force all three pointings identical -> exactly coplanar (d0 == 0).
+    obs[1].rho_hat = obs[0].rho_hat
+    obs[2].rho_hat = obs[0].rho_hat
+    result = gauss(MU_SUN, obs[0], obs[1], obs[2], 0.0, SPEED_OF_LIGHT)
+    assert result is None or len(result) == 0
+
+
 def test_gauss_returns_none_when_no_root_above_min_distance():
     """When no candidate range exceeds min_distance, gauss reports no solution.
 
