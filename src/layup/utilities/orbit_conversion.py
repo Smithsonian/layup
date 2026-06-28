@@ -115,9 +115,9 @@ def root_function(s, mu, alpha, r0, r0dot, t):
     Returns
     -------
     f : float
-        universal Kepler equation)
+        universal Kepler equation
     fp : float
-        (first derivative of f
+        first derivative of f
     fpp : float
         second derivative of f
     fppp : float
@@ -170,9 +170,8 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
 
     """
     # verify the bracket
-    # Use these values later
-    fl, fpl, fppl = root_function(x1, mu, alpha, r0, r0dot, t)[0:3]
-    fh, fph, fpph = root_function(x2, mu, alpha, r0, r0dot, t)[0:3]
+    fl, fpl = root_function(x1, mu, alpha, r0, r0dot, t)[0:2]
+    fh, fph = root_function(x2, mu, alpha, r0, r0dot, t)[0:2]
     if (fl > 0.0 and fh > 0.0) or (fl < 0.0 and fh < 0.0):
         return False, np.nan, fl
     if fl == 0:
@@ -187,11 +186,6 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
     else:
         xh = x1
         xl = x2
-
-    if np.abs(fl) < np.abs(fh):
-        rts, f, fp, fpp = xl, fl, fpl, fppl
-    else:
-        rts, f, fp, fpp = xh, fh, fph, fpph
 
     rts = 0.5 * (x1 + x2)  # Initialize the guess for root,
     dxold = np.abs(x2 - x1)  # the “stepsize before last,”
@@ -391,6 +385,11 @@ def principal_value(theta):
 
 @jax.jit
 def atan2_checkzero(x, y):
+    """Two-argument arctangent that returns 0 when both x and y are zero.
+
+    Guards the angle computations in universal_keplerian against the undefined
+    atan2(0, 0) (e.g. a node or argument of latitude that is exactly degenerate).
+    """
     return jax.lax.cond(
         jnp.logical_and(x != 0.0, y != 0), lambda x, y: jnp.arctan2(x, y), lambda x, y: 0.0, x, y
     )
@@ -398,6 +397,13 @@ def atan2_checkzero(x, y):
 
 @jax.jit
 def eccanom(e, trueanom, mu, alpha, p):
+    """Time from perihelion (days) for an elliptical orbit (e < 1).
+
+    Returns t_p relative to the state epoch (the caller adds the epoch). The
+    (e, trueanom, mu, alpha, p) signature is shared with paranom/hypanom so
+    jax.lax.cond can dispatch on eccentricity with identical arguments; this
+    branch uses e, trueanom, mu and alpha (= mu/a).
+    """
     eccanom = 2.0 * jnp.arctan(jnp.sqrt((1.0 - e) / (1.0 + e)) * jnp.tan(trueanom / 2.0))
     meananom = eccanom - e * jnp.sin(eccanom)
     meananom = principal_value(meananom)
@@ -409,6 +415,11 @@ def eccanom(e, trueanom, mu, alpha, p):
 
 @jax.jit
 def paranom(e, trueanom, mu, alpha, p):
+    """Time from perihelion (days) for a parabolic orbit (e == 1).
+
+    Returns t_p relative to the state epoch. Shares the anomaly-helper signature
+    (see eccanom); this branch uses trueanom, mu and p (the semi-latus rectum).
+    """
     tf = jnp.tan(0.5 * trueanom)
     B = 0.5 * (tf * tf * tf + 3 * tf)
     mm = jnp.sqrt(mu / (p * p * p))
@@ -418,6 +429,11 @@ def paranom(e, trueanom, mu, alpha, p):
 
 @jax.jit
 def hypanom(e, trueanom, mu, alpha, p):
+    """Time from perihelion (days) for a hyperbolic orbit (e > 1).
+
+    Returns t_p relative to the state epoch. Shares the anomaly-helper signature
+    (see eccanom); this branch uses e, trueanom, mu and alpha (= mu/a).
+    """
     heccanom = 2.0 * jnp.arctanh(jnp.sqrt((e - 1.0) / (e + 1.0)) * jnp.tan(trueanom / 2.0))
     N = e * jnp.sinh(heccanom) - heccanom
     a = mu / alpha
