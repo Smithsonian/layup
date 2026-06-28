@@ -142,7 +142,7 @@ def layup_calculate_rates_and_geometry(pointing: DataFrame, ephem_geom_params: E
 
 
 def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name, args, configs):
-    '''Calculates the on-sky rates and geometry for a set of orbits at certain pointings.
+    """Calculates the on-sky rates and geometry for a set of orbits at certain pointings.
 
     Parameters
     ----------
@@ -156,14 +156,14 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
         The name of the primary ID column.
     args : argparse
         The argparse object that was created when running from the CLI.
-    aux : AuxiliaryConfigs object
-        The LayUp auxiliary arguments.
+    configs : LayupConfigs
+        The layup configuration object.
 
     Returns
     -------
     rates : numpy recarray
         Numpy recarray containing the on-sky rates.
-    """'''
+    """
 
     observations = []
     for i, pos in enumerate(obs_pos_vel):
@@ -230,10 +230,8 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
     # Get the on-sky rates
     onsky = layup_calculate_rates_and_geometry(pointing, ephem_geom_params)
 
-    # Only want certain info from onsky
-
-    # This method is the fastest for making a recarray, but I've commented a different way in case we don't want to depend on pandas
-
+    # Only want certain info from onsky.
+    # Build the output recarray via a pandas DataFrame (fast for this column set).
     rates_df = DataFrame(
         {
             primary_id_column_name: ephem_geom_params.obj_id,
@@ -254,34 +252,6 @@ def _get_on_sky_data(predictions, orbits_df, obs_pos_vel, primary_id_column_name
         }
     )
     rates = rates_df.to_records(index=False)
-
-    # rates = np.empty(
-    #     len(predictions),
-    #     dtype=[
-    #         ("provID", "O"),
-    #         ("epoch_JD_TDB", "f8"),
-    #         ("Range_LTC_km", "f8"),
-    #         ("RangeRate_LTC_km_s", "f8"),
-    #         ("Obj_Sun_x_LTC_km", "f8"),
-    #         ("Obj_Sun_y_LTC_km", "f8"),
-    #         ("Obj_Sun_z_LTC_km", "f8"),
-    #         ("Obj_Sun_vx_LTC_km_s", "f8"),
-    #         ("Obj_Sun_vy_LTC_km_s", "f8"),
-    #         ("Obj_Sun_vz_LTC_km_s", "f8"),
-    #         ("phase_deg", "f8"),
-    #     ],
-    # )
-    # rates["provID"], rates["epoch_JD_TDB"] = ephem_geom_params.obj_id, predictions["epoch_JD_TDB"]
-    # rates["Range_LTC_km"], rates["RangeRate_LTC_km_s"] = onsky[4], onsky[5]
-    # (
-    #     rates["Obj_Sun_x_LTC_km"],
-    #     rates["Obj_Sun_y_LTC_km"],
-    #     rates["Obj_Sun_z_LTC_km"],
-    #     rates["Obj_Sun_vx_LTC_km_s"],
-    #     rates["Obj_Sun_vy_LTC_km_s"],
-    #     rates["Obj_Sun_vz_LTC_km_s"],
-    # ) = (onsky[10], onsky[11], onsky[12], onsky[13], onsky[14], onsky[15])
-    # rates["phase_deg"] = onsky[22]
 
     spice.kclear()
     return rates
@@ -397,11 +367,11 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
                     row[primary_id_column_name],
                     utc_time,
                     pred.epoch,  # JD TDB
-                    pred.rho[0],  # place holder
-                    pred.rho[0],  # place holder
-                    pred.rho[0],
-                    pred.rho[1],
-                    pred.rho[2],
+                    0.0,  # ra_deg placeholder; set below from the rho vector
+                    0.0,  # dec_deg placeholder; set below from the rho vector
+                    pred.rho[0],  # rho_x
+                    pred.rho[1],  # rho_y
+                    pred.rho[2],  # rho_z
                     pred.obs_cov[0],  # obs_cov_xx = (0, 0)
                     pred.obs_cov[3],  # obs_cov_yy = (1, 1)
                     pred.obs_cov[1],  # obs_cov_xy = (0, 1)
@@ -452,8 +422,8 @@ def predict(
         The directory to the cached kernels. If None, use the default cache directory.
     args : argparse
         The argparse object that was created when running from the CLI.
-    aux : AuxiliaryConfigs object
-        The LayUp auxiliary arguments. Needed if on-sky rates are requested.
+    configs : LayupConfigs
+        The layup configuration object. Needed if on-sky rates are requested.
 
     Returns
     -------
@@ -462,13 +432,13 @@ def predict(
     if num_workers < 0:
         num_workers = os.cpu_count()
 
-    Layup_observatory = LayupObservatory(cache_dir=cache_dir)
+    layup_observatory = LayupObservatory(cache_dir=cache_dir)
 
     times_et = np.array([spice.str2et(f"jd {t} tdb") for t in times], dtype="<f8")
 
     obs_data = np.array([(obscode, t) for t in times_et], dtype=[("stn", "<U10"), ("et", "<f8")])
 
-    obs_pos_vel = Layup_observatory.obscodes_to_barycentric(obs_data)
+    obs_pos_vel = layup_observatory.obscodes_to_barycentric(obs_data)
 
     predictions = process_data(
         data,
@@ -491,7 +461,6 @@ def predict(
         orbits_df = DataFrame(data, columns=cols, index=data[primary_id_column_name])
         if primary_id_column_name != "ObjID":
             orbits_df = orbits_df.rename(columns={primary_id_column_name: "ObjID"})
-        # onsky_results = _get_on_sky_data(orbits_df, observations, results, args, configs)
         onsky_results = process_data_by_id(
             predictions,
             n_workers=num_workers,
@@ -542,8 +511,8 @@ def predict_cli(
         The output file to write the predictions to.
     cache_dir : Path
         The directory to the cached kernels.
-    aux : AuxiliaryConfigs object
-        The LayUp auxiliary arguments
+    configs : LayupConfigs
+        The layup configuration object.
     """
 
     num_workers = cli_args.n
