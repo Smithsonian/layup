@@ -1,39 +1,5 @@
-// This code requires the following:
-// 1. The rebound library
-// 2. The assist library
-// 3. The Eigen header-only library
-//
-// It will probably need either pybind11, eigenpy, or something like
-// that to connect it to python
-
-// To Do:
-// 1. Set up a make file, or something like that.
-// 2. Make sure that the physical constants are consistent
-//    with the rest of the code
-// 3. Work on getting better data weights.
-// 4. Work on outlier rejection.
-// 5. Write code to handle doppler and range observations
-// 6. Write code to handle shift+stack observations (RA/Dec + rates)
-
-// Try gauss's method with an unevenly spaced triplet.  DONE
-
-// Put in a check on the residual as part of the convergence
-// criteria.
-
-// Use gauss to get a decent start for fitting a segment of the data.
-// Then use the results of that as an initial guess for fitting a
-// larger segment of data.
-
-// Important issues:
-// 1. Obtaining reliable initial orbit determination for the nonlinear fits.
-// 2. Making sure the weight matrix is as good as it can be
-// 3. Identifying and removing outliers
-
-// Later issues:
-// 1. Deflection of light
-
-// Compile with something like this
-// g++ -std=c++11 -I../..//src/ -I../../../rebound/src/ -I/Users/mholman/eigen-3.4.0 -Wl,-rpath,./ -Wpointer-arith -D_GNU_SOURCE -O3 -fPIC -I/usr/local/include -Wall -g  -Wno-unknown-pragmas -D_APPLE -DSERVER -DGITHASH=e99d8d73f0aa7fb7bf150c680a2d581f43d3a8be orbit_fit.cpp -L. -lassist -lrebound -L/usr/local/lib -o orbit_fit
+// Core orbit-fit routines: residuals, partials, and the
+// Levenberg-Marquardt driver (plus Gauss-seeded segment fitting).
 
 #include <iostream>
 #include <cstdlib>
@@ -123,117 +89,10 @@ namespace orbit_fit
     // short arcs) and the fit is reported as weakly constrained (flag = 6).
     static constexpr double WEAK_NONGRAV_RCOND = 1e-8;
 
-    struct reb_particle read_initial_conditions(const char *ic_file_name, double *epoch)
-    {
+    // Arcseconds per radian (180*3600/pi). Converts astrometric/rate
+    // uncertainties from arcseconds to radians and scales residuals for display.
+    static constexpr double ARCSEC_PER_RAD = 206265.0;
 
-        FILE *ic_file;
-        ic_file = fopen(ic_file_name, "r");
-
-        struct reb_particle p0;
-
-        double epch;
-        double x0, y0, z0;
-        double vx0, vy0, vz0;
-
-        fscanf(ic_file, "%lf %lf %lf %lf %lf %lf %lf\n",
-               &epch, &x0, &y0, &z0, &vx0, &vy0, &vz0);
-
-        *epoch = epch;
-        p0.x = x0;
-        p0.y = y0;
-        p0.z = z0;
-        p0.vx = vx0;
-        p0.vy = vy0;
-        p0.vz = vz0;
-
-        return p0;
-    }
-
-    void print_initial_condition(struct reb_particle p0, double epoch)
-    {
-
-        printf("%lf %.16le %.16le %.16le %.16le %.16le %.16le\n", epoch, p0.x, p0.y, p0.z, p0.vx, p0.vy, p0.vz);
-
-        return;
-    }
-
-    void read_detections(const char *data_file_name,
-                         std::vector<detection> &detections,
-                         std::vector<double> &times)
-    {
-
-        FILE *detections_file;
-        detections_file = fopen(data_file_name, "r");
-
-        char obsCode[10];
-        char objID[20];
-        char mag_str[6];
-        char filt[6];
-        double theta_x, theta_y, theta_z;
-        double xe, ye, ze;
-        double jd_tdb;
-        double ast_unc;
-
-        // Define an observation structure or class
-        // Write a function to read observations
-
-        while (fscanf(detections_file, "%s %s %s %s %lf %lf %lf %lf %lf %lf %lf %lf\n",
-                      objID, obsCode, mag_str, filt, &jd_tdb, &theta_x, &theta_y, &theta_z, &xe, &ye, &ze, &ast_unc) != EOF)
-        {
-            detection this_det = detection();
-
-            this_det.jd_tdb = jd_tdb;
-            this_det.theta_x = theta_x;
-            this_det.theta_y = theta_y;
-            this_det.theta_z = theta_z;
-
-            this_det.xe = xe;
-            this_det.ye = ye;
-            this_det.ze = ze;
-
-            this_det.obsCode = obsCode;
-
-            // Read these from the file
-            this_det.ra_unc = (ast_unc / 206265);
-            this_det.dec_unc = (ast_unc / 206265);
-
-            // compute A and D vectors, the local tangent plane trick from Danby.
-
-            double Ax =  -theta_y;
-            double Ay =   theta_x;
-            double Az =   0.0;
-
-            double A = sqrt(Ax * Ax + Ay * Ay + Az * Az);
-            Ax /= A;
-            Ay /= A;
-            Az /= A;
-
-            this_det.Ax = Ax;
-            this_det.Ay = Ay;
-            this_det.Az = Az;
-
-            double sd = theta_z;
-            double cd = sqrt(1-theta_z*theta_z);
-            double ca = theta_x/cd;
-            double sa = theta_y/cd;
-        
-            double Dx = -sd*ca;
-            double Dy = -sd*sa;
-            double Dz = cd;        
-
-            double D = sqrt(Dx * Dx + Dy * Dy + Dz * Dz);
-            Dx /= D;
-            Dy /= D;
-            Dz /= D;
-
-            this_det.Dx = Dx;
-            this_det.Dy = Dy;
-            this_det.Dz = Dz;
-
-            detections.push_back(this_det);
-            times.push_back(jd_tdb);
-        }
-    }
 
     void compute_single_residuals(struct assist_ephem *ephem,
                                   struct assist_extras *ax,
@@ -757,40 +616,6 @@ namespace orbit_fit
         C -= lambda * eye;
     }
 
-    void identify_outliers(std::vector<detection> &detections,
-                           std::vector<residuals> &resid_vec,
-                           std::vector<bool> &reject)
-    {
-    }
-
-    void print_residuals(std::vector<detection> &detections,
-                         std::vector<residuals> &resid_vec,
-                         std::vector<partials> &partials_vec)
-    {
-
-        for (size_t j = 0; j < resid_vec.size(); j++)
-        {
-
-            detection this_det = detections[j];
-
-            printf("%lf %s ", this_det.jd_tdb, this_det.obsCode.c_str());
-
-            residuals resids = resid_vec[j];
-            printf("%7.3lf %7.3lf ", resids.x_resid * 206265, resids.y_resid * 206265);
-
-            partials parts = partials_vec[j];
-
-            for (size_t i = 0; i < 6; i++)
-            {
-
-                printf("%7.3le %7.3le ", parts.x_partials[i], parts.y_partials[i]);
-            }
-
-            printf("%7.3le %7.3le ", this_det.ra_unc * 206265, this_det.dec_unc * 206265);
-
-            printf("\n");
-        }
-    }
 
     int converged(Eigen::MatrixXd dX, double eps, double chi2, size_t ndof, double thresh)
     {
@@ -891,8 +716,8 @@ namespace orbit_fit
 
             if (std::holds_alternative<StreakObservation>(detections[i].observation_type))
             {
-                double rar_unc = detections[i].ra_rate_unc ? *detections[i].ra_rate_unc : (24.0 / 206265.0);
-                double der_unc = detections[i].dec_rate_unc ? *detections[i].dec_rate_unc : (24.0 / 206265.0);
+                double rar_unc = detections[i].ra_rate_unc ? *detections[i].ra_rate_unc : (24.0 / ARCSEC_PER_RAD);
+                double der_unc = detections[i].dec_rate_unc ? *detections[i].dec_rate_unc : (24.0 / ARCSEC_PER_RAD);
                 tripletList.push_back(T(r0 + 2, r0 + 2, 1.0 / (rar_unc * rar_unc)));
                 tripletList.push_back(T(r0 + 3, r0 + 3, 1.0 / (der_unc * der_unc)));
             }
@@ -999,7 +824,7 @@ namespace orbit_fit
         double rho_accept = 0.1;
 
         // Do an initial step
-        double lambda = (206265.0 * 206265.0) / 1000;
+        double lambda = (ARCSEC_PER_RAD * ARCSEC_PER_RAD) / 1000;
         for (iters = 0; iters < iter_max; iters++)
         {
 
