@@ -617,20 +617,18 @@ namespace orbit_fit
     }
 
 
-    int converged(Eigen::MatrixXd dX, double eps, double chi2, size_t ndof, double thresh)
+    int converged(Eigen::MatrixXd dX, double eps, double chi2)
     {
         // A NaN chi-square or step means the fit has diverged, not converged.
         // Without this guard the loop below reports convergence on a NaN step,
         // because abs(NaN) > eps is false for every element, so the function
         // falls through to "return 1" -- making orbit_fit report flag = 0
         // (success) for a NaN solution.
+        // (The reduced-chi-square quality check lives after the LM loop, where
+        // chi2_final/ndof > thresh sets flag = 2; see issue #367.)
         if (std::isnan(chi2))
         {
             return 0;
-        }
-        if ((chi2 > ndof) > thresh)
-        {
-            return 2;
         }
         for (size_t i = 0; i < dX.size(); i++)
         {
@@ -889,9 +887,7 @@ namespace orbit_fit
                 lambda *= 2.0;
             }
 
-            size_t ndof = total_residual_rows(detections) - npar;
-            double thresh = 10;
-            int cflag = converged(dX, eps, chi2_d, ndof, thresh);
+            int cflag = converged(dX, eps, chi2_d);
             if (cflag)
             {
                 flag = 0;
