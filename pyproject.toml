@@ -59,6 +59,7 @@ dev = [
     "pytest",
     "pytest-cov", # Used to report total code coverage
     "pytest-xdist", # Used to parallelize unit tests
+    "pytest-timeout", # Fail a wedged test fast instead of hanging CI (issue #368)
 ]
 
 [build-system]
@@ -80,6 +81,11 @@ write_to = "src/layup/_version.py"
 testpaths = [
     "tests",
 ]
+# Cap any single test so a wedged test (e.g. a network/ephemeris fetch with no
+# timeout of its own) fails fast with a traceback instead of hanging the CI job
+# for hours (issue #368). "thread" works with pytest-xdist and on all platforms.
+timeout = 300
+timeout_method = "thread"
 
 [tool.black]
 line-length = 110
