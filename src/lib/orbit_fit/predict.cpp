@@ -48,7 +48,14 @@ namespace orbit_fit
         return 0;
     }
 
-    void add_variational_particles(struct reb_simulation *r, size_t np, int *var)
+    // Adds the 6 state variational particles (one seeded in each of x,y,z,vx,vy,vz)
+    // and, when n_param > 0, that many additional ZERO-seeded variational particles
+    // immediately after them. The zero-seed particles are driven purely by the
+    // non-gravitational parameter source terms in ASSIST's force routine (set via
+    // assist->particle_params), so they integrate d(state)/d(param) -- used to fit
+    // non-grav parameters (e.g. A2). They are contiguous, so the param partials
+    // live at indices *var+6, *var+7, ... (see issue #351).
+    void add_variational_particles(struct reb_simulation *r, size_t np, int *var, int n_param = 0)
     {
 
         int varx = reb_simulation_add_variation_1st_order(r, np);
@@ -68,6 +75,13 @@ namespace orbit_fit
 
         int varvz = reb_simulation_add_variation_1st_order(r, np);
         r->particles[varvz].vz = 1.;
+
+        // Parameter variational particles: zero state seed (the param "direction"
+        // is set in assist->particle_params by the caller, not here).
+        for (int p = 0; p < n_param; p++)
+        {
+            reb_simulation_add_variation_1st_order(r, np);
+        }
 
         *var = varx;
     }

@@ -22,6 +22,15 @@ namespace orbit_fit
         int niter;                     // Number of iterations
         std::string method;            // Method used for fitting
         int flag;                      // Flag indicating the success of the fit
+        // Non-gravitational Marsden parameters A1 (radial), A2 (transverse),
+        // A3 (normal), au/day^2. Used both as seeds and as fitted results.
+        // nongrav_mask is a bitmask of which were fitted (bit 1=A1, 2=A2, 4=A3;
+        // 0 = pure 6-parameter fit). a{1,2,3}_unc are the 1-sigma formal
+        // uncertainties (sqrt of the corresponding diagonal of the joint
+        // covariance). All default-zero, so the 6-parameter path is unchanged.
+        int nongrav_mask = 0;
+        double a1 = 0.0, a2 = 0.0, a3 = 0.0;
+        double a1_unc = 0.0, a2_unc = 0.0, a3_unc = 0.0;
     } FitResult;
 
     static void orbit_fit_result_bindings(py::module &m)
@@ -36,7 +45,15 @@ namespace orbit_fit
             .def_readwrite("cov", &orbit_fit::FitResult::cov, "Covariance matrix")
             .def_readwrite("niter", &orbit_fit::FitResult::niter, "Number of iterations")
             .def_readwrite("method", &orbit_fit::FitResult::method, "Method used for fitting")
-            .def_readwrite("flag", &orbit_fit::FitResult::flag, "Flag indicating the success of the fit");
+            .def_readwrite("flag", &orbit_fit::FitResult::flag, "Flag indicating the success of the fit")
+            .def_readwrite("nongrav_mask", &orbit_fit::FitResult::nongrav_mask,
+                           "Bitmask of fitted non-grav params (1=A1, 2=A2, 4=A3)")
+            .def_readwrite("a1", &orbit_fit::FitResult::a1, "Non-grav A1 radial term (au/day^2)")
+            .def_readwrite("a2", &orbit_fit::FitResult::a2, "Non-grav A2 transverse term (au/day^2)")
+            .def_readwrite("a3", &orbit_fit::FitResult::a3, "Non-grav A3 normal term (au/day^2)")
+            .def_readwrite("a1_unc", &orbit_fit::FitResult::a1_unc, "1-sigma uncertainty on A1 (au/day^2)")
+            .def_readwrite("a2_unc", &orbit_fit::FitResult::a2_unc, "1-sigma uncertainty on A2 (au/day^2)")
+            .def_readwrite("a3_unc", &orbit_fit::FitResult::a3_unc, "1-sigma uncertainty on A3 (au/day^2)");
     }
 
 } // namespace orbit_fit

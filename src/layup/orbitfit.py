@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from argparse import Namespace
 from pathlib import Path
 from typing import Literal, Optional
@@ -130,8 +131,40 @@ def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
     raise ValueError(f"Unknown engine {engine!r}; expected one of 'cartesian', 'bk_native'.")
 
 
-def _get_result_dtypes(primary_id_column_name: str):
-    """Helper function to create the result dtype with the correct primary ID column name."""
+# Non-gravitational Marsden parameters and their FitResult/C++ bitmask bits.
+_NONGRAV_BITS = {"A1": 1, "A2": 2, "A3": 4}
+
+
+def _parse_nongrav(fit_nongrav):
+    """Normalize the ``fit_nongrav`` argument to ``(mask, names)``.
+
+    Accepts ``False``/``None`` (no non-grav fit), ``True`` (== ``["A2"]``, the
+    common asteroid Yarkovsky case), a string naming params (e.g. ``"A2"``,
+    ``"A1A2A3"``, ``"A1,A3"``), or an iterable of names. Returns the C++ bitmask
+    (bits 1/2/4 for A1/A2/A3) and the selected names ordered A1, A2, A3.
+    """
+    if not fit_nongrav:
+        return 0, []
+    if fit_nongrav is True:
+        sel = {"A2"}
+    elif isinstance(fit_nongrav, str):
+        sel = set(re.findall(r"A[123]", fit_nongrav.upper()))
+    else:
+        sel = {str(s).upper() for s in fit_nongrav}
+    names = [n for n in ("A1", "A2", "A3") if n in sel]
+    if not names:
+        raise ValueError(f"fit_nongrav={fit_nongrav!r}: expected some of 'A1', 'A2', 'A3'.")
+    return sum(_NONGRAV_BITS[n] for n in names), names
+
+
+def _get_result_dtypes(primary_id_column_name: str, nongrav_names=()):
+    """Helper function to create the result dtype with the correct primary ID column name.
+
+    For each fitted non-gravitational parameter in ``nongrav_names`` (a subset of
+    ``A1``/``A2``/``A3``), two columns are appended -- e.g. ``a2`` and ``a2_unc``
+    (the value and its 1-sigma uncertainty, au/day^2). With no non-grav params the
+    default 6-parameter output schema is unchanged.
+    """
     # Define a structured dtype to match the OrbfitResult fields
     return np.dtype(
         [
@@ -151,6 +184,9 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("FORMAT", "O"),  # Orbit format
         ]
         + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
+        + [  # non-grav params (issue #351), value + 1-sigma per fitted param
+            (col, "f8") for n in nongrav_names for col in (n.lower(), n.lower() + "_unc")
+        ]
     )
 
 
@@ -476,6 +512,8 @@ def create_empty_result(id, dtypes):
                 "NONE",  # format
             )
             + (np.nan,) * 36  # Flat covariance matrix
+            # non-grav columns (issue #351): NaN per a1/a2/a3 (+ _unc) that is present
+            + tuple(np.nan for n in ("a1", "a2", "a3") if n in dtypes.names for _ in (0, 1))
         ],
         dtype=dtypes,
     )
@@ -784,6 +822,7 @@ def _orbitfit(
     weight_data: bool = False,
     iod: str = "gauss",
     engine: str = "cartesian",
+    fit_nongrav: bool = False,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -813,7 +852,15 @@ def _orbitfit(
         (default) and 'auto' (Gauss with BK-IOD fallback).
         Default is 'gauss'.
     """
-    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
+    # Fitting non-gravitational params (issue #351) uses the joint state+nongrav
+    # LM, which only the Cartesian engine supports; the BK-native engine assumes a
+    # 6D state. Override with a warning, mirroring the radar path.
+    nongrav_mask, nongrav_names = _parse_nongrav(fit_nongrav)
+    if nongrav_mask and engine != "cartesian":
+        logger.warning("Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine)
+        engine = "cartesian"
+
+    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, nongrav_names)
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
 
@@ -971,11 +1018,37 @@ def _orbitfit(
         else:
             guess_to_use = parse_fit_result(initial_guess)
             res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
+
+        # Non-gravitational params (issue #351): once the 6-parameter orbit has
+        # converged, refine it jointly with the requested non-grav params, seeded
+        # from that solution. They are weakly constrained on short arcs, so if the
+        # joint fit is degenerate (flag 6) or fails to converge we keep the
+        # 6-parameter result and report the params as NaN (graceful guard).
+        if nongrav_mask and res.flag == 0:
+            res_ng = run_from_vector_with_initial_guess(
+                get_ephem(kernels_loc), res, observations, nongrav_mask=nongrav_mask
+            )
+            if res_ng.flag == 0:
+                res = res_ng
+            else:
+                logger.debug("Non-grav refinement did not converge; reporting non-grav params as NaN.")
+
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
         if not success:
             _warn_if_short_arc(jds, data[primary_id_column_name][0])
         cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
+        nongrav_cols = ()
+        if nongrav_names:
+            fitted = success and getattr(res, "nongrav_mask", 0) != 0
+            nongrav_cols = tuple(
+                v
+                for n in nongrav_names
+                for v in (
+                    (getattr(res, n.lower()) if fitted else np.nan),
+                    (getattr(res, n.lower() + "_unc") if fitted else np.nan),
+                )
+            )
         output = np.array(
             [
                 (
@@ -992,6 +1065,7 @@ def _orbitfit(
                     ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
+                + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
             ],
             dtype=_RESULT_DTYPES,
         )
@@ -1009,6 +1083,7 @@ def orbitfit(
     weight_data=False,
     iod="gauss",
     engine="cartesian",
+    fit_nongrav=False,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -1033,6 +1108,15 @@ def orbitfit(
         The IOD used to generate an initial guess orbit. Supports 'gauss'
         (default) and 'auto' (Gauss with BK-IOD fallback).
         Default is 'gauss'.
+    fit_nongrav : bool | str | iterable of str
+        Which non-gravitational Marsden parameters to fit after the 6-parameter
+        orbit converges. ``False`` (default) fits none; ``True`` fits A2 (the
+        transverse Yarkovsky term, the common asteroid case); a string or iterable
+        naming params -- e.g. ``"A2"``, ``"A1A2A3"``, ``["A1", "A3"]`` -- selects a
+        subset of A1 (radial), A2 (transverse), A3 (normal). For each fitted param
+        an ``a{n}`` value and ``a{n}_unc`` 1-sigma column (au/day^2) are added to
+        the result. Cartesian engine only; params weakly constrained on short arcs
+        are reported as NaN (issue #351).
     """
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
@@ -1066,6 +1150,7 @@ def orbitfit(
         weight_data=weight_data,
         iod=iod,
         engine=engine,
+        fit_nongrav=fit_nongrav,
     )
 
 
