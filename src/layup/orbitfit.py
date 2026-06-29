@@ -57,12 +57,29 @@ logger = logging.getLogger(__name__)
 # convert the observed rates from arcsec/hour to rad/day at ingest.
 ARCSEC_PER_HOUR_TO_RAD_PER_DAY = (np.pi / 180.0 / 3600.0) * 24.0
 
+# Radar (delay/Doppler) observables arrive in JPL units: round-trip delay in
+# microseconds and Doppler shift in Hz at a per-observation transmit frequency
+# `freqTx` (Hz). The fitter models round-trip delay in days and round-trip
+# range-rate in au/day (see RadarObservation in detection.cpp), so convert at
+# ingest, mirroring the streak rate convention above:
+#   delay[days]     = delay[us] * 1e-6 / 86400
+#   doppler[au/day] = -c * doppler[Hz] / freqTx[Hz]
+# The Doppler sign follows F = -(f_tx/c) * d(round-trip range)/dt, so a positive
+# (receding) range-rate produces a negative frequency shift.
+US_TO_DAYS = 1.0e-6 / 86400.0
+# Fallback 1-sigma weights when the JPL uncertainty columns are absent: ~1 us of
+# round-trip delay and ~1 Hz of Doppler (converted per observation via freqTx).
+_DEFAULT_DELAY_UNC_DAYS = US_TO_DAYS
+_DEFAULT_DOPPLER_UNC_HZ = 1.0
+
 # The list of required input column names for the provided observations to be fit.
 # Note: This should not include the primary id column name.
 REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
     (
         set(["ra", "dec"]),  # Either `ra` and `dec` must be in the file
         set(["raRate", "decRate"]),  # Or `raRate` and `decRate` must be in the file
+        set(["delay"]),  # Or a radar round-trip delay (us)
+        set(["doppler"]),  # Or a radar Doppler shift (Hz; needs `freqTx`)
     ),
     "obsTime",
     "stn",
@@ -134,6 +151,99 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("FORMAT", "O"),  # Orbit format
         ]
         + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
+    )
+
+
+def _is_radar(d, column_names):
+    """True if a row carries a populated radar observable (delay or Doppler).
+
+    Radar rows have no ra/dec; they are dispatched to ``Observation.from_radar``
+    rather than the astrometry/streak factories.
+    """
+    has_delay = "delay" in column_names and not np.isnan(d["delay"])
+    has_doppler = "doppler" in column_names and not np.isnan(d["doppler"])
+    return has_delay or has_doppler
+
+
+def _radar_observation(objID, d, epoch_jd, column_names):
+    """Build a radar ``Observation`` from a row, converting JPL units to the
+    fitter's internal units.
+
+    delay (us, round-trip) -> days; Doppler (Hz) -> round-trip range-rate
+    (au/day) via the per-observation transmit frequency ``freqTx``. The
+    barycentric observer position/velocity columns (x,y,z,vx,vy,vz) must already
+    be present (added by ``orbitfit``); the observer acceleration columns
+    (ax,ay,az) drive the two-leg light-time model and default to zero when
+    absent. 1-sigma uncertainties come from ``rmsDelay``/``rmsDoppler`` when
+    present, else the module defaults.
+    """
+    has_delay = "delay" in column_names and not np.isnan(d["delay"])
+    has_doppler = "doppler" in column_names and not np.isnan(d["doppler"])
+
+    f_tx = d["freqTx"] if "freqTx" in column_names else np.nan
+    if has_doppler and (np.isnan(f_tx) or f_tx == 0.0):
+        raise ValueError(f"Radar Doppler observation for {objID} requires a nonzero 'freqTx' (Hz).")
+
+    delay_days = (d["delay"] * US_TO_DAYS) if has_delay else 0.0
+    doppler_audy = (-SPEED_OF_LIGHT * d["doppler"] / f_tx) if has_doppler else 0.0
+
+    if "rmsDelay" in column_names and not np.isnan(d["rmsDelay"]):
+        delay_unc = abs(d["rmsDelay"]) * US_TO_DAYS
+    else:
+        delay_unc = _DEFAULT_DELAY_UNC_DAYS
+
+    if has_doppler:
+        rms_hz = (
+            d["rmsDoppler"]
+            if ("rmsDoppler" in column_names and not np.isnan(d["rmsDoppler"]))
+            else _DEFAULT_DOPPLER_UNC_HZ
+        )
+        doppler_unc = abs(SPEED_OF_LIGHT * rms_hz / f_tx)
+    else:
+        doppler_unc = abs(SPEED_OF_LIGHT * _DEFAULT_DOPPLER_UNC_HZ / f_tx) if not np.isnan(f_tx) else 1.0
+
+    if all(c in column_names for c in ("ax", "ay", "az")):
+        observer_acc = [float(d["ax"]), float(d["ay"]), float(d["az"])]
+    else:
+        observer_acc = [0.0, 0.0, 0.0]
+
+    return Observation.from_radar_with_id(
+        str(objID),
+        delay_days,
+        doppler_audy,
+        has_delay,
+        has_doppler,
+        epoch_jd,
+        [d["x"], d["y"], d["z"]],  # Barycentric observer position
+        [d["vx"], d["vy"], d["vz"]],  # Barycentric observer velocity
+        delay_unc,
+        doppler_unc,
+        observer_acc,  # Barycentric observer acceleration (au/day^2)
+    )
+
+
+def _append_observer_acceleration(data, observatory, dt_sec=2.0):
+    """Append barycentric observer acceleration columns (ax, ay, az; au/day^2).
+
+    Finite-differences the barycentric station velocity from
+    ``obscodes_to_barycentric`` at the observation epoch +/- ``dt_sec``. Used only
+    by radar observations, whose two-leg light-time model extrapolates the station
+    state back to the signal transmit time. Requires the ``et`` column (seconds
+    past J2000, TDB) that ``orbitfit`` adds before computing the observer states.
+    """
+
+    def _vel(et_offset_sec):
+        shifted = data.copy()
+        shifted["et"] = data["et"] + et_offset_sec
+        pv = np.atleast_1d(observatory.obscodes_to_barycentric(shifted))
+        return np.stack([pv["vx"], pv["vy"], pv["vz"]], axis=-1)
+
+    # d(velocity[au/day]) / d(time[day]); 2*dt_sec seconds = 2*dt_sec/86400 days.
+    scale = 86400.0 / (2.0 * dt_sec)
+    acc = (_vel(dt_sec) - _vel(-dt_sec)) * scale
+    acc = np.atleast_2d(acc)
+    return rfn.append_fields(
+        data, ["ax", "ay", "az"], [acc[:, 0], acc[:, 1], acc[:, 2]], usemask=False, asrecarray=True
     )
 
 
@@ -737,17 +847,22 @@ def _orbitfit(
         program_column_present = "program" in column_names
         position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
         rate_unc_columns_present = all(col in column_names for col in ["rmsRArate", "rmsDecrate"])
+        radar_columns_present = any(col in column_names for col in ["delay", "doppler"])
 
         # Accommodate occultation measurements. These measurements are implied when
         # the "ra" and "dec" columns are None. In this case, we will use the "starra"
-        # and "stardec" columns.
+        # and "stardec" columns. Radar rows have no ra/dec and are skipped.
         for d in data:
+            if radar_columns_present and _is_radar(d, column_names):
+                continue
             if _is_occultation(d):
                 d = _use_star_astrometry(d)
 
         # bias_dict will be a dictionary when the debias flag is set to True.
         if bias_dict is not None:
             for d in data:
+                if radar_columns_present and _is_radar(d, column_names):
+                    continue  # debiasing is an astrometric (ra/dec) correction
                 d["ra"], d["dec"] = debias(
                     ra=d["ra"],
                     dec=d["dec"],
@@ -762,6 +877,15 @@ def _orbitfit(
         # radians.
         observations = []
         for d in data:
+            if radar_columns_present and _is_radar(d, column_names):
+                o = _radar_observation(
+                    d[primary_id_column_name],
+                    d,
+                    convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),  # JD TDB
+                    column_names,
+                )
+                observations.append(o)
+                continue
             if position_rates_columns_present and (not np.isnan(d["raRate"]) and not np.isnan(d["decRate"])):
                 # Rate uncertainties (rmsRArate/rmsDecrate) share raRate's
                 # arcsec/hour units; convert to rad/day. Absent -> C++ default.
@@ -812,6 +936,16 @@ def _orbitfit(
                 o.dec_unc = sigma_rad
 
             observations.append(o)
+
+        # Radar delay/Doppler rows use the variable-row packing, which only the
+        # Cartesian engine supports; the BK-native engine assumes 2 rows per
+        # observation and would silently drop them.
+        if radar_columns_present and engine != "cartesian":
+            logger.warning(
+                "Radar (delay/Doppler) observations require engine='cartesian'; overriding %r.",
+                engine,
+            )
+            engine = "cartesian"
 
         # if cache_dir is not provided, use the default os_cache
         if cache_dir is None:
@@ -910,6 +1044,12 @@ def orbitfit(
 
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
+
+    # Radar (delay/Doppler) observations need the barycentric observer
+    # acceleration for the two-leg light-time model; compute it only when radar
+    # columns are present so optical/streak fits are unaffected.
+    if any(col in data.dtype.names for col in ("delay", "doppler")):
+        data = _append_observer_acceleration(data, layup_observatory)
 
     bias_dict = None
     if debias:
@@ -1145,13 +1285,12 @@ def _is_valid_data(data):
     bool
         True if the data is valid, False otherwise.
     """
+    column_names = data.dtype.names
     valid_conditions = [
         len(data) >= 3,
         np.all(
             data["et"] >= -6279962400.00
         ),  # excludes all datasets before 1801, data["et"] = 0 is j2000, 6279962400.00 is seconds between 1801 and j2000
-        np.all(is_numeric(data["ra"])),
-        np.all(is_numeric(data["dec"])),
         np.all(is_numeric(data["x"])),
         np.all(is_numeric(data["y"])),
         np.all(is_numeric(data["z"])),
@@ -1159,6 +1298,23 @@ def _is_valid_data(data):
         np.all(is_numeric(data["vy"])),
         np.all(is_numeric(data["vz"])),
     ]
+
+    # Each row must carry a usable observable: ra/dec for optical (and streak),
+    # or a delay/Doppler for radar. Validate per row so a radar file -- which has
+    # no ra/dec columns -- is not rejected, while optical rows still require
+    # numeric ra/dec.
+    if any(c in column_names for c in ["delay", "doppler"]):
+        have_radec = "ra" in column_names and "dec" in column_names
+        valid_conditions.append(
+            all(
+                _is_radar(d, column_names) or (have_radec and is_numeric(d["ra"]) and is_numeric(d["dec"]))
+                for d in data
+            )
+        )
+    else:
+        valid_conditions.append(np.all(is_numeric(data["ra"])))
+        valid_conditions.append(np.all(is_numeric(data["dec"])))
+
     return all(valid_conditions)
 
 
