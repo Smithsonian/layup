@@ -178,10 +178,8 @@ FitResult run_bk_native_fit(
         }
 
         // --- Convergence (same predicate as the Cartesian fit) ---
-        const size_t ndof = detections.size() * 2 - 6;
-        const double thresh = 10.0;
         Eigen::MatrixXd dX_mat = dX;
-        if (converged(dX_mat, eps, chi2_cur, ndof, thresh))
+        if (converged(dX_mat, eps, chi2_cur))
         {
             result.flag = 0;
             result.csq = chi2_cur;
