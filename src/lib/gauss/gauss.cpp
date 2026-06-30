@@ -89,6 +89,19 @@ namespace orbit_fit
 
         double d0 = rho1.dot(p1);
 
+        // Gauss's method divides through by d0, the scalar triple product of the
+        // three lines of sight rho1 . (rho2 x rho3). It vanishes when the three
+        // pointings are coplanar/degenerate (e.g. identical directions), leaving
+        // the topocentric range indeterminate. A real triplet -- even a 1-day arc
+        // -- keeps |d0| >~ 1e-8 thanks to the slight curvature of the apparent
+        // path, so this small floor rejects only the singular geometry instead of
+        // propagating a division by ~0 into a non-finite state.
+        constexpr double D0_MIN = 1e-12;
+        if (std::abs(d0) < D0_MIN)
+        {
+            return std::nullopt;
+        }
+
         // Construct the 3x3 d matrix
         Eigen::Matrix3d d;
         d(0, 0) = o1.dot(p1);
