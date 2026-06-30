@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ades version="2022">
+  <optical>
+    <permID>1938 WQ</permID>
+    <provID>3666</provID>
+    <mode>CCD</mode>
+    <stn>024</stn>
+    <obsTime>2000-01-01T00:00:00.000Z</obsTime>
+    <ra>72.51275</ra>
+    <dec>19.82031</dec>
+    <astCat>Gaia2</astCat>
+    <mag>14.7</mag>
+    <band>V</band>
+    <rmsRA>0.05</rmsRA>
+    <rmsDec>0.06</rmsDec>
+  </optical>
+  <optical>
+    <permID>1938 WQ</permID>
+    <provID>3666</provID>
+    <mode>CCD</mode>
+    <stn>024</stn>
+    <obsTime>2000-01-02T00:00:00.000Z</obsTime>
+    <ra>72.53000</ra>
+    <dec>19.80000</dec>
+    <astCat>Gaia2</astCat>
+    <mag>14.8</mag>
+    <band>V</band>
+    <rmsRA>0.05</rmsRA>
+    <rmsDec>0.06</rmsDec>
+  </optical>
+  <optical>
+    <provID>K14X00X</provID>
+    <mode>CCD</mode>
+    <stn>250</stn>
+    <obsTime>2014-12-01T00:00:00.000Z</obsTime>
+    <ra>123.45678</ra>
+    <dec>-12.34567</dec>
+    <astCat>Gaia2</astCat>
+    <mag>21.3</mag>
+    <band>r</band>
+    <rmsRA>0.10</rmsRA>
+    <rmsDec>0.10</rmsDec>
+    <sys>ICRF_KM</sys>
+    <ctr>399</ctr>
+    <pos1>-4588.997</pos1>
+    <pos2>4208.695</pos2>
+    <pos3>3008.595</pos3>
+  </optical>
+</ades>
