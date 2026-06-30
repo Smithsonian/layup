@@ -38,7 +38,7 @@ namespace orbit_fit
             double rho_mag = sqrt(dx * dx + dy * dy + dz * dz);
             if (r->status == REB_STATUS_GENERIC_ERROR)
             {
-                printf("barf %lf %le %lf\n", t, lt, rho_mag);
+                // Integrator failed during the light-time iteration; signal failure.
                 return 1;
             }
 

@@ -107,6 +107,11 @@ namespace orbit_fit
     // RA/Dec uncertainties.
     constexpr double DEFAULT_ASTROMETRY_UNC_RAD = 1.0 / 206265.0;
 
+    // Default streak (sky-motion-rate) 1-sigma uncertainty: 24 arcseconds in
+    // radians (206265 arcsec per radian), used when a caller supplies no
+    // per-observation RA-rate/Dec-rate uncertainties.
+    constexpr double DEFAULT_RATE_UNC_RAD = 24.0 / 206265.0;
+
     // --- Main Observation Structure ---
     // Now, Observation has private constructors and public static factory methods.
     struct Observation
@@ -236,8 +241,8 @@ namespace orbit_fit
                                        double epoch_val,
                                        const std::array<double, 3> &obs_position,
                                        const std::array<double, 3> &obs_velocity,
-                                       double ra_rate_uncy = 24.0 / 206265.0,
-                                       double dec_rate_uncy = 24.0 / 206265.0)
+                                       double ra_rate_uncy = DEFAULT_RATE_UNC_RAD,
+                                       double dec_rate_uncy = DEFAULT_RATE_UNC_RAD)
         {
             Observation obs(epoch_val, obs_position, obs_velocity);
             obs.observation_type = StreakObservation(ra_rate, dec_rate);
@@ -256,8 +261,8 @@ namespace orbit_fit
                                                double epoch_val,
                                                const std::array<double, 3> &obs_position,
                                                const std::array<double, 3> &obs_velocity,
-                                               double ra_rate_uncy = 24.0 / 206265.0,
-                                               double dec_rate_uncy = 24.0 / 206265.0)
+                                               double ra_rate_uncy = DEFAULT_RATE_UNC_RAD,
+                                               double dec_rate_uncy = DEFAULT_RATE_UNC_RAD)
         {
             Observation obs = from_streak(ra, dec, ra_rate, dec_rate, epoch_val, obs_position, obs_velocity,
                                           ra_rate_uncy, dec_rate_uncy);
@@ -350,13 +355,13 @@ namespace orbit_fit
             .def_static("from_streak", &Observation::from_streak,
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
-                        py::arg("ra_rate_unc") = 24.0 / 206265.0, py::arg("dec_rate_unc") = 24.0 / 206265.0,
+                        py::arg("ra_rate_unc") = DEFAULT_RATE_UNC_RAD, py::arg("dec_rate_unc") = DEFAULT_RATE_UNC_RAD,
                         "Construct a Streak observation")
             .def_static("from_streak_with_id", &Observation::from_streak_with_id,
                         py::arg("objID"),
                         py::arg("ra"), py::arg("dec"), py::arg("ra_rate"), py::arg("dec_rate"),
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
-                        py::arg("ra_rate_unc") = 24.0 / 206265.0, py::arg("dec_rate_unc") = 24.0 / 206265.0,
+                        py::arg("ra_rate_unc") = DEFAULT_RATE_UNC_RAD, py::arg("dec_rate_unc") = DEFAULT_RATE_UNC_RAD,
                         "Construct a Streak observation")
             // Constructor for a Radar (delay/Doppler) observation.
             .def_static("from_radar", &Observation::from_radar,
