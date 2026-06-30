@@ -14,6 +14,7 @@ from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
 from sorcha.ephemeris.simulation_parsing import Observatory as SorchaObservatory
 from sorcha.ephemeris.simulation_setup import furnish_spiceypy
 
+from layup.constants import AU_KM
 from layup.routines import FitResult
 from layup.utilities.layup_configs import LayupConfigs
 
@@ -35,9 +36,6 @@ from layup.utilities.layup_configs import LayupConfigs
 # makes every platform behave the same.  ("forkserver" would also work and is
 # cheaper, but "spawn" is the most portable and matches the macOS default.)
 _MP_CONTEXT = multiprocessing.get_context("spawn")
-
-AU_M = 149597870700
-AU_KM = AU_M / 1000.0
 
 logger = logging.getLogger(__name__)
 
@@ -211,14 +209,7 @@ def parse_cov(orbit_row, flatten=False):
 def parse_fit_result(
     fit_result_row,
     orbit_colm_flag=True,
-    orbit_para=[
-        "x",
-        "y",
-        "z",
-        "xdot",
-        "ydot",
-        "zdot",
-    ],
+    orbit_para=None,
 ):
     """
     Parse the initial guess data from a structured numpy array representing our
@@ -233,20 +224,22 @@ def parse_fit_result(
     res : FitResult
         The parsed fit result.
     """
+    if orbit_para is None:
+        orbit_para = ["x", "y", "z", "xdot", "ydot", "zdot"]
 
     if isinstance(fit_result_row, np.ndarray) and fit_result_row.shape == (1,):
         fit_result_row = fit_result_row[0]
 
     res = FitResult()
 
-    if orbit_colm_flag == True:
+    if orbit_colm_flag:
         res.csq = fit_result_row["csq"]  # The chi-squared value of the fit
         res.ndof = fit_result_row["ndof"]  # The number of degrees of freedom
         # The number of iterations used during the fitting process.
         res.niter = fit_result_row["niter"]
 
     # The state vector of the fit result
-    res.state = res.state = [fit_result_row[param] for param in orbit_para]
+    res.state = [fit_result_row[param] for param in orbit_para]
     # While orbitfit saves the epoch in MJD_TDB, internal calculations use JD_TDB
     res.epoch = fit_result_row["epochMJD_TDB"] + 2400000.5
     # Construct the flattened covariance matrix from the columns of the fit result
@@ -471,27 +464,14 @@ class LayupObservatory(SorchaObservatory):
         # Update the cached coordinates and obscode_cache_key for the case of a moving observatory
         if coords is None or None in coords or np.isnan(coords).any():
             obscode_cache_key = self.create_obscode_cache_key(obscode, et)
-            # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates
-            if "sys" not in data.dtype.names:
-                raise ValueError(
-                    f"The data must have a 'sys' field for the reference frame of non-fixed position observatory {obscode}."
-                )
-            if "ctr" not in data.dtype.names:
-                raise ValueError(
-                    f"The data must have a 'ctr' field for non-fixed position observatory {obscode}."
-                )
-            if "pos1" not in data.dtype.names:
-                raise ValueError(
-                    f"The data must have a 'pos1' field for non-fixed position observatory {obscode}."
-                )
-            if "pos2" not in data.dtype.names:
-                raise ValueError(
-                    f"The data must have a 'pos2' field for non-fixed position observatory {obscode}."
-                )
-            if "pos3" not in data.dtype.names:
-                raise ValueError(
-                    f"The data must have a 'pos3' field for non-fixed postion observatory {obscode}."
-                )
+            # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates.
+            # A non-fixed observatory must carry its reference frame ('sys'), center ('ctr') and the three
+            # position components ('pos1'/'pos2'/'pos3') in the data.
+            for field in ("sys", "ctr", "pos1", "pos2", "pos3"):
+                if field not in data.dtype.names:
+                    raise ValueError(
+                        f"The data must have a '{field}' field for non-fixed position observatory {obscode}."
+                    )
             coords = np.array([data["pos1"], data["pos2"], data["pos3"]])
             # If any of the coordinates are None or NaN, raise an error
             if coords is None or np.isnan(coords).any():
@@ -705,16 +685,13 @@ def get_format(data):
         logger.error("Data is empty")
         raise ValueError("Data is empty")
 
-    format = None
-
     if "FORMAT" in data.dtype.names:
         # Find first valid format in the data
-        for format in data["FORMAT"]:
-            if format in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
-                return format
-        else:
-            logger.error("Data does not contain valid orbit format")
-            raise ValueError("Data does not contain valid orbit format")
+        for fmt in data["FORMAT"]:
+            if fmt in ["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"]:
+                return fmt
+        logger.error("Data does not contain valid orbit format")
+        raise ValueError("Data does not contain valid orbit format")
     else:
         logger.error("Data does not contain 'FORMAT' column")
         raise ValueError("Data does not contain 'FORMAT' column")

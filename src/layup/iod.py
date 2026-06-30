@@ -35,13 +35,10 @@ import logging
 import math
 from typing import Callable, Optional, Sequence
 
+from layup.constants import GMtotal, SPEED_OF_LIGHT
 from layup.routines import FitResult, Observation, gauss
 
 logger = logging.getLogger(__name__)
-
-GMtotal = 0.0002963092748799319
-AU_M = 149597870700
-SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
 
 # Default bounds for the cheap physical-feasibility filter. We
 # deliberately *don't* check bound-orbit energy here: Gauss's velocity
