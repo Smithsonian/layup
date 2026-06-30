@@ -29,6 +29,9 @@ try:
 except ImportError:  # extension not rebuilt yet
     get_ias15_adaptive_mode = lambda: -1
     set_ias15_adaptive_mode = lambda m: None
+# _MU_SUN (= heliocentric GM = k^2) is used by the BK-native fit for the
+# bound-orbit energy prior on gdot; SPEED_OF_LIGHT (au/day) by the radar ingest.
+from layup.constants import MU_SUN as _MU_SUN, SPEED_OF_LIGHT
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
@@ -100,14 +103,6 @@ INPUT_FORMAT_READERS = {
     "ADES_xml": (None, None),
     "ADES_hdf5": (HDF5DataReader, None),
 }
-
-GMtotal = 0.0002963092748799319
-AU_M = 149597870700
-SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
-
-# Heliocentric GM in AU^3 / day^2 (k^2, k = Gaussian gravitational constant).
-# Used by the BK-native fit for the bound-orbit energy prior on gdot.
-_MU_SUN = 0.00029591220828559104
 
 
 def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
