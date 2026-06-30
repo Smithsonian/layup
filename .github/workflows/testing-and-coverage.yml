@@ -49,7 +49,10 @@ jobs:
         layup bootstrap
     - name: Run unit tests with pytest
       run: |
-        python -m pytest -n auto --cov=layup --cov-report=xml
+        # -rs prints a summary of skipped tests and their reasons, so silently
+        # skipped suites (e.g. ephem-gated fit/validation tests) are visible in
+        # the CI log (issue #359).
+        python -m pytest -n auto -rs --cov=layup --cov-report=xml
     - name: Upload coverage report to codecov
       uses: codecov/codecov-action@v6
       with:

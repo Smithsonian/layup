@@ -51,4 +51,5 @@ jobs:
         pip list
     - name: Run unit tests with pytest
       run: |
-        python -m pytest -n auto
+        # -rs surfaces skipped tests + reasons in the CI log (issue #359).
+        python -m pytest -n auto -rs
