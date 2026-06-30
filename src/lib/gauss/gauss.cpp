@@ -144,7 +144,10 @@ namespace orbit_fit
             return std::nullopt;
         }
 
-        // Filter eigenvalues: select those with (nearly) zero imaginary part and real part > min_distance
+        // Keep the companion-matrix eigenvalues that are physical ranges: real
+        // (imaginary part below a 1e-10 tolerance -- the eigensolver leaves tiny
+        // numerical imaginary parts on genuinely real roots) and beyond
+        // min_distance.
         std::vector<double> roots;
         for (int i = 0; i < ces.eigenvalues().size(); ++i)
         {
