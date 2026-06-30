@@ -20,6 +20,7 @@ A2 is only weakly constrained on short arcs, so the arc spans several years.
 from __future__ import annotations
 
 import os
+import pooch
 
 import numpy as np
 import pytest
@@ -27,7 +28,7 @@ import pytest
 from layup.orbitfit import orbitfit
 from layup.routines import FitResult, Observation, get_ephem, run_from_vector_with_initial_guess
 
-CACHE = os.path.expanduser("~/Library/Caches/layup")
+CACHE = str(pooch.os_cache("layup"))
 _EPHEM = ("linux_p1550p2650.440", "sb441-n16.bsp")
 _EPHEM_OK = all(os.path.exists(os.path.join(CACHE, f)) for f in _EPHEM)
 pytestmark = pytest.mark.skipif(
