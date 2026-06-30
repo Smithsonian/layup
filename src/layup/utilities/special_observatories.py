@@ -82,6 +82,25 @@ def query_horizons_geocentric(naif_id, jd_tdb_list, timeout=30):
         state at the requested TDB epoch is returned, matching how layup
         supplies every other observer position (light time is handled later, in
         the integrator).
+
+    Notes
+    -----
+    We deliberately query the **geocentric** spacecraft state (center = Earth's
+    body center) rather than the barycentric one, so this plugs into the same
+    "geocentric observer offset + Earth's barycentric state" path the ground
+    stations use: ``_barycentric_moving_observatory`` adds Earth's barycentric
+    state (from layup's own SPICE kernel) to this offset. Referencing the offset
+    against a physical body (Earth) is more reproducible than referencing against
+    the solar-system barycenter, whose definition shifts between ephemeris
+    versions.
+
+    Caveat for high-precision work: Earth's geocenter as realized by layup's
+    SPICE kernel may differ slightly from the geocenter implied by the
+    spacecraft's Horizons reference ephemeris. The geocentric offset cancels
+    Earth's own position to first order, but a small residual inconsistency
+    (~meters) can remain. That is negligible for normal astrometry, but could
+    matter for very high precision applications such as space-based stellar
+    occultations -- flagged here as a known limitation (see PR #377 discussion).
     """
     out = {}
     jd_list = list(jd_tdb_list)
@@ -97,7 +116,7 @@ def _query_chunk(naif_id, jd_chunk, timeout):
         "OBJ_DATA": "NO",
         "MAKE_EPHEM": "YES",
         "EPHEM_TYPE": "VECTORS",
-        "CENTER": "'@399'",  # geocentric (Earth body center)
+        "CENTER": "'@399'",  # geocentric offset (see precision caveat in the docstring)
         "REF_PLANE": "FRAME",  # ICRF equatorial (not the ecliptic)
         "REF_SYSTEM": "ICRF",
         "VEC_CORR": "NONE",  # geometric state at the epoch
