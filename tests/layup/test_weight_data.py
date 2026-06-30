@@ -22,6 +22,7 @@ of regression.
 from __future__ import annotations
 
 import os
+import pooch
 
 import numpy as np
 import pytest
@@ -31,7 +32,7 @@ from layup.utilities.data_processing_utilities import parse_cov
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
-CACHE = os.path.expanduser("~/Library/Caches/layup")
+CACHE = str(pooch.os_cache("layup"))
 EPHEM_PLANETS = os.path.join(CACHE, "linux_p1550p2650.440")
 EPHEM_SMALLBODIES = os.path.join(CACHE, "sb441-n16.bsp")
 EPHEM_AVAILABLE = os.path.exists(EPHEM_PLANETS) and os.path.exists(EPHEM_SMALLBODIES)

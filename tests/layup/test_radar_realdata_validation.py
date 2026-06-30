@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import pooch
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +35,7 @@ import pytest
 from layup.orbitfit import _get_result_dtypes, orbitfit
 from layup.utilities.data_processing_utilities import get_cov_columns
 
-CACHE = os.path.expanduser("~/Library/Caches/layup")
+CACHE = str(pooch.os_cache("layup"))
 _EPHEM_OK = all(os.path.exists(os.path.join(CACHE, f)) for f in ("linux_p1550p2650.440", "sb441-n16.bsp"))
 pytestmark = pytest.mark.skipif(
     not _EPHEM_OK, reason="ASSIST ephemeris not in layup cache; run `layup bootstrap`"
