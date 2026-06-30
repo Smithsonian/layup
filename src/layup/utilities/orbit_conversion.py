@@ -115,9 +115,9 @@ def root_function(s, mu, alpha, r0, r0dot, t):
     Returns
     -------
     f : float
-        universal Kepler equation)
+        universal Kepler equation
     fp : float
-        (first derivative of f
+        first derivative of f
     fpp : float
         second derivative of f
     fppp : float
@@ -170,9 +170,8 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
 
     """
     # verify the bracket
-    # Use these values later
-    fl, fpl, fppl = root_function(x1, mu, alpha, r0, r0dot, t)[0:3]
-    fh, fph, fpph = root_function(x2, mu, alpha, r0, r0dot, t)[0:3]
+    fl, fpl = root_function(x1, mu, alpha, r0, r0dot, t)[0:2]
+    fh, fph = root_function(x2, mu, alpha, r0, r0dot, t)[0:2]
     if (fl > 0.0 and fh > 0.0) or (fl < 0.0 and fh < 0.0):
         return False, np.nan, fl
     if fl == 0:
@@ -187,11 +186,6 @@ def halley_safe(x1, x2, mu, alpha, r0, r0dot, t, xacc=1e-14, maxit=100):
     else:
         xh = x1
         xl = x2
-
-    if np.abs(fl) < np.abs(fh):
-        rts, f, fp, fpp = xl, fl, fpl, fppl
-    else:
-        rts, f, fp, fpp = xh, fh, fph, fpph
 
     rts = 0.5 * (x1 + x2)  # Initialize the guess for root,
     dxold = np.abs(x2 - x1)  # the “stepsize before last,”
@@ -289,8 +283,6 @@ def universal_cartesian(mu, q, e, incl, longnode, argperi, tp, epochMJD_TDB):
     r0dot = 0
     v2 = mu * (1 + e) / q
     alpha = 2 * mu / r0 - v2
-
-    # print(alpha, np.sqrt(v2), mu/alpha)
 
     # bracket the root
     ds = (t - 0) / 4
@@ -393,6 +385,11 @@ def principal_value(theta):
 
 @jax.jit
 def atan2_checkzero(x, y):
+    """Two-argument arctangent that returns 0 when both x and y are zero.
+
+    Guards the angle computations in universal_keplerian against the undefined
+    atan2(0, 0) (e.g. a node or argument of latitude that is exactly degenerate).
+    """
     return jax.lax.cond(
         jnp.logical_and(x != 0.0, y != 0), lambda x, y: jnp.arctan2(x, y), lambda x, y: 0.0, x, y
     )
@@ -400,6 +397,13 @@ def atan2_checkzero(x, y):
 
 @jax.jit
 def eccanom(e, trueanom, mu, alpha, p):
+    """Time from perihelion (days) for an elliptical orbit (e < 1).
+
+    Returns t_p relative to the state epoch (the caller adds the epoch). The
+    (e, trueanom, mu, alpha, p) signature is shared with paranom/hypanom so
+    jax.lax.cond can dispatch on eccentricity with identical arguments; this
+    branch uses e, trueanom, mu and alpha (= mu/a).
+    """
     eccanom = 2.0 * jnp.arctan(jnp.sqrt((1.0 - e) / (1.0 + e)) * jnp.tan(trueanom / 2.0))
     meananom = eccanom - e * jnp.sin(eccanom)
     meananom = principal_value(meananom)
@@ -411,6 +415,11 @@ def eccanom(e, trueanom, mu, alpha, p):
 
 @jax.jit
 def paranom(e, trueanom, mu, alpha, p):
+    """Time from perihelion (days) for a parabolic orbit (e == 1).
+
+    Returns t_p relative to the state epoch. Shares the anomaly-helper signature
+    (see eccanom); this branch uses trueanom, mu and p (the semi-latus rectum).
+    """
     tf = jnp.tan(0.5 * trueanom)
     B = 0.5 * (tf * tf * tf + 3 * tf)
     mm = jnp.sqrt(mu / (p * p * p))
@@ -420,6 +429,11 @@ def paranom(e, trueanom, mu, alpha, p):
 
 @jax.jit
 def hypanom(e, trueanom, mu, alpha, p):
+    """Time from perihelion (days) for a hyperbolic orbit (e > 1).
+
+    Returns t_p relative to the state epoch. Shares the anomaly-helper signature
+    (see eccanom); this branch uses e, trueanom, mu and alpha (= mu/a).
+    """
     heccanom = 2.0 * jnp.arctanh(jnp.sqrt((e - 1.0) / (e + 1.0)) * jnp.tan(trueanom / 2.0))
     N = e * jnp.sinh(heccanom) - heccanom
     a = mu / alpha
@@ -496,9 +510,7 @@ def universal_cometary(mu, x, y, z, vx, vy, vz, epochMJD_TDB):
 
     incl = jnp.arccos(h_vec[2] / h)
 
-    longnode = atan2_checkzero(
-        h_vec[0], -h_vec[1]
-    )  # jax.lax.cond(jnp.logical_and(h_vec[0] != 0.0, h_vec[1] != 0.0), lambda x : jnp.arctan2(h_vec[0], -h_vec[1]), lambda x : 0., 0)
+    longnode = atan2_checkzero(h_vec[0], -h_vec[1])
 
     ecostrueanom = p / r - 1.0
     esintrueanom = rdot * h / mu
@@ -506,9 +518,7 @@ def universal_cometary(mu, x, y, z, vx, vy, vz, epochMJD_TDB):
 
     q = p / (1 + e)
 
-    trueanom = atan2_checkzero(
-        esintrueanom, ecostrueanom
-    )  # jax.lax.cond(jnp.logical_and(esintrueanom != 0, ecostrueanom != 0), lambda x : jnp.arctan2(esintrueanom, ecostrueanom), lambda x : 0.0, 0)
+    trueanom = atan2_checkzero(esintrueanom, ecostrueanom)
 
     cosnode = jnp.cos(longnode)
     sinnode = jnp.sin(longnode)
@@ -517,9 +527,7 @@ def universal_cometary(mu, x, y, z, vx, vy, vz, epochMJD_TDB):
     rcosu = pos[0] * cosnode + pos[1] * sinnode
     rsinu = (pos[1] * cosnode - pos[0] * sinnode) / jnp.cos(incl)  # should check zero
 
-    u = atan2_checkzero(
-        rsinu, rcosu
-    )  # jax.lax.cond(jnp.logical_and(rsinu != 0.0, rcosu != 0.0), lambda x, y : jnp.arctan2(x, y), lambda x,y : 0., rsinu, rcosu)
+    u = atan2_checkzero(rsinu, rcosu)
 
     argperi = u - trueanom
 
@@ -539,28 +547,6 @@ def universal_cometary(mu, x, y, z, vx, vy, vz, epochMJD_TDB):
         alpha,
         p,
     )
-    """ 
-	if e < 1:
-		# elliptical
-		eccanom = 2.0 * jnp.arctan(jnp.sqrt((1.0 - e) / (1.0 + e)) * jnp.tan(trueanom / 2.0))
-		meananom = eccanom - e * jnp.sin(eccanom)
-		meananom = principal_value(meananom)
-		a = mu / alpha
-		mm = jnp.sqrt(mu / (a * a * a))
-		tp = epochMJD_TDB - meananom / mm
-	elif e == 1:
-		# parabolic
-		tf = jnp.tan(0.5 * trueanom)
-		B = 0.5 * (tf * tf * tf + 3 * tf)
-		mm = jnp.sqrt(mu / (p * p * p))
-		tp = epochMJD_TDB - B / (3 * mm)
-	else:
-		# hyperbolic
-		heccanom = 2.0 * jnp.arctanh(jnp.sqrt((e - 1.0) / (e + 1.0)) * jnp.tan(trueanom / 2.0))
-		N = e * jnp.sinh(heccanom) - heccanom
-		a = mu / alpha
-		mm = jnp.sqrt(-mu / (a * a * a))
-		tp = epochMJD_TDB - N / mm"""
 
     return q, e, incl, longnode, argperi, tp
 
@@ -629,7 +615,6 @@ jac_cometary_xyz = jax.jacobian(universal_cometary, argnums=(1, 2, 3, 4, 5, 6))
 jac_keplerian_xyz = jax.jacobian(universal_keplerian, argnums=(1, 2, 3, 4, 5, 6))
 
 
-# @jax.jit
 def covariance_ecl_to_eq(covariance):
     """
     Converts a covariance matrix from ecliptic to equatorial coordinates.

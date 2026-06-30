@@ -18,6 +18,14 @@ from layup.utilities.data_processing_utilities import (
 # These are the maximum and minimum dates that the ASSIST ephemeris file allows for
 ASSIST_TIMEFRAME_MAX_MJD = 236455
 ASSIST_TIMEFRAME_MIN_MJD = -163545
+
+# Heliocentric distance (au) at which a comet's "original"/"future" barycentric
+# orbit is evaluated. Far enough from the Sun that planetary perturbations are
+# negligible, so the osculating elements there represent the orbit before (or
+# after) its passage through the planetary region. The integration in this
+# module marches each comet out to this distance.
+REFERENCE_DISTANCE_AU = 250.0
+
 logger = logging.getLogger(__name__)
 
 INPUT_READERS = {
@@ -53,7 +61,7 @@ def _remove_spc(data):
     for i in range(len(data_BCOM)):
         if data_BCOM["e"][i] < 1:
             a = data_BCOM["q"][i] / (1 - data_BCOM["e"][i])
-            if np.isinf(a) or a < 250 or data_BCOM["q"][i] > 250:
+            if np.isinf(a) or a < REFERENCE_DISTANCE_AU or data_BCOM["q"][i] > REFERENCE_DISTANCE_AU:
                 to_delete.append(i)
     data = np.delete(data, to_delete)
 
@@ -87,20 +95,19 @@ def _assist_integrate(sim, ex, dt, ephem, include_assist=True):
         The simulation after integration.
     """
     sim.dt = dt
-    # print(sim.t, sim.dt)
-    if include_assist == True:
+    if include_assist:
         primary = ephem.get_particle("sun", sim.t)
     else:
         primary = sim.particles[0]
     oi = sim.particles[-1].orbit(primary=primary)
 
-    if include_assist == True:
+    if include_assist:
         ex.integrate_or_interpolate(sim.t + dt)
 
     else:
         sim.integrate(sim.t + dt)
 
-    if include_assist == True:
+    if include_assist:
         primary = ephem.get_particle("sun", sim.t)
     else:
         primary = sim.particles[0]
@@ -117,14 +124,12 @@ def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
     ----------
     sim : REBOUND simulation
         The data to use comet function on.
+    ex : ASSIST Extras object
+        The ASSIST extras.
     step : int
         The timestep to integrate across.
     ephem : ASSIST Ephem Object
         The ASSIST Ephemeris.
-    ex : ASSIST Extras object
-        The ASSIST extras.
-    dt : int
-        The timestep to integrate across.
     include_assist : bool, optional
         If True, the simulation will run the integration through ASSIST, otherwise it will be a pure REBOUND integration. Default is True.
 
@@ -154,7 +159,7 @@ def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
 
     else:
         # Moving inwards; if already passed 250au go back, otherwise go forward
-        if of.d > 250:
+        if of.d > REFERENCE_DISTANCE_AU:
             dt = abs(step)
 
         else:
@@ -214,17 +219,17 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
-            while of.d > 250 and oi.d > of.d and sim.t < ASSIST_TIMEFRAME_MAX_MJD:
+            while of.d > REFERENCE_DISTANCE_AU and oi.d > of.d and sim.t < ASSIST_TIMEFRAME_MAX_MJD:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
 
         else:
-            while of.d < 250 and oi.d < of.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:
+            while of.d < REFERENCE_DISTANCE_AU and oi.d < of.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
 
         if sim.t >= ASSIST_TIMEFRAME_MAX_MJD or sim.t <= ASSIST_TIMEFRAME_MIN_MJD:
             # If comet goes outside assist timeframe, continue the simulation in pure rebound
             rebound_only.append(comet)
-            print(f"{comet} has exceeded the timeframe of the ASSIST Ephemeris")
+            logger.warning(f"{comet} has exceeded the timeframe of the ASSIST Ephemeris")
         else:
             output[comet] = (1 / of.a, of.a, of.d, of.e)
 
@@ -232,7 +237,7 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
     sim_dict = generate_simulations(ephem, Msun, Mtot, orbit_df[orbit_df["ObjID"].isin(rebound_only)], args)
     step = 10
     for comet in rebound_only:
-        print(f"Running rebound only for {comet}")
+        logger.info(f"Running rebound only for {comet}")
         sim = sim_dict[comet]["sim"]
         ex = sim_dict[comet]["ex"]
 
@@ -246,11 +251,11 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
-            while of.d > 250 and oi.d > of.d:
+            while of.d > REFERENCE_DISTANCE_AU and oi.d > of.d:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=False)
 
         else:
-            while of.d < 250 and oi.d < of.d:
+            while of.d < REFERENCE_DISTANCE_AU and oi.d < of.d:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=False)
         output[comet] = (1 / of.a, of.a, of.d, of.e)
 

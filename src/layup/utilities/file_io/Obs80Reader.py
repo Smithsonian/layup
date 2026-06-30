@@ -4,7 +4,13 @@ from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 
 def two_line_row_start(line):
-    """Checks if the MPC Obs80 line is the first line of a two-line row format."""
+    """Checks if the MPC Obs80 line is the first line of a two-line row format.
+
+    Column 15 (0-indexed 14) is the MPC "note 2" / observation-type code. The
+    codes S (satellite), R (radar) and V (roving observer) each emit a second
+    line carrying the observer position/data, so a line bearing one of them is
+    the first of a two-line record.
+    """
     note2 = line[14]
     return note2 == "S" or note2 == "R" or note2 == "V"
 

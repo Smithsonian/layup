@@ -31,6 +31,12 @@ FitResult run_bk_native_fit(
     result.epoch = initial_guess.epoch;
     result.csq = HUGE_VAL;
     result.niter = 0;
+    // NOTE: this fitter is astrometry-only. It builds exactly two residual rows
+    // (RA, Dec) per detection throughout (see the 2*N design matrix below), so
+    // ndof = 2 * n_obs - 6. Streak (rate) and radar (delay/Doppler) rows are NOT
+    // handled here -- such observations would be treated as plain astrometry and
+    // their extra information silently ignored. Use the Cartesian orbit_fit path
+    // for those until BK gains rate/radar residual support.
     result.ndof = (int)(2 * detections.size() - 6);
     result.state = initial_guess.state;
     result.cov.fill(0.0);
