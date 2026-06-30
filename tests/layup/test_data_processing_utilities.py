@@ -216,8 +216,11 @@ def test_moving_observatory_coordinate_cache():
     """Test that populate_observatory correctly populates the cache, is consistent across calls, and raises errors when required fields are missing."""
     observatory = LayupObservatory()
 
-    # Define test data
-    obscode = "C51"  # WISE (space observatory)
+    # Define test data. Use a roving observer (247): a moving observatory that
+    # must carry its own ADES position, and -- unlike a spacecraft code such as
+    # C51 -- is NOT resolved via JPL Horizons (issue #55), so a missing/NaN
+    # position is the error this test exercises.
+    obscode = "247"  # Roving Observer (ADES position required)
     ets = np.array([2451545.0, 2451546.0, 2451547.0])  # Example ephemeris times
     row_dtype = [
         ("sys", "U7"),
@@ -330,8 +333,10 @@ def test_fixed_observatory_with_zero_parallax_constant():
         if expected is not None:
             assert np.allclose(coords, expected)
 
-    # Codes with no parallax-constant keys (roving observer, space telescopes)
-    # must still report no fixed position so they take the ADES-position path.
+    # Codes with no parallax-constant keys must still report no fixed position,
+    # so they take a per-observation path: roving/other codes use the ADES
+    # position; spacecraft codes (C51, 250, ...) are resolved via JPL Horizons
+    # (issue #55).
     for obscode in ("247", "C51", "C57", "250"):
         coords = observatory.ObservatoryXYZ.get(obscode)
         assert coords == (None, None, None)
