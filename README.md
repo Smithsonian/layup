@@ -54,12 +54,17 @@ layup bootstrap
 
 ### Fit an orbit from the command line
 
-`layup` ships a small example observation file,
-[`docs/notebooks/example_observations.csv`](docs/notebooks/example_observations.csv)
-— 587 astrometric observations of the numbered minor planet (119839) 2002 CX17,
-spanning 1997–2024, in ADES CSV form. Fit it with:
+`layup` bundles a demo dataset. Copy it into your working directory and print
+the matching example command with:
 ```
-layup orbitfit docs/notebooks/example_observations.csv ADES_csv -o my_orbit
+layup demo prepare orbitfit
+layup demo howto orbitfit
+```
+`prepare` writes `holman_data_working.csv` — 4135 astrometric observations of
+asteroid (3666) Holman, in ADES CSV form — to the current directory, and `howto`
+prints the ready-to-run command. Fit it with:
+```
+layup orbitfit holman_data_working.csv ADES_csv -o my_orbit
 ```
 This writes the best-fit barycentric Cartesian orbit and its covariance to
 `my_orbit.csv`. Supported input formats are `MPC80col`, `ADES_csv`, `ADES_psv`,
