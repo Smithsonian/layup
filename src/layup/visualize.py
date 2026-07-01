@@ -9,7 +9,6 @@ from layup.utilities.file_io.HDF5Reader import HDF5DataReader
 from layup.utilities.data_processing_utilities import get_format
 
 from layup.orbit_maths import (
-    REQUIRED_COLUMN_NAMES,
     build_ephem_and_mus,
     build_planet_lines_cache,
     conic_lines_from_classical_conic,
@@ -67,6 +66,7 @@ def build_fig_caches(
     conic_cache, lines_cache, sunpos_cache, pos_cache = prepopulate_orbit_variants(
         rows,
         orbit_format,
+        pid=primary_id_column_name,
         input_plane=input_plane,
         input_origin=input_origin,
     )
@@ -261,6 +261,65 @@ def visualize_cli(
 
     # full reader with required columns
     logger.info(f"Reading full input file: {input}")
+
+    REQUIRED_COLUMN_NAMES: dict[str, list[str]] = {
+        "BCART": [
+            primary_id_column_name,
+            "FORMAT",
+            "x",
+            "y",
+            "z",
+            "xdot",
+            "ydot",
+            "zdot",
+            "epochMJD_TDB",
+        ],
+        "BCOM": [
+            primary_id_column_name,
+            "FORMAT",
+            "q",
+            "e",
+            "inc",
+            "node",
+            "argPeri",
+            "t_p_MJD_TDB",
+            "epochMJD_TDB",
+        ],
+        "BKEP": [
+            primary_id_column_name,
+            "FORMAT",
+            "a",
+            "e",
+            "inc",
+            "node",
+            "argPeri",
+            "ma",
+            "epochMJD_TDB",
+        ],
+        "CART": [primary_id_column_name, "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
+        "COM": [
+            primary_id_column_name,
+            "FORMAT",
+            "q",
+            "e",
+            "inc",
+            "node",
+            "argPeri",
+            "t_p_MJD_TDB",
+            "epochMJD_TDB",
+        ],
+        "KEP": [
+            primary_id_column_name,
+            "FORMAT",
+            "a",
+            "e",
+            "inc",
+            "node",
+            "argPeri",
+            "ma",
+            "epochMJD_TDB",
+        ],
+    }
     required_cols = REQUIRED_COLUMN_NAMES[orbit_format]
     if suffix == ".csv":
         reader = CSVDataReader(

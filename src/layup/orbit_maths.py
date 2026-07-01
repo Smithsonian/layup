@@ -59,7 +59,7 @@ class ClassicalConic:
 
 
 # --- converter ---
-def convert_cart_to_classical_conic(rows: np.ndarray, mu: float) -> ClassicalConic:
+def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid: str) -> ClassicalConic:
     """
     Convert cartesian elements into classical conic elements (L, e, i, Omega, omega)
 
@@ -77,7 +77,7 @@ def convert_cart_to_classical_conic(rows: np.ndarray, mu: float) -> ClassicalCon
         Object instance containing N orbits and their classical elements
     """
     # read each orbit id tag
-    obj_id = rows["ObjID"].astype(str)
+    obj_id = rows[pid].astype(str)
 
     # set up our position and velocity vectors
     r = np.vstack([rows["x"], rows["y"], rows["z"]]).T.astype(float)
@@ -157,7 +157,9 @@ def convert_cart_to_classical_conic(rows: np.ndarray, mu: float) -> ClassicalCon
 
 
 # --- frame swapping ---
-def rv_to_cart(obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: np.ndarray) -> np.ndarray:
+def rv_to_cart(
+    obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: np.ndarray, pid: str
+) -> np.ndarray:
     """
     Wrapper function to create structured array of cartesian elements from position+velocity state vectors
 
@@ -183,7 +185,7 @@ def rv_to_cart(obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: n
     out = np.empty(
         r.shape[0],
         dtype=[
-            ("ObjID", "U64"),
+            (pid, "U64"),
             ("x", "f8"),
             ("y", "f8"),
             ("z", "f8"),
@@ -193,7 +195,7 @@ def rv_to_cart(obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: n
             ("epochMJD_TDB", "f8"),
         ],
     )
-    out["ObjID"] = obj_id.astype("U64")
+    out[pid] = obj_id.astype("U64")
     out["x"], out["y"], out["z"] = r[:, 0], r[:, 1], r[:, 2]
     out["xdot"], out["ydot"], out["zdot"] = v[:, 0], v[:, 1], v[:, 2]
     out["epochMJD_TDB"] = epochMJD_TDB.astype("f8")
@@ -371,6 +373,7 @@ def convert_sun_to_baryecliptic(ephem: Ephem, epochJD: np.ndarray) -> tuple[np.n
 def prepopulate_orbit_variants(
     rows: np.ndarray,
     orbit_format: ORBIT_FORMAT,
+    pid: str,
     input_plane: Literal["equatorial", "ecliptic"],
     input_origin: Literal["heliocentric", "barycentric"],
 ) -> tuple[
@@ -416,7 +419,7 @@ def prepopulate_orbit_variants(
     # # (mu_sun = heliocentric, mu_total = barycentric)
     ephem, mu_sun, mu_total = build_ephem_and_mus()
 
-    obj_id = rows["ObjID"].astype(str)
+    obj_id = rows[pid].astype(str)
     epochJD = rows["epochMJD_TDB"].astype(float) + 2400000.5
 
     # grab state vectors
@@ -471,8 +474,8 @@ def prepopulate_orbit_variants(
 
     for key, (r_i, v_i, mu_i) in variants.items():
         pos_cache[key] = r_i
-        cart_rows = rv_to_cart(obj_id, r_i, v_i, rows["epochMJD_TDB"].astype(float))
-        canon_cache[key] = convert_cart_to_classical_conic(cart_rows, mu_i)
+        cart_rows = rv_to_cart(obj_id, r_i, v_i, rows["epochMJD_TDB"].astype(float), pid=pid)
+        canon_cache[key] = convert_cart_to_classical_conic(cart_rows, mu_i, pid=pid)
 
     return canon_cache, lines_cache, sunpos_cache, pos_cache
 
