@@ -229,7 +229,6 @@ def visualize_cli(
     # BCART_EQ is the one exception: that format name explicitly encodes barycentric+equatorial
     input_format_infer = orbit_format
     if input_format_infer == "BCART_EQ":
-        orbit_format = "BCART"
         input_format_infer = "BCART"
         input_plane_infer = "equatorial"
         input_origin_infer = "barycentric"
@@ -247,7 +246,7 @@ def visualize_cli(
 
     # full reader with required columns
     logger.info(f"Reading full input file: {input}")
-    required_cols = REQUIRED_COLUMN_NAMES[orbit_format]
+    required_cols = REQUIRED_COLUMN_NAMES[input_format_infer]
     if suffix == ".csv":
         reader = CSVDataReader(input_file, format_column_name="FORMAT", required_column_names=required_cols)
     else:
@@ -271,7 +270,7 @@ def visualize_cli(
 
     # quick check to make sure orbit format didn't change somehow between probe and full read
     orbit_format_check = get_format(rows)
-    if orbit_format_check != orbit_format and orbit_format_check != "BCART_EQ":
+    if orbit_format_check != orbit_format:
         logger.error(f"FORMAT changed between probe and full read: {orbit_format} -> {orbit_format_check}")
         raise ValueError(
             f"FORMAT changed between probe and full read: {orbit_format} -> {orbit_format_check}"
