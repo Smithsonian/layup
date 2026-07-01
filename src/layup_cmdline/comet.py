@@ -35,6 +35,7 @@ def main():
     optional.add_argument(
         "-c",
         "--conf",
+        "--config",
         help="optional configuration file",
         type=str,
         dest="config",

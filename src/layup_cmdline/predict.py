@@ -63,6 +63,7 @@ def main():
     optional.add_argument(
         "-c",
         "--conf",
+        "--config",
         help="Optional configuration file",
         type=str,
         dest="config",

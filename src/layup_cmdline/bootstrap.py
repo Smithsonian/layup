@@ -19,6 +19,7 @@ def main():
     optional.add_argument(
         "-c",
         "--config",
+        "--conf",
         help="Input configuration file name",
         type=str,
         dest="config",

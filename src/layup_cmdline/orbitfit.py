@@ -40,12 +40,14 @@ def main():
     optional.add_argument(
         "-c",
         "--conf",
+        "--config",
         help="optional configuration file",
         type=str,
         dest="config",
         required=False,
     )
     optional.add_argument(
+        "-ch",
         "--chunksize",
         help="number of orbits to be processed at once",
         dest="chunksize",

@@ -58,3 +58,11 @@ def test_bootstrap_accepts_ar_flag(monkeypatch):
     """bootstrap accepts --ar as an alias for its download directory."""
     args = _parse("bootstrap", ["--ar", "/tmp/layup_ar"], monkeypatch)
     assert args.cache == "/tmp/layup_ar"
+
+
+@pytest.mark.parametrize("verb", ["convert", "comet", "predict", "orbitfit", "bootstrap"])
+def test_config_flag_spellings(verb, monkeypatch):
+    """Both --conf and --config resolve everywhere (unified config flag)."""
+    for spelling in ("--conf", "--config"):
+        args = _parse(verb, [spelling, "cfg.ini"], monkeypatch)
+        assert args.config == "cfg.ini", f"{verb} rejected {spelling}"
