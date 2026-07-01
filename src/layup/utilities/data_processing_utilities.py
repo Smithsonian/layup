@@ -8,6 +8,7 @@ from concurrent.futures import ProcessPoolExecutor
 from importlib.resources import files
 
 import numpy as np
+import pooch
 import requests
 import spiceypy as spice
 from sorcha.ephemeris.simulation_geometry import barycentricObservatoryRates
@@ -357,18 +358,33 @@ class LayupObservatory(SorchaObservatory):
         # Furnish the spiceypy kernels
         layup_furnish_spiceypy(cache_dir)
 
+        # Decide the observatory-codes source *before* handing off to Sorcha's
+        # Observatory. Sorcha downloads the codes from the MPC when the
+        # uncompressed file is not already cached -- and that download is a
+        # 25-retry pooch fetch (see make_retriever) with no short timeout, so a
+        # slow/flaky MPC can wedge it for over an hour. When that happens at
+        # pytest collection/fixture time it even escapes pytest-timeout, hanging
+        # CI runs (issue #388). We therefore only allow the network copy when it
+        # is *already cached* (put there by `layup bootstrap`); otherwise we hand
+        # Sorcha the copy bundled with layup immediately -- no blocking download
+        # on the fit path. `layup bootstrap` remains the way to refresh the codes.
+        oc_file = (
+            None if self._cached_obscodes_present(cache_dir, config.auxiliary) else write_fallback_obscodes()
+        )
+        if oc_file is not None:
+            logger.info(
+                "Observatory codes not found in the cache; using the copy bundled "
+                "with layup. Run `layup bootstrap` to fetch the latest from the MPC."
+            )
+
         try:
-            super().__init__(FakeSorchaArgs(cache_dir), config.auxiliary)
+            super().__init__(FakeSorchaArgs(cache_dir), config.auxiliary, oc_file=oc_file)
         except (requests.exceptions.RequestException, json.JSONDecodeError) as exc:
-            # Loading the MPC observatory-codes file failed. Either the download
-            # itself errored (server unreachable, timeout, etc.), or it
-            # "succeeded" but produced an empty/corrupt file that does not parse
-            # as JSON -- both have been seen as transient CI failures. Either
-            # way, fall back to the copy bundled with layup rather than failing
-            # the run over a transient outage.
+            # Defensive fallback: the cached codes file was unreadable/corrupt (or
+            # a download slipped through and failed). Use the bundled copy rather
+            # than failing the run.
             logger.warning(
-                "Could not load observatory codes from the MPC (%s); "
-                "falling back to the copy bundled with layup.",
+                "Could not load observatory codes (%s); " "falling back to the copy bundled with layup.",
                 exc,
             )
             super().__init__(
@@ -386,6 +402,19 @@ class LayupObservatory(SorchaObservatory):
         # observer; _barycentric_moving_observatory falls back to Earth's
         # velocity for keys that are absent here.
         self.ObservatoryVel = {}
+
+    @staticmethod
+    def _cached_obscodes_present(cache_dir, auxconfigs):
+        """Whether the decompressed observatory-codes file is already cached.
+
+        Mirrors the check inside Sorcha's ``Observatory`` -- which downloads the
+        codes from the MPC only when this uncompressed file is absent -- so we can
+        make the same decision *before* the download would happen and avoid it
+        (see :meth:`__init__`). ``cache_dir`` defaults to pooch's per-user cache,
+        exactly as the retriever does.
+        """
+        cache_path = cache_dir if cache_dir else pooch.os_cache("layup")
+        return os.path.isfile(os.path.join(str(cache_path), auxconfigs.observatory_codes))
 
     def convert_to_geocentric(self, obs_location: dict) -> tuple:
         """Convert an observatory's parallax constants to geocentric coordinates.
