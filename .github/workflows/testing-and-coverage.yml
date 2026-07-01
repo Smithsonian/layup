@@ -33,7 +33,7 @@ jobs:
     # Python-version independent, so the key is per-OS only -- the 3.13 and
     # 3.14 legs share one cache. Bump the version suffix to force a refresh.
     - name: Cache layup ephemeris + obscodes data
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cache/layup
