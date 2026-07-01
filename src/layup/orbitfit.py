@@ -46,7 +46,12 @@ from layup.utilities.data_processing_utilities import (
 )
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.debiasing import debias, generate_bias_dict
-from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
+from layup.utilities.file_io import (
+    ADESXMLDataReader,
+    CSVDataReader,
+    HDF5DataReader,
+    Obs80DataReader,
+)
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
@@ -100,7 +105,7 @@ INPUT_FORMAT_READERS = {
     "MPC80col": (Obs80DataReader, None),
     "ADES_csv": (CSVDataReader, "csv"),
     "ADES_psv": (CSVDataReader, "psv"),
-    "ADES_xml": (None, None),
+    "ADES_xml": (ADESXMLDataReader, None),
     "ADES_hdf5": (HDF5DataReader, None),
 }
 
