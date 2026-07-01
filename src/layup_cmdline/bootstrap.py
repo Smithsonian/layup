@@ -27,9 +27,12 @@ def main():
 
     parser.add_argument(
         "--cache",
+        "--ar",
+        "--ar-data-path",  # aliases: same directory the other verbs read via --ar/--ar-data-path
+        dest="cache",
         type=str,
         default=pooch.os_cache("layup"),
-        help="Local directory where downloaded files will be stored.",
+        help="Local directory where downloaded files will be stored (also accepted as --ar/--ar-data-path).",
     )
 
     parser.add_argument(
