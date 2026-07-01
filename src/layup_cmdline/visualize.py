@@ -71,6 +71,15 @@ def main():
         required=False,
     )
     optional.add_argument(
+        "-pid",
+        "--primary-id-column-name",
+        help="name of the column identifying each object (default: provID, as written by orbitfit/predict; use ObjID for files that use that)",
+        dest="primary_id_column_name",
+        type=str,
+        default="provID",
+        required=False,
+    )
+    optional.add_argument(
         "--ar-data-file-path",
         dest="ar_data_file_path",
         type=str,
@@ -107,6 +116,7 @@ def execute(args):
         random=args.random,
         cache_dir=cache_dir,
         special=args.special,
+        primary_id_column_name=args.primary_id_column_name,
     )
 
 

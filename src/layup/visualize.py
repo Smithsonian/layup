@@ -31,6 +31,7 @@ def build_fig_caches(
     n_points: int = 500,
     r_max: float = 50.0,
     cache_dir: Optional[str] = None,
+    primary_id_column_name: str = "provID",
 ):
     """ """
     # get the assist ephem object and build epoch array
@@ -48,15 +49,16 @@ def build_fig_caches(
         n_points=900,
     )
 
-    # if a special file was provided, drop any rows from the main set whose ObjID
+    # if a special file was provided, drop any rows from the main set whose id
     # appears in the special set to avoid double-plotting the same orbit
-    if special_rows is not None and special_rows.size > 0 and "ObjID" in rows.dtype.names:
-        special_obj_ids = set(str(oid) for oid in special_rows["ObjID"])
-        mask = np.array([str(oid) not in special_obj_ids for oid in rows["ObjID"]])
+    if special_rows is not None and special_rows.size > 0 and primary_id_column_name in rows.dtype.names:
+        special_obj_ids = set(str(oid) for oid in special_rows[primary_id_column_name])
+        mask = np.array([str(oid) not in special_obj_ids for oid in rows[primary_id_column_name]])
         n_dropped = int((~mask).sum())
         if n_dropped > 0:
             logger.info(
-                f"Dropping {n_dropped} orbit(s) from main set whose ObjID also appears in the special file"
+                f"Dropping {n_dropped} orbit(s) from main set whose {primary_id_column_name} "
+                "also appears in the special file"
             )
             rows = rows[mask]
 
@@ -167,6 +169,7 @@ def visualize_cli(
     random: bool = False,
     cache_dir: Optional[str] = None,
     special: Optional[str] = None,
+    primary_id_column_name: str = "provID",
 ):
     """
     Create visualisation plots of a given set of input orbits from the command line
@@ -197,6 +200,11 @@ def visualize_cli(
     special : str, optional (default=None)
         Path to a second orbit file whose orbits are highlighted in a distinct accent colour;
         regular orbits are greyed out when this is supplied
+
+    primary_id_column_name : str, optional (default="provID")
+        Name of the column identifying each object. Defaults to "provID" (the
+        column orbit-fit and predict write); pass e.g. "ObjID" for files that use
+        that instead.
     """
 
     logger.info(f"Reading input file: {input}")
@@ -211,11 +219,17 @@ def visualize_cli(
     suffix = input_file.suffix.lower()
     if suffix == ".csv":
         probe_reader = CSVDataReader(
-            input_file, format_column_name="FORMAT", required_column_names=["FORMAT"]
+            input_file,
+            format_column_name="FORMAT",
+            required_column_names=["FORMAT"],
+            primary_id_column_name=primary_id_column_name,
         )
     else:
         probe_reader = HDF5DataReader(
-            input_file, format_column_name="FORMAT", required_column_names=["FORMAT"]
+            input_file,
+            format_column_name="FORMAT",
+            required_column_names=["FORMAT"],
+            primary_id_column_name=primary_id_column_name,
         )
     probe_rows = probe_reader.read_rows(block_start=0, block_size=100)
     if "FORMAT" in probe_rows.dtype.names:
@@ -249,9 +263,19 @@ def visualize_cli(
     logger.info(f"Reading full input file: {input}")
     required_cols = REQUIRED_COLUMN_NAMES[orbit_format]
     if suffix == ".csv":
-        reader = CSVDataReader(input_file, format_column_name="FORMAT", required_column_names=required_cols)
+        reader = CSVDataReader(
+            input_file,
+            format_column_name="FORMAT",
+            required_column_names=required_cols,
+            primary_id_column_name=primary_id_column_name,
+        )
     else:
-        reader = HDF5DataReader(input_file, format_column_name="FORMAT", required_column_names=required_cols)
+        reader = HDF5DataReader(
+            input_file,
+            format_column_name="FORMAT",
+            required_column_names=required_cols,
+            primary_id_column_name=primary_id_column_name,
+        )
     rows = reader.read_rows(block_start=0, block_size=block_size)
 
     # make sure we actually have the requested number of orbits, else return all,
@@ -288,11 +312,17 @@ def visualize_cli(
         special_suffix = special_file.suffix.lower()
         if special_suffix == ".csv":
             special_reader = CSVDataReader(
-                special_file, format_column_name="FORMAT", required_column_names=required_cols
+                special_file,
+                format_column_name="FORMAT",
+                required_column_names=required_cols,
+                primary_id_column_name=primary_id_column_name,
             )
         else:
             special_reader = HDF5DataReader(
-                special_file, format_column_name="FORMAT", required_column_names=required_cols
+                special_file,
+                format_column_name="FORMAT",
+                required_column_names=required_cols,
+                primary_id_column_name=primary_id_column_name,
             )
         special_rows = special_reader.read_rows(block_start=0, block_size=block_size)
         special_format = get_format(special_rows)
@@ -314,6 +344,7 @@ def visualize_cli(
         n_points=n_points,
         r_max=r_max,
         cache_dir=cache_dir,
+        primary_id_column_name=primary_id_column_name,
     )
 
     logger.info(f"Running Dash web app")
@@ -329,6 +360,7 @@ def visualize_notebook(
     random: bool = False,
     cache_dir: Optional[str] = None,
     special: Optional[str | Path | np.ndarray] = None,
+    primary_id_column_name: str = "provID",
 ):
     """
     Create visualisation plots of a given set of input orbits in a Jupyter notebook
@@ -367,6 +399,7 @@ def visualize_notebook(
             random=random,
             cache_dir=cache_dir,
             special=special_path,
+            primary_id_column_name=primary_id_column_name,
         )
     elif isinstance(data, np.ndarray):
         if data.dtype.names is None or "FORMAT" not in data.dtype.names:
@@ -445,6 +478,7 @@ def visualize_notebook(
             n_points=n_points,
             r_max=r_max,
             cache_dir=cache_dir,
+            primary_id_column_name=primary_id_column_name,
         )
 
         run_dash_app(fig2d_cache, fig3d_cache, special_ids=special_ids)
