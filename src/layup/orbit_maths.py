@@ -71,6 +71,9 @@ def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid: str) -> Cl
     mu : float
         Standard gravitional parameter (au^3 / day^2)
 
+    pid : str, optional
+        Name of the column identifying each object.
+
     Returns
     --------
     ClassicalConic : object
@@ -176,6 +179,9 @@ def rv_to_cart(
 
     epochMJD_TDB: numpy float array
         Object epoch with shape (N, 3) (MJD TDB)
+
+    pid : str, optional
+        Name of the column identifying each object.
 
     Returns
     --------
@@ -400,6 +406,9 @@ def prepopulate_orbit_variants(
 
     input_origin : str
         Input origin of the orbits. Must be one of "heliocentric" or "barycentric"
+
+    pid : str, optional
+        Name of the column identifying each object.
 
     Returns
     --------
