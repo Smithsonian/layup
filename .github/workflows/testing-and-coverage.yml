@@ -19,7 +19,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Set up - ${{ matrix.os }} - Python ${{ matrix.python-version }}
       uses: actions/setup-python@v6
       with:
@@ -33,7 +33,7 @@ jobs:
     # Python-version independent, so the key is per-OS only -- the 3.13 and
     # 3.14 legs share one cache. Bump the version suffix to force a refresh.
     - name: Cache layup ephemeris + obscodes data
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cache/layup
@@ -54,6 +54,6 @@ jobs:
         # the CI log (issue #359).
         python -m pytest -n auto -rs --cov=layup --cov-report=xml
     - name: Upload coverage report to codecov
-      uses: codecov/codecov-action@v6
+      uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}

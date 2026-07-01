@@ -42,3 +42,53 @@ And in subsequent clones of the repo you want to run
 ```
 git clone --recursive https://github.com/Smithsonian/layup.git
 ```
+
+## Quickstart
+
+Once `layup` is installed, download the ephemeris and reference data it needs
+(SPICE planetary kernels, the small-body kernel, MPC observatory codes, and the
+astrometry debiasing tables). This is a one-time download of a few hundred MB:
+```
+layup bootstrap
+```
+
+### Fit an orbit from the command line
+
+`layup` bundles a demo dataset. Copy it into your working directory and print
+the matching example command with:
+```
+layup demo prepare orbitfit
+layup demo howto orbitfit
+```
+`prepare` writes `holman_data_working.csv` — 4135 astrometric observations of
+asteroid (3666) Holman, in ADES CSV form — to the current directory, and `howto`
+prints the ready-to-run command. Fit it with:
+```
+layup orbitfit holman_data_working.csv ADES_csv -o my_orbit
+```
+This writes the best-fit barycentric Cartesian orbit and its covariance to
+`my_orbit.csv`. Supported input formats are `MPC80col`, `ADES_csv`, `ADES_psv`,
+`ADES_xml`, and `ADES_hdf5`.
+
+Convert the result to another orbit representation (Cometary, Keplerian, …):
+```
+layup convert my_orbit.csv KEP -o my_orbit_kep
+```
+
+Predict future on-sky positions, with uncertainties, for an observatory:
+```
+layup predict my_orbit.csv --days 30 --station X05 -o my_predictions
+```
+
+Every verb takes `--help` for its full set of options (engine choice, IOD
+method, non-gravitational parameters, parallel workers, …):
+```
+layup orbitfit --help
+```
+
+### Use the Python API
+
+The same load → fit → convert → predict workflow is available directly from
+Python. See the worked-example notebook
+[`docs/notebooks/orbit_fitting_api.ipynb`](docs/notebooks/orbit_fitting_api.ipynb)
+and the full documentation at [layup.readthedocs.io](https://layup.readthedocs.io).

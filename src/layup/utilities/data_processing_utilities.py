@@ -17,6 +17,11 @@ from sorcha.ephemeris.simulation_setup import furnish_spiceypy
 from layup.constants import AU_KM
 from layup.routines import FitResult
 from layup.utilities.layup_configs import LayupConfigs
+from layup.utilities.special_observatories import (
+    SPACE_OBSERVATORIES,
+    et_to_jd_tdb,
+    query_horizons_geocentric,
+)
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 
@@ -464,6 +469,16 @@ class LayupObservatory(SorchaObservatory):
         # Update the cached coordinates and obscode_cache_key for the case of a moving observatory
         if coords is None or None in coords or np.isnan(coords).any():
             obscode_cache_key = self.create_obscode_cache_key(obscode, et)
+
+            # A space-based ("special case") observatory -- a spacecraft such as
+            # HST or JWST (issue #55) -- has no parallax constants. When the user
+            # does not supply an explicit per-observation position for it, resolve
+            # its geocentric state from JPL Horizons. A user-supplied ADES
+            # position always takes priority (handled by the block below).
+            if obscode in SPACE_OBSERVATORIES and not self._has_ades_position(data):
+                self._populate_space_observatory(obscode, et, obscode_cache_key)
+                return obscode_cache_key
+
             # The observatory does not have a fixed position, so don't try to calculate barycentric coordinates.
             # A non-fixed observatory must carry its reference frame ('sys'), center ('ctr') and the three
             # position components ('pos1'/'pos2'/'pos3') in the data.
@@ -566,6 +581,75 @@ class LayupObservatory(SorchaObservatory):
             return vel * AU_KM / (24 * 60 * 60)
         return vel
 
+    @staticmethod
+    def _has_ades_position(data):
+        """Whether the row carries a usable ADES per-observation position.
+
+        True only when all of ``sys``/``ctr``/``pos1``/``pos2``/``pos3`` are
+        present and the three position components are finite. Used to let a
+        user-supplied position override the JPL-Horizons lookup for a
+        space-based observatory (issue #55).
+        """
+        fields = ("sys", "ctr", "pos1", "pos2", "pos3")
+        if not all(field in data.dtype.names for field in fields):
+            return False
+        pos = np.array([data["pos1"], data["pos2"], data["pos3"]], dtype=float)
+        return not np.isnan(pos).any()
+
+    def _fetch_space_observatory_states(self, naif_id, jd_tdb_list):
+        """Geocentric states of a spacecraft at the given JD(TDB) epochs.
+
+        Thin wrapper around :func:`query_horizons_geocentric` -- a seam that
+        tests monkeypatch so they never touch the network.
+        """
+        return query_horizons_geocentric(naif_id, jd_tdb_list)
+
+    def _populate_space_observatory(self, obscode, et, obscode_cache_key):
+        """Resolve a space-based observatory's geocentric state via JPL Horizons.
+
+        Stores the geocentric position (km) and velocity (km/s) under the
+        per-epoch cache key, exactly as an ADES-supplied moving observer would,
+        so :meth:`_barycentric_moving_observatory` then adds Earth's barycentric
+        state to it (issue #55). A no-op if the key is already cached (e.g. warmed
+        by :meth:`_prefetch_space_observatories`).
+        """
+        if obscode_cache_key in self.ObservatoryXYZ:
+            return
+        naif_id, _ = SPACE_OBSERVATORIES[obscode]
+        jd = et_to_jd_tdb(et)
+        pos_km, vel_km_s = self._fetch_space_observatory_states(naif_id, [jd])[jd]
+        self.ObservatoryXYZ[obscode_cache_key] = np.asarray(pos_km, dtype=float)
+        self.ObservatoryVel[obscode_cache_key] = np.asarray(vel_km_s, dtype=float)
+
+    def _prefetch_space_observatories(self, data):
+        """Warm the cache for space-based observatories, one request per spacecraft.
+
+        Groups every epoch of each space-based obscode (that the user has not
+        overridden with an explicit ADES position) and resolves them in a single
+        batched JPL Horizons request, so a fit with N space-based observations
+        makes one HTTP call per spacecraft rather than N (issue #55).
+        """
+        if "stn" not in data.dtype.names:
+            return
+        wanted = {}  # obscode -> {et: jd_tdb}
+        for row in np.atleast_1d(data):
+            obscode = row["stn"]
+            if obscode not in SPACE_OBSERVATORIES or self._has_ades_position(row):
+                continue
+            et = row["et"]
+            if self.create_obscode_cache_key(obscode, et) in self.ObservatoryXYZ:
+                continue
+            wanted.setdefault(obscode, {})[et] = et_to_jd_tdb(et)
+
+        for obscode, et_to_jd in wanted.items():
+            naif_id, _ = SPACE_OBSERVATORIES[obscode]
+            states = self._fetch_space_observatory_states(naif_id, list(et_to_jd.values()))
+            for et, jd in et_to_jd.items():
+                pos_km, vel_km_s = states[jd]
+                key = self.create_obscode_cache_key(obscode, et)
+                self.ObservatoryXYZ[key] = np.asarray(pos_km, dtype=float)
+                self.ObservatoryVel[key] = np.asarray(vel_km_s, dtype=float)
+
     def _barycentric_moving_observatory(self, et, obscode_cache_key):
         """Barycentric position and velocity (km, km/s) of a moving observatory.
 
@@ -620,6 +704,10 @@ class LayupObservatory(SorchaObservatory):
         """
         if "stn" not in data.dtype.names:
             raise ValueError("The data must have a 'stn' field.")
+
+        # Resolve any space-based observatories up front, batching all of a
+        # spacecraft's epochs into a single JPL Horizons request (issue #55).
+        self._prefetch_space_observatories(data)
 
         res = []
         for row in data:

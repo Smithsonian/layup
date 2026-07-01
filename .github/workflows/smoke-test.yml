@@ -24,7 +24,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Set up - ${{ matrix.os }} - Python ${{ matrix.python-version }}
       uses: actions/setup-python@v6
       with:
@@ -33,7 +33,7 @@ jobs:
     # tests download, so a transient outage of naif.jpl.nasa.gov or
     # minorplanetcenter.net does not fail the run. See testing-and-coverage.yml.
     - name: Cache layup ephemeris + obscodes data
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cache/layup
