@@ -76,8 +76,12 @@ def generate_bias_dict(cache_dir=None):
 
 def debias(ra, dec, epoch_jd_tdb, catalog, bias_dict, nside=256):
 
-    catalog_key = MPC_CATALOGS[catalog]
-    if catalog_key not in bias_dict.keys():
+    # A blank, None, or unrecognized star-catalog code has no bias model (common
+    # in historical / uncatalogued astrometry, or when no astCat column is
+    # present). Leave the astrometry unchanged rather than raising KeyError, which
+    # would otherwise abort the whole object's fit (issue #401).
+    catalog_key = MPC_CATALOGS.get(catalog)
+    if catalog_key is None or catalog_key not in bias_dict:
         return ra, dec
 
     # find pixel from RADEC
