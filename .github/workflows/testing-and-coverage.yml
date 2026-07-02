@@ -18,6 +18,12 @@ jobs:
         python-version: ['3.13', '3.14']
 
     runs-on: ${{ matrix.os }}
+    # Fail a wedged leg fast instead of running to the 6-hour default. The unit
+    # suite is ~5-6 min warm (~12 min on a cold cache); a leg far exceeding this
+    # is the recurring flaky-download hang (issue #388), which escapes
+    # pytest-timeout when it happens in a spawned worker. Capping keeps reruns
+    # cheap instead of burning ~2 hours per hang.
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
     - name: Set up - ${{ matrix.os }} - Python ${{ matrix.python-version }}
