@@ -213,7 +213,11 @@ def test_comet_output(tmpdir):
     input_file = Path(get_test_filepath(test_filename))
     temp_out_file = f"test_output{input_file.stem}"
 
-    result = subprocess.run(["layup", "comet", str(input_file), "-f", "-o", str(temp_out_file)])
+    # The demo comet fixture is keyed by ObjID; comet's -pid now defaults to
+    # provID (CLI-consistency), so pass -pid ObjID explicitly.
+    result = subprocess.run(
+        ["layup", "comet", str(input_file), "-f", "-o", str(temp_out_file), "-pid", "ObjID"]
+    )
 
     assert result.returncode == 0
 
