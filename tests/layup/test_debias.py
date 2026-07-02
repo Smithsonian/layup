@@ -70,3 +70,21 @@ def test_debias():
 
     # Check that the returned values are different from the input values (indicating debiasing occurred)
     assert debiased_ra != ra or debiased_dec != dec, "Debiased values should differ from input values."
+
+
+@pytest.mark.parametrize("catalog", ["", None, "NOT_A_REAL_CATALOG"])
+def test_debias_unknown_catalog_returns_unchanged(catalog):
+    """A blank, None, or unrecognized star-catalog code has no bias model and must
+    leave the astrometry unchanged instead of raising KeyError -- which would
+    otherwise abort the whole object's fit on real/historical data (issue #401).
+    These cases return before ``bias_dict`` is used, so an empty dict is fine.
+    """
+    ra, dec = 123.456, -7.89
+    assert debias(ra, dec, 2451545.0, catalog, bias_dict={}) == (ra, dec)
+
+
+def test_debias_known_catalog_absent_from_bias_dict_returns_unchanged():
+    """A known catalog name that is not present in the supplied bias_dict also
+    returns the astrometry unchanged (the pre-existing second guard)."""
+    ra, dec = 50.0, 10.0
+    assert debias(ra, dec, 2451545.0, "PPM", bias_dict={}) == (ra, dec)
