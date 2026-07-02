@@ -524,6 +524,82 @@ namespace orbit_fit
                                    nongrav_mask, a123);
     }
 
+    // Forward declaration: create_sequences is defined later in this translation
+    // unit (after compute_dX), but residuals_at_state below needs it.
+    void create_sequences(std::vector<double> &times, double epoch,
+                          std::vector<size_t> &reverse_in_seq, std::vector<size_t> &reverse_out_seq,
+                          std::vector<size_t> &forward_in_seq, std::vector<size_t> &forward_out_seq);
+
+    // Per-observation residuals + mapped covariance at a fixed state, computed
+    // with the fit's own efficient forward+backward single-pass integration.
+    // This is a fast replacement for predict_sequence in the outlier-rejection
+    // loop: predict_sequence does N fresh integrations from the epoch (~10x the
+    // cost of a whole fit), while this reuses create_sequences + compute_residuals
+    // for one forward + one backward pass over the sorted arc.
+    //
+    // Returns, per detection (input order): [x_resid, y_resid, oc00, oc01, oc11,
+    // n_resid], where (x_resid, y_resid) is the raw tangent-plane residual
+    // (radians) and oc** is the 2x2 mapped state covariance B*cov*B^T (symmetric,
+    // so oc10 == oc01). Astrometry/optical rows only; radar/streak rows fall back
+    // to zero covariance (their partials layout differs).
+    std::vector<std::array<double, 6>>
+    residuals_at_state(struct assist_ephem *ephem,
+                       FitResult fit,
+                       std::vector<Observation> &detections,
+                       Eigen::MatrixXd &cov)
+    {
+        struct reb_particle p0;
+        p0.x = fit.state[0];
+        p0.y = fit.state[1];
+        p0.z = fit.state[2];
+        p0.vx = fit.state[3];
+        p0.vy = fit.state[4];
+        p0.vz = fit.state[5];
+        double epoch = fit.epoch;
+
+        size_t N = detections.size();
+        std::vector<residuals> resid_vec(N);
+        std::vector<partials> partials_vec(N);
+
+        std::vector<double> times(N);
+        for (size_t i = 0; i < N; ++i)
+            times[i] = detections[i].epoch;
+
+        std::vector<size_t> forward_in_seq, forward_out_seq, reverse_in_seq, reverse_out_seq;
+        create_sequences(times, epoch,
+                         reverse_in_seq, reverse_out_seq,
+                         forward_in_seq, forward_out_seq);
+
+        compute_residuals(ephem, p0, epoch,
+                          detections,
+                          resid_vec, partials_vec,
+                          forward_in_seq, forward_out_seq,
+                          reverse_in_seq, reverse_out_seq);
+
+        std::vector<std::array<double, 6>> out(N);
+        for (size_t i = 0; i < N; ++i)
+        {
+            double oc00 = 0.0, oc01 = 0.0, oc11 = 0.0;
+            // Optical astrometry: 2 rows, B is 2x6 over the state parameters.
+            if (partials_vec[i].x_partials.size() >= 6 && partials_vec[i].y_partials.size() >= 6)
+            {
+                Eigen::Matrix<double, 2, 6> B;
+                for (int j = 0; j < 6; ++j)
+                {
+                    B(0, j) = partials_vec[i].x_partials[j];
+                    B(1, j) = partials_vec[i].y_partials[j];
+                }
+                Eigen::Matrix2d oc = B * cov * B.transpose();
+                oc00 = oc(0, 0);
+                oc01 = oc(0, 1);
+                oc11 = oc(1, 1);
+            }
+            out[i] = {resid_vec[i].x_resid, resid_vec[i].y_resid,
+                      oc00, oc01, oc11, static_cast<double>(resid_vec[i].n_resid)};
+        }
+        return out;
+    }
+
     // Consider having this accept Eigen matrices as
     // input
     void compute_dX(std::vector<residuals> &resid_vec,
@@ -1166,6 +1242,15 @@ namespace orbit_fit
                 (`iter_max`, default 100), and runs orbit fit. Reducing
                 iter_max gives a cheap screening pass for use in
                 multi-candidate IOD picker loops.
+            )pbdoc");
+        m.def("residuals_at_state", &orbit_fit::residuals_at_state,
+              py::arg("ephem"), py::arg("fit"), py::arg("detections"), py::arg("cov"),
+              R"pbdoc(
+                Per-observation residuals + mapped covariance at a fixed state,
+                using the fit's efficient forward+backward single-pass integration
+                (a fast replacement for predict_sequence in the outlier-rejection
+                loop). Returns, per detection: [x_resid, y_resid (radians),
+                cov00, cov01, cov11 (the 2x2 B*cov*B^T), n_resid].
             )pbdoc");
         m.def("set_ias15_min_dt", &orbit_fit::set_ias15_min_dt,
               py::arg("days"),

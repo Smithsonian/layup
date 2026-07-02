@@ -367,6 +367,76 @@ def test_get_onsky_data_output(tmpdir):
         np.allclose(results[column], expected[column])
 
 
+def test_residuals_at_state_matches_predict_sequence():
+    """``residuals_at_state`` must reproduce ``predict_sequence`` (issue #388 perf).
+
+    Both evaluate, at a fixed fitted state, the per-observation mapped covariance
+    ``B*cov*B^T``; ``residuals_at_state`` additionally returns the raw tangent-plane
+    residual, which must equal the projection of the (observed - model) direction
+    that ``predict_sequence`` implies. ``residuals_at_state`` gets there ~100x
+    faster by reusing the fit's single forward+backward pass instead of one fresh
+    integration per observation -- this is the piece that makes the outlier-
+    rejection loop tractable at catalogue scale, so pin the equivalence.
+    """
+    import pooch
+    from layup.orbitfit import do_fit, _build_sequence
+    from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
+    from layup.utilities.data_processing_utilities import LayupObservatory, layup_furnish_spiceypy
+    from layup.routines import (
+        get_ephem,
+        predict_sequence,
+        residuals_at_state,
+        numpy_to_eigen,
+        Observation,
+    )
+
+    DEG = np.pi / 180.0
+    cache_dir = str(pooch.os_cache("layup"))
+    layup_furnish_spiceypy(None)
+    observatory = LayupObservatory(cache_dir=None)
+
+    obs = CSVDataReader(
+        get_test_filepath("1_random_mpc_ADES_provIDs_no_sats_micro.csv"),
+        "csv",
+        primary_id_column_name="provID",
+    ).read_rows()
+    data = _prep_for_fit(obs, observatory)
+
+    detections = [
+        Observation.from_astrometry_with_id(
+            str(d["provID"]),
+            d["ra"] * DEG,
+            d["dec"] * DEG,
+            convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
+            [d["x"], d["y"], d["z"]],
+            [d["vx"], d["vy"], d["vz"]],
+        )
+        for d in data
+    ]
+    jds = convert_tdb_date_to_julian_date(data["obsTime"], cache_dir)
+    seq = _build_sequence(jds)
+    ephem = get_ephem(cache_dir)
+
+    fit = do_fit(detections, seq, cache_dir=cache_dir, iod="gauss", engine="cartesian")
+    assert fit.flag == 0, "reference fit did not converge"
+
+    cov = numpy_to_eigen(list(fit.cov), 6, 6)
+    preds = predict_sequence(ephem, fit, detections, cov)
+    rows = residuals_at_state(ephem, fit, detections, cov)
+    assert len(rows) == len(detections) == len(preds)
+
+    for o, p, r in zip(detections, preds, rows):
+        # 1) mapped covariance B*cov*B^T must match (predict obs_cov is [00,01,10,11]).
+        assert np.isclose(r[2], p.obs_cov[0], rtol=1e-5, atol=1e-30)
+        assert np.isclose(r[3], p.obs_cov[1], rtol=1e-5, atol=1e-30)
+        assert np.isclose(r[4], p.obs_cov[3], rtol=1e-5, atol=1e-30)
+        # 2) the returned residual must equal the tangent-plane projection of the
+        #    (observed - model) direction that predict_sequence gives.
+        dvec = np.array(o.rho_hat) - np.array(p.rho)
+        xi = np.array([dvec @ np.array(o.a_vec), dvec @ np.array(o.d_vec)])
+        assert np.allclose([r[0], r[1]], xi, atol=1e-9)
+
+
 def _prep_for_fit(obs, observatory):
     """Append the ``et`` column and observer barycentric state that the
     per-object ``_orbitfit`` worker expects (normally added by ``orbitfit``)."""
