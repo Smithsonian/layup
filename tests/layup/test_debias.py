@@ -88,3 +88,22 @@ def test_debias_known_catalog_absent_from_bias_dict_returns_unchanged():
     returns the astrometry unchanged (the pre-existing second guard)."""
     ra, dec = 50.0, 10.0
     assert debias(ra, dec, 2451545.0, "PPM", bias_dict={}) == (ra, dec)
+
+
+def test_debias_accepts_catalog_code_like_a_name():
+    """obs80 supplies the single-char catalog CODE (an MPC_CATALOGS value, e.g.
+    ``"p"``), while ADES supplies the NAME (a key, e.g. ``"PPM"``). Both must apply
+    the same bias correction -- otherwise debiasing silently no-ops on all obs80
+    input (issue #409)."""
+    cache_dir = pooch.os_cache("layup")
+    bias_dict = generate_bias_dict(cache_dir=cache_dir)
+    ra, dec, epoch = 10.0, 20.0, 2451545.0
+
+    name, code = "PPM", MPC_CATALOGS["PPM"]  # "PPM" -> "p"
+    ra_name, dec_name = debias(ra, dec, epoch, name, bias_dict)
+    ra_code, dec_code = debias(ra, dec, epoch, code, bias_dict)
+
+    # The code must resolve to the same correction as its name...
+    assert (ra_code, dec_code) == (ra_name, dec_name)
+    # ...and actually apply one (not silently return the input unchanged).
+    assert (ra_code, dec_code) != (ra, dec)
