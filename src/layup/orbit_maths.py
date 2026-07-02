@@ -5,7 +5,7 @@ from typing import Literal, Optional
 import numpy as np
 
 from layup.utilities.layup_configs import LayupConfigs
-from layup.utilities.bootstrap_utilties.download_utilities import make_retriever
+from layup.utilities.bootstrap_utilties.download_utilities import make_retriever, layup_downloader
 
 from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_constants import ECL_TO_EQ_ROTATION_MATRIX, EQ_TO_ECL_ROTATION_MATRIX
@@ -17,14 +17,7 @@ logger = logging.getLogger(__name__)
 
 # --- orbit types and their columns ---
 ORBIT_FORMAT = Literal["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]
-REQUIRED_COLUMN_NAMES: dict[str, list[str]] = {
-    "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "BKEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-    "CART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-}
+
 
 PLANET_PERIOD_DAYS = {
     "Mercury": 87.969,
@@ -59,7 +52,7 @@ class ClassicalConic:
 
 
 # --- converter ---
-def convert_cart_to_classical_conic(rows: np.ndarray, mu: float) -> ClassicalConic:
+def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid="provID") -> ClassicalConic:
     """
     Convert cartesian elements into classical conic elements (L, e, i, Omega, omega)
 
@@ -71,13 +64,16 @@ def convert_cart_to_classical_conic(rows: np.ndarray, mu: float) -> ClassicalCon
     mu : float
         Standard gravitional parameter (au^3 / day^2)
 
+    pid : str, optional
+        Name of the column identifying each object.
+
     Returns
     --------
     ClassicalConic : object
         Object instance containing N orbits and their classical elements
     """
     # read each orbit id tag
-    obj_id = rows["ObjID"].astype(str)
+    obj_id = rows[pid].astype(str)
 
     # set up our position and velocity vectors
     r = np.vstack([rows["x"], rows["y"], rows["z"]]).T.astype(float)
@@ -157,7 +153,9 @@ def convert_cart_to_classical_conic(rows: np.ndarray, mu: float) -> ClassicalCon
 
 
 # --- frame swapping ---
-def rv_to_cart(obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: np.ndarray) -> np.ndarray:
+def rv_to_cart(
+    obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: np.ndarray, pid="provID"
+) -> np.ndarray:
     """
     Wrapper function to create structured array of cartesian elements from position+velocity state vectors
 
@@ -175,6 +173,9 @@ def rv_to_cart(obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: n
     epochMJD_TDB: numpy float array
         Object epoch with shape (N, 3) (MJD TDB)
 
+    pid : str, optional
+        Name of the column identifying each object.
+
     Returns
     --------
     out : numpy structured array
@@ -183,7 +184,7 @@ def rv_to_cart(obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: n
     out = np.empty(
         r.shape[0],
         dtype=[
-            ("ObjID", "U64"),
+            (pid, "U64"),
             ("x", "f8"),
             ("y", "f8"),
             ("z", "f8"),
@@ -193,7 +194,7 @@ def rv_to_cart(obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: n
             ("epochMJD_TDB", "f8"),
         ],
     )
-    out["ObjID"] = obj_id.astype("U64")
+    out[pid] = obj_id.astype("U64")
     out["x"], out["y"], out["z"] = r[:, 0], r[:, 1], r[:, 2]
     out["xdot"], out["ydot"], out["zdot"] = v[:, 0], v[:, 1], v[:, 2]
     out["epochMJD_TDB"] = epochMJD_TDB.astype("f8")
@@ -318,7 +319,8 @@ def build_ephem_and_mus(cache_dir: Optional[str] = None) -> tuple[Ephem, float, 
 
     retriever = make_retriever(aux, cache_dir)
     ephem = Ephem(
-        planets_path=retriever.fetch(aux.jpl_planets), asteroids_path=retriever.fetch(aux.jpl_small_bodies)
+        planets_path=retriever.fetch(aux.jpl_planets, downloader=layup_downloader()),
+        asteroids_path=retriever.fetch(aux.jpl_small_bodies, downloader=layup_downloader()),
     )
 
     # calculate mu same way as in sorcha
@@ -373,6 +375,7 @@ def prepopulate_orbit_variants(
     orbit_format: ORBIT_FORMAT,
     input_plane: Literal["equatorial", "ecliptic"],
     input_origin: Literal["heliocentric", "barycentric"],
+    pid="provID",
 ) -> tuple[
     dict[tuple[str, str], ClassicalConic],
     dict[tuple[str, str], np.ndarray],
@@ -398,6 +401,9 @@ def prepopulate_orbit_variants(
     input_origin : str
         Input origin of the orbits. Must be one of "heliocentric" or "barycentric"
 
+    pid : str, optional
+        Name of the column identifying each object.
+
     Returns
     --------
     canon_cache : dict of objects
@@ -416,7 +422,11 @@ def prepopulate_orbit_variants(
     # # (mu_sun = heliocentric, mu_total = barycentric)
     ephem, mu_sun, mu_total = build_ephem_and_mus()
 
-    obj_id = rows["ObjID"].astype(str)
+    try:
+        obj_id = rows[pid].astype(str)
+    except ValueError as e:
+        logger.error(f"Column '{pid}' not found in orbit data")
+        raise ValueError(f"Column '{pid}' not found in orbit data") from e
     epochJD = rows["epochMJD_TDB"].astype(float) + 2400000.5
 
     # grab state vectors
@@ -471,8 +481,8 @@ def prepopulate_orbit_variants(
 
     for key, (r_i, v_i, mu_i) in variants.items():
         pos_cache[key] = r_i
-        cart_rows = rv_to_cart(obj_id, r_i, v_i, rows["epochMJD_TDB"].astype(float))
-        canon_cache[key] = convert_cart_to_classical_conic(cart_rows, mu_i)
+        cart_rows = rv_to_cart(obj_id, r_i, v_i, rows["epochMJD_TDB"].astype(float), pid=pid)
+        canon_cache[key] = convert_cart_to_classical_conic(cart_rows, mu_i, pid=pid)
 
     return canon_cache, lines_cache, sunpos_cache, pos_cache
 
