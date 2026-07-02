@@ -51,8 +51,9 @@ def main():
     optional = parser.add_argument_group("Optional arguments")
 
     optional.add_argument(
-        "-ar",
+        "--ar",
         "--ar-data-path",
+        "-ar",  # back-compat: predict previously used only the single-dash -ar
         help="Directory path where Assist+Rebound data files were stored when running `layup bootstrap` from the command line.",
         type=str,
         dest="ar_data_file_path",
@@ -62,6 +63,7 @@ def main():
     optional.add_argument(
         "-c",
         "--conf",
+        "--config",
         help="Optional configuration file",
         type=str,
         dest="config",

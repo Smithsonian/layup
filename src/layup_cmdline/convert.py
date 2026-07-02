@@ -42,6 +42,7 @@ def main():
     optional.add_argument(
         "-c",
         "--conf",
+        "--config",
         help="optional configuration file",
         type=str,
         dest="config",
@@ -97,7 +98,7 @@ def main():
         help="Column name in input file that contains the primary ID of the object.",
         dest="primary_id_column_name",
         type=str,
-        default="ObjID",
+        default="provID",
         required=False,
     )
 
