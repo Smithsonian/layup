@@ -80,12 +80,14 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "--ar-data-file-path",
+        "--ar",
+        "--ar-data-path",
+        "--ar-data-file-path",  # back-compat: visualize previously used only this spelling
         dest="ar_data_file_path",
         type=str,
         default=None,
         required=False,
-        help=argparse.SUPPRESS,  # hide from --help, i don't think a visualize user will be specifying this, but it is needed for bootstrapping fles if user doesn't have them
+        help=argparse.SUPPRESS,  # hidden: a visualize user rarely sets this, but it's needed when bootstrapping files the user doesn't yet have
     )
 
     args = parser.parse_args()

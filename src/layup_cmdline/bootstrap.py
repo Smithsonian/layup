@@ -19,6 +19,7 @@ def main():
     optional.add_argument(
         "-c",
         "--config",
+        "--conf",
         help="Input configuration file name",
         type=str,
         dest="config",
@@ -27,9 +28,12 @@ def main():
 
     parser.add_argument(
         "--cache",
+        "--ar",
+        "--ar-data-path",  # aliases: same directory the other verbs read via --ar/--ar-data-path
+        dest="cache",
         type=str,
         default=pooch.os_cache("layup"),
-        help="Local directory where downloaded files will be stored.",
+        help="Local directory where downloaded files will be stored (also accepted as --ar/--ar-data-path).",
     )
 
     parser.add_argument(
@@ -68,7 +72,7 @@ def execute(args):
     # download new files by running layup and specifying in the config file
     # under the section [AUXILIARY] a new filename and url.
     if args.config:
-        find_file_or_exit(args.c, "-c, --config")
+        find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.config)
     else:
         configs = LayupConfigs()
