@@ -59,7 +59,7 @@ class ClassicalConic:
 
 
 # --- converter ---
-def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid = "provID") -> ClassicalConic:
+def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid="provID") -> ClassicalConic:
     """
     Convert cartesian elements into classical conic elements (L, e, i, Omega, omega)
 
@@ -381,7 +381,7 @@ def prepopulate_orbit_variants(
     orbit_format: ORBIT_FORMAT,
     input_plane: Literal["equatorial", "ecliptic"],
     input_origin: Literal["heliocentric", "barycentric"],
-    pid = "provID"
+    pid="provID",
 ) -> tuple[
     dict[tuple[str, str], ClassicalConic],
     dict[tuple[str, str], np.ndarray],

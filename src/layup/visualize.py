@@ -69,6 +69,7 @@ def build_fig_caches(
         pid=primary_id_column_name,
         input_plane=input_plane,
         input_origin=input_origin,
+        pid=primary_id_column_name,
     )
 
     for key, conic in conic_cache.items():
@@ -89,6 +90,7 @@ def build_fig_caches(
             orbit_format,
             input_plane=input_plane,
             input_origin=input_origin,
+            pid=primary_id_column_name,
         )
         special_lines_cache = {}
         for key, conic in special_conic_cache.items():
