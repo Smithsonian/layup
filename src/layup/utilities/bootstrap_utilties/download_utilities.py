@@ -2,10 +2,30 @@ from argparse import Namespace
 import concurrent.futures
 import os
 import pooch
-from functools import partial
 from typing import Optional
 from layup.utilities.layup_configs import AuxiliaryConfigs
 from layup.utilities.bootstrap_utilties.create_meta_kernel import build_meta_kernel_file
+
+# Fail-fast network policy for all layup data downloads (issue #388).
+# Previously a stalled MPC/JPL connection was retried 25 times with no request
+# timeout, wedging a fit or a CI run for 20-76 minutes (and escaping
+# pytest-timeout when it happened at fixture time). Now every request times out
+# quickly and is retried a small, bounded number of times, so a flaky host fails
+# in about a minute rather than hours.
+_CONNECT_TIMEOUT = 15  # seconds to establish the connection
+_READ_TIMEOUT = 30  # max seconds between received bytes (bounds a *stall*, not total)
+_RETRY_IF_FAILED = 3  # bounded retries (was 25)
+
+
+def layup_downloader(progressbar: bool = False) -> pooch.HTTPDownloader:
+    """A pooch HTTP downloader with a fail-fast timeout (issue #388).
+
+    ``timeout`` is forwarded to ``requests.get`` as ``(connect, read)``. The read
+    timeout is the maximum gap between received bytes, so it bounds a *stalled*
+    connection without interrupting a slow-but-progressing large download (e.g.
+    the ~600 MB JPL ephemeris keeps flowing, so it is never falsely cut off).
+    """
+    return pooch.HTTPDownloader(timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT), progressbar=progressbar)
 
 
 def make_retriever(aux_config: AuxiliaryConfigs, directory_path: Optional[str] = None) -> pooch.Pooch:
@@ -30,7 +50,7 @@ def make_retriever(aux_config: AuxiliaryConfigs, directory_path: Optional[str] =
         base_url="",
         urls=aux_config.urls,
         registry=aux_config.registry,
-        retry_if_failed=25,
+        retry_if_failed=_RETRY_IF_FAILED,
     )
 
 
@@ -58,15 +78,20 @@ def download_files_if_missing(aux_config: AuxiliaryConfigs, args: Namespace) -> 
     found_all_files = _check_for_existing_files(aux_config, retriever)
 
     if not found_all_files:
-        # create a partial function of `Pooch.fetch` including the `_decompress` method
-        fetch_partial = partial(retriever.fetch, processor=_decompress, progressbar=True)
+        # Fetch each file with its own fail-fast downloader (issue #388); a fresh
+        # downloader per call keeps the per-file progress bars independent across
+        # the parallel threads.
+        def _fetch(file_name):
+            return retriever.fetch(
+                file_name, processor=_decompress, downloader=layup_downloader(progressbar=True)
+            )
 
         # download the data files in parallel
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            executor.map(fetch_partial, aux_config.data_files_to_download)
+            executor.map(_fetch, aux_config.data_files_to_download)
 
         # build the meta_kernel.txt file
-        build_meta_kernel_file(aux_config, retriever)
+        build_meta_kernel_file(aux_config, retriever, downloader=layup_downloader())
 
         print("Checking cache after attempting to download and create files.")
         _check_for_existing_files(aux_config, retriever)
