@@ -94,6 +94,265 @@ namespace orbit_fit
     static constexpr double ARCSEC_PER_RAD = 206265.0;
 
 
+    // Geometry shared by all three observable residual paths, computed once by
+    // compute_single_residuals after the light-time integration: the unit
+    // line-of-sight rho_hat, the topocentric distance, and the per-parameter
+    // variational position partials (dxk/dyk/dzk) and their range projection
+    // (ddist[i] = rho_hat . d r_obj / d param_i). Sized for the max parameter
+    // count (6 state + up to 3 non-grav A1/A2/A3); npar selects how many are active.
+    struct ResidualGeometry
+    {
+        double rho_x, rho_y, rho_z; // rho_hat (unit line of sight)
+        double rho, invd;           // topocentric distance and 1/rho
+        double dxk[9], dyk[9], dzk[9];
+        double ddist[9];
+    };
+
+    // ---- Radar (delay / Doppler) residuals + partials ----
+    // Monostatic two-leg light time. The down leg (integrate_light_time in the
+    // caller) put the asteroid at the bounce time using the station at the
+    // receive epoch. The up leg was transmitted ~one round-trip earlier, when the
+    // station had moved (Earth orbital motion ~30 km/s + rotation): ignoring this
+    // biases real radar by thousands of us in delay and ~100 Hz in Doppler, far
+    // above the ~1 us / sub-Hz measurement precision (quantified against (99942)
+    // Apophis; see ISSUE_146_RADAR_DESIGN.md and
+    // ISSUE_146_radar_realdata_crosscheck.py). We add the up leg by Taylor-
+    // extrapolating the station state (pos+vel) to the transmit time t_obs - tau
+    // using the observer acceleration supplied from Python. Shapiro (relativistic)
+    // delay (~2 us here) is the next refinement.
+    void compute_radar_residuals(struct reb_simulation *r, const Observation &this_det,
+                                 int var, int npar, const ResidualGeometry &g,
+                                 residuals &resid, partials &parts)
+    {
+        const RadarObservation &rd = std::get<RadarObservation>(this_det.observation_type);
+
+        double xe = this_det.observer_position[0];
+        double ye = this_det.observer_position[1];
+        double ze = this_det.observer_position[2];
+
+        double vax = r->particles[0].vx, vay = r->particles[0].vy, vaz = r->particles[0].vz;
+        double vox = this_det.observer_velocity[0];
+        double voy = this_det.observer_velocity[1];
+        double voz = this_det.observer_velocity[2];
+        double vrx = vax - vox, vry = vay - voy, vrz = vaz - voz; // v_rel
+
+        double q = g.rho_x * vrx + g.rho_y * vry + g.rho_z * vrz;     // one-way range rate
+        double q_ast = g.rho_x * vax + g.rho_y * vay + g.rho_z * vaz; // asteroid-only (light time)
+        double ltdenom = 1.0 + q_ast / SPEED_OF_LIGHT;
+
+        // Bounce point (asteroid at the down-leg retarded time) and observer
+        // acceleration for the up-leg station extrapolation.
+        double rbx = r->particles[0].x, rby = r->particles[0].y, rbz = r->particles[0].z;
+        double aox = this_det.observer_acceleration[0];
+        double aoy = this_det.observer_acceleration[1];
+        double aoz = this_det.observer_acceleration[2];
+
+        // Up-leg light time: iterate tau_u with the station at the transmit
+        // time t_obs - (tau_d + tau_u), Taylor-extrapolated from the receive
+        // epoch. rho is the converged down-leg distance from the caller.
+        double tau_d = g.rho / SPEED_OF_LIGHT;
+        double tau_u = tau_d;
+        double rhu_x = g.rho_x, rhu_y = g.rho_y, rhu_z = g.rho_z, rho_u = g.rho;
+        for (int it = 0; it < 3; it++)
+        {
+            double tau = tau_d + tau_u;
+            double rtx_x = xe - vox * tau - 0.5 * aox * tau * tau;
+            double rtx_y = ye - voy * tau - 0.5 * aoy * tau * tau;
+            double rtx_z = ze - voz * tau - 0.5 * aoz * tau * tau;
+            rhu_x = rbx - rtx_x;
+            rhu_y = rby - rtx_y;
+            rhu_z = rbz - rtx_z;
+            rho_u = sqrt(rhu_x * rhu_x + rhu_y * rhu_y + rhu_z * rhu_z);
+            tau_u = rho_u / SPEED_OF_LIGHT;
+        }
+        rhu_x /= rho_u; // up-leg unit vector (bounce -> transmit station)
+        rhu_y /= rho_u;
+        rhu_z /= rho_u;
+        double tau = tau_d + tau_u;
+        double vtx_x = vox - aox * tau; // station velocity at transmit
+        double vtx_y = voy - aoy * tau;
+        double vtx_z = voz - aoz * tau;
+
+        double model_delay = tau_d + tau_u; // round-trip light time (days)
+        // Round-trip range rate: down leg uses the station velocity at receive,
+        // up leg at transmit.
+        double model_doppler =
+            (g.rho_x * (vax - vox) + g.rho_y * (vay - voy) + g.rho_z * (vaz - voz)) +
+            (rhu_x * (vax - vtx_x) + rhu_y * (vay - vtx_y) + rhu_z * (vaz - vtx_z));
+        resid.delay_resid = rd.delay - model_delay;
+        resid.doppler_resid = rd.doppler - model_doppler;
+
+        // Partials use the single-leg-times-two Jacobian: the up and down legs are
+        // parallel to ~|Earth displacement|/rho ~ 2e-4 rad, so the two-leg residual
+        // and this Jacobian agree to that level. Gauss-Newton converges on the
+        // (data-driven, two-leg) residual regardless; the Jacobian only sets the
+        // step direction (cf. the streak treatment). Loops over npar so non-grav
+        // (A1/A2/A3) variational partials, when active, are produced for radar too.
+        for (int i = 0; i < npar; i++)
+        {
+            size_t vn = var + i;
+            // Exact single-leg range partial (light-time corrected):
+            //   d rho / d param = ddist / (1 + (rho_hat . v_ast)/c).
+            double range_partial = g.ddist[i] / ltdenom;
+            // d(model_delay)/d param ~ (2/c) d rho / d param.
+            parts.delay_partials.push_back(-2.0 * range_partial / SPEED_OF_LIGHT);
+
+            // d(model_doppler)/d param = 2 d(rho_hat . v_rel)/d param.
+            // Total position partial incl. the light-time shift of the emission
+            // time (t_ret = t_obs - rho/c => d t_ret = -range_partial/c).
+            double drk_x = g.dxk[i] - vax * range_partial / SPEED_OF_LIGHT;
+            double drk_y = g.dyk[i] - vay * range_partial / SPEED_OF_LIGHT;
+            double drk_z = g.dzk[i] - vaz * range_partial / SPEED_OF_LIGHT;
+            // Velocity variational partials (the a_ast * d t_ret term is ~1e-4
+            // smaller and omitted, matching the streak treatment).
+            double dvk_x = r->particles[vn].vx;
+            double dvk_y = r->particles[vn].vy;
+            double dvk_z = r->particles[vn].vz;
+
+            // d(rho_hat)/d param = (I - rho_hat rho_hat^T)/rho . drk, so
+            //   dq = rho_hat . dvk + (v_rel . drk - q (rho_hat . drk))/rho.
+            double rdotdrk = g.rho_x * drk_x + g.rho_y * drk_y + g.rho_z * drk_z;
+            double dq = (g.rho_x * dvk_x + g.rho_y * dvk_y + g.rho_z * dvk_z) +
+                        ((vrx * drk_x + vry * drk_y + vrz * drk_z) - q * rdotdrk) * g.invd;
+            parts.doppler_partials.push_back(-2.0 * dq);
+        }
+
+        int nrows = (rd.has_delay ? 1 : 0) + (rd.has_doppler ? 1 : 0);
+        resid.n_resid = parts.n_resid = nrows;
+        resid.obs_kind = parts.obs_kind = ObsKind::Radar;
+        resid.has_delay = parts.has_delay = rd.has_delay;
+        resid.has_doppler = parts.has_doppler = rd.has_doppler;
+    }
+
+    // ---- Optical astrometry residuals + partials ----
+    void compute_optical_residuals(struct reb_simulation *r, const Observation &this_det,
+                                   int var, int npar, const ResidualGeometry &g,
+                                   residuals &resid, partials &parts)
+    {
+        Eigen::Vector3d Av = this_det.a_vec;
+        Eigen::Vector3d Dv = this_det.d_vec;
+
+        double Ax = Av.x(), Ay = Av.y(), Az = Av.z();
+        double Dx = Dv.x(), Dy = Dv.y(), Dz = Dv.z();
+
+        resid.x_resid = -(g.rho_x * Ax + g.rho_y * Ay + g.rho_z * Az);
+        resid.y_resid = -(g.rho_x * Dx + g.rho_y * Dy + g.rho_z * Dz);
+
+        // dxk/dyk/dzk, ddist and invd come from the shared geometry; size for the
+        // max param count (6 state + up to 3 non-grav) and loop npar.
+        double drho_x[9], drho_y[9], drho_z[9];
+        double dx_resid[9];
+        double dy_resid[9];
+        for (int i = 0; i < npar; i++)
+        {
+            drho_x[i] = g.dxk[i] * g.invd - g.rho_x * g.invd * g.ddist[i] - r->particles[0].vx * g.ddist[i] * g.invd / SPEED_OF_LIGHT;
+            drho_y[i] = g.dyk[i] * g.invd - g.rho_y * g.invd * g.ddist[i] - r->particles[0].vy * g.ddist[i] * g.invd / SPEED_OF_LIGHT;
+            drho_z[i] = g.dzk[i] * g.invd - g.rho_z * g.invd * g.ddist[i] - r->particles[0].vz * g.ddist[i] * g.invd / SPEED_OF_LIGHT;
+
+            dx_resid[i] = -(drho_x[i] * Ax + drho_y[i] * Ay + drho_z[i] * Az);
+            dy_resid[i] = -(drho_x[i] * Dx + drho_y[i] * Dy + drho_z[i] * Dz);
+        }
+
+        for (int i = 0; i < npar; i++)
+        {
+            parts.x_partials.push_back(dx_resid[i]);
+        }
+        for (int i = 0; i < npar; i++)
+        {
+            parts.y_partials.push_back(dy_resid[i]);
+        }
+    }
+
+    // ---- Streak (sky-motion-rate) residuals + partials ----
+    // Only StreakObservations contribute the two extra rate rows (on top of the
+    // optical ra/dec rows). The forward model matches Sorcha's RARateCosDec/
+    // DecRate (great-circle, cos(Dec) included), including the (1 - d(delta_t)/dt)
+    // light-time-rate factor; the partials use the geometric rate Jacobian (the
+    // omitted LT factor perturbs them by ~1e-4, negligible for LM). See orbitfit.py
+    // for the observed-rate unit/convention contract.
+    void compute_streak_residuals(struct reb_simulation *r, const Observation &this_det,
+                                  int var, int npar, const ResidualGeometry &g,
+                                  residuals &resid, partials &parts)
+    {
+        const StreakObservation &sk = std::get<StreakObservation>(this_det.observation_type);
+
+        Eigen::Vector3d Av = this_det.a_vec;
+        Eigen::Vector3d Dv = this_det.d_vec;
+        double Ax = Av.x(), Ay = Av.y(), Az = Av.z();
+        double Dx = Dv.x(), Dy = Dv.y(), Dz = Dv.z();
+
+        // Emission-time asteroid velocity (integrate_light_time left the sim at
+        // the retarded time) and the observer velocity.
+        double vax = r->particles[0].vx, vay = r->particles[0].vy, vaz = r->particles[0].vz;
+        double vox = this_det.observer_velocity[0];
+        double voy = this_det.observer_velocity[1];
+        double voz = this_det.observer_velocity[2];
+        double vrx = vax - vox, vry = vay - voy, vrz = vaz - voz; // v_rel
+
+        double q = g.rho_x * vrx + g.rho_y * vry + g.rho_z * vrz; // rho_hat . v_rel = range rate
+        double ddeltatdt = q / SPEED_OF_LIGHT;
+
+        // d(rho_hat)/dt with Sorcha's light-time-rate factor.
+        double drx = vax * (1.0 - ddeltatdt) - vox;
+        double dry = vay * (1.0 - ddeltatdt) - voy;
+        double drz = vaz * (1.0 - ddeltatdt) - voz;
+        double wx = (drx - q * g.rho_x) * g.invd;
+        double wy = (dry - q * g.rho_y) * g.invd;
+        double wz = (drz - q * g.rho_z) * g.invd;
+
+        double model_ra_rate = Ax * wx + Ay * wy + Az * wz;
+        double model_dec_rate = Dx * wx + Dy * wy + Dz * wz;
+        resid.ra_rate_resid = sk.ra_rate - model_ra_rate;
+        resid.dec_rate_resid = sk.dec_rate - model_dec_rate;
+
+        // Geometry Jacobians (observed basis A/D held fixed):
+        //   p = X.rho_hat, s = X.v_rel, q = rho_hat.v_rel
+        //   dR/dr = -(q X + p v_rel + (s - 3 p q) rho_hat)/dist^2
+        //   dR/dv = (X - p rho_hat)/dist
+        double pA = Ax * g.rho_x + Ay * g.rho_y + Az * g.rho_z;
+        double sA = Ax * vrx + Ay * vry + Az * vrz;
+        double pD = Dx * g.rho_x + Dy * g.rho_y + Dz * g.rho_z;
+        double sD = Dx * vrx + Dy * vry + Dz * vrz;
+        double invd2 = g.invd * g.invd;
+
+        double dRdrA[3] = {-(q * Ax + pA * vrx + (sA - 3 * pA * q) * g.rho_x) * invd2,
+                           -(q * Ay + pA * vry + (sA - 3 * pA * q) * g.rho_y) * invd2,
+                           -(q * Az + pA * vrz + (sA - 3 * pA * q) * g.rho_z) * invd2};
+        double dRdvA[3] = {(Ax - pA * g.rho_x) * g.invd, (Ay - pA * g.rho_y) * g.invd, (Az - pA * g.rho_z) * g.invd};
+        double dRdrD[3] = {-(q * Dx + pD * vrx + (sD - 3 * pD * q) * g.rho_x) * invd2,
+                           -(q * Dy + pD * vry + (sD - 3 * pD * q) * g.rho_y) * invd2,
+                           -(q * Dz + pD * vrz + (sD - 3 * pD * q) * g.rho_z) * invd2};
+        double dRdvD[3] = {(Dx - pD * g.rho_x) * g.invd, (Dy - pD * g.rho_y) * g.invd, (Dz - pD * g.rho_z) * g.invd};
+
+        for (int i = 0; i < npar; i++)
+        {
+            size_t vn = var + i;
+            // d r_obj/d param_i: variational position + light-time shift of the
+            // emission time (v_ast * d t_ret, t_ret = t_obs - rho/c).
+            double ltf = g.ddist[i] / SPEED_OF_LIGHT;
+            double drk_x = g.dxk[i] - vax * ltf;
+            double drk_y = g.dyk[i] - vay * ltf;
+            double drk_z = g.dzk[i] - vaz * ltf;
+            // d v_obj/d param_i: velocity variational partials (the a_ast * d t_ret
+            // light-time term is ~1e-4 smaller and omitted).
+            double dvk_x = r->particles[vn].vx;
+            double dvk_y = r->particles[vn].vy;
+            double dvk_z = r->particles[vn].vz;
+
+            double dmodel_ra = dRdrA[0] * drk_x + dRdrA[1] * drk_y + dRdrA[2] * drk_z +
+                               dRdvA[0] * dvk_x + dRdvA[1] * dvk_y + dRdvA[2] * dvk_z;
+            double dmodel_dec = dRdrD[0] * drk_x + dRdrD[1] * drk_y + dRdrD[2] * drk_z +
+                                dRdvD[0] * dvk_x + dRdvD[1] * dvk_y + dRdvD[2] * dvk_z;
+
+            // residual = observed - model, so partial = -d(model)/d param.
+            parts.ra_rate_partials.push_back(-dmodel_ra);
+            parts.dec_rate_partials.push_back(-dmodel_dec);
+        }
+
+        resid.n_resid = 4;
+        parts.n_resid = 4;
+    }
+
     void compute_single_residuals(struct assist_ephem *ephem,
                                   struct assist_extras *ax,
                                   int var,
@@ -146,262 +405,34 @@ namespace orbit_fit
         rho_z /= rho;
         double invd = 1. / rho;
 
-        // 6. Variational position partials at the retarded time, and the range
-        //    partial numerator ddist[i] = rho_hat . d r_obj / d param_i. These
-        //    are shared by the optical and radar residual paths below. Sized for
-        //    the maximum parameter count (6 state + up to 3 non-grav A1/A2/A3);
-        //    npar selects how many are active.
-        double dxk[9], dyk[9], dzk[9];
-        double ddist[9];
+        // Shared geometry for all three observable paths (rho_hat, the
+        // topocentric distance, and the per-parameter variational partials).
+        ResidualGeometry g;
+        g.rho_x = rho_x;
+        g.rho_y = rho_y;
+        g.rho_z = rho_z;
+        g.rho = rho;
+        g.invd = invd;
         for (int i = 0; i < npar; i++)
         {
             size_t vn = var + i;
-            dxk[i] = r->particles[vn].x;
-            dyk[i] = r->particles[vn].y;
-            dzk[i] = r->particles[vn].z;
-            ddist[i] = rho_x * dxk[i] + rho_y * dyk[i] + rho_z * dzk[i];
+            g.dxk[i] = r->particles[vn].x;
+            g.dyk[i] = r->particles[vn].y;
+            g.dzk[i] = r->particles[vn].z;
+            g.ddist[i] = g.rho_x * g.dxk[i] + g.rho_y * g.dyk[i] + g.rho_z * g.dzk[i];
         }
 
-        // ---- Radar (delay / Doppler) residuals + partials ----
-        // Monostatic two-leg light time. The down leg (integrate_light_time
-        // above) put the asteroid at the bounce time using the station at the
-        // receive epoch. The up leg was transmitted ~one round-trip earlier,
-        // when the station had moved (Earth orbital motion ~30 km/s + rotation):
-        // ignoring this biases real radar by thousands of us in delay and
-        // ~100 Hz in Doppler, far above the ~1 us / sub-Hz measurement precision
-        // (quantified against (99942) Apophis; see ISSUE_146_RADAR_DESIGN.md and
-        // ISSUE_146_radar_realdata_crosscheck.py). We add the up leg by
-        // Taylor-extrapolating the station state (pos+vel) to the transmit time
-        // t_obs - tau using the observer acceleration supplied from Python.
-        // Shapiro (relativistic) delay (~2 us here) is the next refinement.
+        // Dispatch by observation type. Radar is standalone; optical always runs
+        // for non-radar, and a streak adds its two rate rows on top.
         if (std::holds_alternative<RadarObservation>(this_det.observation_type))
         {
-            const RadarObservation &rd = std::get<RadarObservation>(this_det.observation_type);
-
-            double vax = r->particles[0].vx, vay = r->particles[0].vy, vaz = r->particles[0].vz;
-            double vox = this_det.observer_velocity[0];
-            double voy = this_det.observer_velocity[1];
-            double voz = this_det.observer_velocity[2];
-            double vrx = vax - vox, vry = vay - voy, vrz = vaz - voz; // v_rel
-
-            double q = rho_x * vrx + rho_y * vry + rho_z * vrz;     // one-way range rate
-            double q_ast = rho_x * vax + rho_y * vay + rho_z * vaz; // asteroid-only (light time)
-            double ltdenom = 1.0 + q_ast / SPEED_OF_LIGHT;
-
-            // Bounce point (asteroid at the down-leg retarded time) and observer
-            // acceleration for the up-leg station extrapolation.
-            double rbx = r->particles[j].x, rby = r->particles[j].y, rbz = r->particles[j].z;
-            double aox = this_det.observer_acceleration[0];
-            double aoy = this_det.observer_acceleration[1];
-            double aoz = this_det.observer_acceleration[2];
-
-            // Up-leg light time: iterate tau_u with the station at the transmit
-            // time t_obs - (tau_d + tau_u), Taylor-extrapolated from the receive
-            // epoch. rho is the converged down-leg distance from above.
-            double tau_d = rho / SPEED_OF_LIGHT;
-            double tau_u = tau_d;
-            double rhu_x = rho_x, rhu_y = rho_y, rhu_z = rho_z, rho_u = rho;
-            for (int it = 0; it < 3; it++)
-            {
-                double tau = tau_d + tau_u;
-                double rtx_x = xe - vox * tau - 0.5 * aox * tau * tau;
-                double rtx_y = ye - voy * tau - 0.5 * aoy * tau * tau;
-                double rtx_z = ze - voz * tau - 0.5 * aoz * tau * tau;
-                rhu_x = rbx - rtx_x;
-                rhu_y = rby - rtx_y;
-                rhu_z = rbz - rtx_z;
-                rho_u = sqrt(rhu_x * rhu_x + rhu_y * rhu_y + rhu_z * rhu_z);
-                tau_u = rho_u / SPEED_OF_LIGHT;
-            }
-            rhu_x /= rho_u; // up-leg unit vector (bounce -> transmit station)
-            rhu_y /= rho_u;
-            rhu_z /= rho_u;
-            double tau = tau_d + tau_u;
-            double vtx_x = vox - aox * tau; // station velocity at transmit
-            double vtx_y = voy - aoy * tau;
-            double vtx_z = voz - aoz * tau;
-
-            double model_delay = tau_d + tau_u; // round-trip light time (days)
-            // Round-trip range rate: down leg uses the station velocity at
-            // receive, up leg at transmit.
-            double model_doppler =
-                (rho_x * (vax - vox) + rho_y * (vay - voy) + rho_z * (vaz - voz)) +
-                (rhu_x * (vax - vtx_x) + rhu_y * (vay - vtx_y) + rhu_z * (vaz - vtx_z));
-            resid.delay_resid = rd.delay - model_delay;
-            resid.doppler_resid = rd.doppler - model_doppler;
-
-            // Partials use the single-leg-times-two Jacobian: the up and down
-            // legs are parallel to ~|Earth displacement|/rho ~ 2e-4 rad, so the
-            // two-leg residual and this Jacobian agree to that level. Gauss-Newton
-            // converges on the (data-driven, two-leg) residual regardless; the
-            // Jacobian only sets the step direction (cf. the streak treatment).
-            // Loops over npar so non-grav (A1/A2/A3) variational partials, when
-            // active, are produced for radar rows too.
-            for (int i = 0; i < npar; i++)
-            {
-                size_t vn = var + i;
-                // Exact single-leg range partial (light-time corrected):
-                //   d rho / d param = ddist / (1 + (rho_hat . v_ast)/c).
-                double range_partial = ddist[i] / ltdenom;
-                // d(model_delay)/d param ~ (2/c) d rho / d param.
-                parts.delay_partials.push_back(-2.0 * range_partial / SPEED_OF_LIGHT);
-
-                // d(model_doppler)/d param = 2 d(rho_hat . v_rel)/d param.
-                // Total position partial incl. the light-time shift of the
-                // emission time (t_ret = t_obs - rho/c => d t_ret = -range_partial/c).
-                double drk_x = dxk[i] - vax * range_partial / SPEED_OF_LIGHT;
-                double drk_y = dyk[i] - vay * range_partial / SPEED_OF_LIGHT;
-                double drk_z = dzk[i] - vaz * range_partial / SPEED_OF_LIGHT;
-                // Velocity variational partials (the a_ast * d t_ret term is
-                // ~1e-4 smaller and omitted, matching the streak treatment).
-                double dvk_x = r->particles[vn].vx;
-                double dvk_y = r->particles[vn].vy;
-                double dvk_z = r->particles[vn].vz;
-
-                // d(rho_hat)/d param = (I - rho_hat rho_hat^T)/rho . drk, so
-                //   dq = rho_hat . dvk + (v_rel . drk - q (rho_hat . drk))/rho.
-                double rdotdrk = rho_x * drk_x + rho_y * drk_y + rho_z * drk_z;
-                double dq = (rho_x * dvk_x + rho_y * dvk_y + rho_z * dvk_z) +
-                            ((vrx * drk_x + vry * drk_y + vrz * drk_z) - q * rdotdrk) * invd;
-                parts.doppler_partials.push_back(-2.0 * dq);
-            }
-
-            int nrows = (rd.has_delay ? 1 : 0) + (rd.has_doppler ? 1 : 0);
-            resid.n_resid = parts.n_resid = nrows;
-            resid.obs_kind = parts.obs_kind = ObsKind::Radar;
-            resid.has_delay = parts.has_delay = rd.has_delay;
-            resid.has_doppler = parts.has_doppler = rd.has_doppler;
+            compute_radar_residuals(r, this_det, var, npar, g, resid, parts);
             return;
         }
-
-        // ---- Optical astrometry residuals + partials ----
-        Eigen::Vector3d Av = this_det.a_vec;
-        Eigen::Vector3d Dv = this_det.d_vec;
-
-        double Ax = Av.x();
-        double Ay = Av.y();
-        double Az = Av.z();
-
-        double Dx = Dv.x();
-        double Dy = Dv.y();
-        double Dz = Dv.z();
-
-        // Put the residuals into a struct, so that the
-        // struct can be easily managed in a vector.
-        resid.x_resid = -(rho_x * Ax + rho_y * Ay + rho_z * Az);
-        resid.y_resid = -(rho_x * Dx + rho_y * Dy + rho_z * Dz);
-
-        // Optical astrometry partials. dxk/dyk/dzk, ddist and invd come from the
-        // shared variational-partials block above; size for the max param count
-        // (6 state + up to 3 non-grav) and loop npar.
-        double drho_x[9], drho_y[9], drho_z[9];
-        double dx_resid[9];
-        double dy_resid[9];
-        for (int i = 0; i < npar; i++)
-        {
-            drho_x[i] = dxk[i] * invd - rho_x * invd * ddist[i] - r->particles[0].vx * ddist[i] * invd / SPEED_OF_LIGHT;
-            drho_y[i] = dyk[i] * invd - rho_y * invd * ddist[i] - r->particles[0].vy * ddist[i] * invd / SPEED_OF_LIGHT;
-            drho_z[i] = dzk[i] * invd - rho_z * invd * ddist[i] - r->particles[0].vz * ddist[i] * invd / SPEED_OF_LIGHT;
-
-            dx_resid[i] = -(drho_x[i] * Ax + drho_y[i] * Ay + drho_z[i] * Az);
-            dy_resid[i] = -(drho_x[i] * Dx + drho_y[i] * Dy + drho_z[i] * Dz);
-        }
-
-        // Likewise, put the partials into a struct so that they can be more easily
-        // managed.
-
-        for (int i = 0; i < npar; i++)
-        {
-            parts.x_partials.push_back(dx_resid[i]);
-        }
-        for (int i = 0; i < npar; i++)
-        {
-            parts.y_partials.push_back(dy_resid[i]);
-        }
-
-        // ---- Streak (sky-motion-rate) residuals + partials ----
-        // Only StreakObservations contribute the two extra rate rows. The
-        // forward model matches Sorcha's RARateCosDec/DecRate (great-circle,
-        // cos(Dec) included), including the (1 - d(delta_t)/dt) light-time-rate
-        // factor; the partials use the geometric rate Jacobian (the omitted LT
-        // factor perturbs them by ~1e-4, negligible for LM). See orbitfit.py for
-        // the observed-rate unit/convention contract.
+        compute_optical_residuals(r, this_det, var, npar, g, resid, parts);
         if (std::holds_alternative<StreakObservation>(this_det.observation_type))
         {
-            const StreakObservation &sk = std::get<StreakObservation>(this_det.observation_type);
-
-            // Emission-time asteroid velocity (integrate_light_time left the sim
-            // at the retarded time) and the observer velocity.
-            double vax = r->particles[0].vx, vay = r->particles[0].vy, vaz = r->particles[0].vz;
-            double vox = this_det.observer_velocity[0];
-            double voy = this_det.observer_velocity[1];
-            double voz = this_det.observer_velocity[2];
-            double vrx = vax - vox, vry = vay - voy, vrz = vaz - voz; // v_rel
-
-            // rho_x/rho_y/rho_z are the unit vector rho_hat here; rho is the
-            // topocentric distance; invd = 1/rho.
-            double q = rho_x * vrx + rho_y * vry + rho_z * vrz; // rho_hat . v_rel = range rate
-            double ddeltatdt = q / SPEED_OF_LIGHT;
-
-            // d(rho_hat)/dt with Sorcha's light-time-rate factor.
-            double drx = vax * (1.0 - ddeltatdt) - vox;
-            double dry = vay * (1.0 - ddeltatdt) - voy;
-            double drz = vaz * (1.0 - ddeltatdt) - voz;
-            double wx = (drx - q * rho_x) * invd;
-            double wy = (dry - q * rho_y) * invd;
-            double wz = (drz - q * rho_z) * invd;
-
-            double model_ra_rate = Ax * wx + Ay * wy + Az * wz;
-            double model_dec_rate = Dx * wx + Dy * wy + Dz * wz;
-            resid.ra_rate_resid = sk.ra_rate - model_ra_rate;
-            resid.dec_rate_resid = sk.dec_rate - model_dec_rate;
-
-            // Geometry Jacobians (observed basis A/D held fixed):
-            //   p = X.rho_hat, s = X.v_rel, q = rho_hat.v_rel
-            //   dR/dr = -(q X + p v_rel + (s - 3 p q) rho_hat)/dist^2
-            //   dR/dv = (X - p rho_hat)/dist
-            double pA = Ax * rho_x + Ay * rho_y + Az * rho_z;
-            double sA = Ax * vrx + Ay * vry + Az * vrz;
-            double pD = Dx * rho_x + Dy * rho_y + Dz * rho_z;
-            double sD = Dx * vrx + Dy * vry + Dz * vrz;
-            double invd2 = invd * invd;
-
-            double dRdrA[3] = {-(q * Ax + pA * vrx + (sA - 3 * pA * q) * rho_x) * invd2,
-                               -(q * Ay + pA * vry + (sA - 3 * pA * q) * rho_y) * invd2,
-                               -(q * Az + pA * vrz + (sA - 3 * pA * q) * rho_z) * invd2};
-            double dRdvA[3] = {(Ax - pA * rho_x) * invd, (Ay - pA * rho_y) * invd, (Az - pA * rho_z) * invd};
-            double dRdrD[3] = {-(q * Dx + pD * vrx + (sD - 3 * pD * q) * rho_x) * invd2,
-                               -(q * Dy + pD * vry + (sD - 3 * pD * q) * rho_y) * invd2,
-                               -(q * Dz + pD * vrz + (sD - 3 * pD * q) * rho_z) * invd2};
-            double dRdvD[3] = {(Dx - pD * rho_x) * invd, (Dy - pD * rho_y) * invd, (Dz - pD * rho_z) * invd};
-
-            for (int i = 0; i < npar; i++)
-            {
-                size_t vn = var + i;
-                // d r_obj/d param_i: variational position + light-time shift of
-                // the emission time (v_ast * d t_ret, t_ret = t_obs - rho/c).
-                double ltf = ddist[i] / SPEED_OF_LIGHT;
-                double drk_x = dxk[i] - vax * ltf;
-                double drk_y = dyk[i] - vay * ltf;
-                double drk_z = dzk[i] - vaz * ltf;
-                // d v_obj/d param_i: velocity variational partials (the a_ast * d t_ret
-                // light-time term is ~1e-4 smaller and omitted).
-                double dvk_x = r->particles[vn].vx;
-                double dvk_y = r->particles[vn].vy;
-                double dvk_z = r->particles[vn].vz;
-
-                double dmodel_ra = dRdrA[0] * drk_x + dRdrA[1] * drk_y + dRdrA[2] * drk_z +
-                                   dRdvA[0] * dvk_x + dRdvA[1] * dvk_y + dRdvA[2] * dvk_z;
-                double dmodel_dec = dRdrD[0] * drk_x + dRdrD[1] * drk_y + dRdrD[2] * drk_z +
-                                    dRdvD[0] * dvk_x + dRdvD[1] * dvk_y + dRdvD[2] * dvk_z;
-
-                // residual = observed - model, so partial = -d(model)/d param.
-                parts.ra_rate_partials.push_back(-dmodel_ra);
-                parts.dec_rate_partials.push_back(-dmodel_dec);
-            }
-
-            resid.n_resid = 4;
-            parts.n_resid = 4;
+            compute_streak_residuals(r, this_det, var, npar, g, resid, parts);
         }
     }
 
