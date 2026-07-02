@@ -86,7 +86,87 @@ def bench_fit(obs_file="holman_data_working.csv"):
     return {"name": f"orbitfit ({obs_file}, {n_obj} obj)", "n": n_obj, "unit": "fits/s", "seconds": dt}
 
 
-BENCHMARKS = [bench_convert, bench_fit]
+def bench_residuals(obs_file="holman_data_working.csv", reps=3):
+    """Speedup of ``residuals_at_state`` over ``predict_sequence`` for a per-
+    observation residual + mapped-covariance sweep (the pass that drives
+    Carpino/OrbFit-style outlier rejection).
+
+    ``predict_sequence`` integrates fresh from the epoch to each observation (N
+    integrations); ``residuals_at_state`` reuses the fit's own single forward +
+    backward pass. Reports ``residuals_at_state`` throughput (obs/s) and the
+    speedup factor over ``predict_sequence`` at equal accuracy.
+    """
+    from importlib.resources import files
+
+    import numpy.lib.recfunctions as rfn
+    import pooch
+    import spiceypy as spice
+
+    from layup.orbitfit import do_fit, _build_sequence
+    from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
+    from layup.utilities.data_processing_utilities import LayupObservatory, layup_furnish_spiceypy
+    from layup.utilities.file_io.CSVReader import CSVDataReader
+    from layup.routines import (
+        get_ephem,
+        predict_sequence,
+        residuals_at_state,
+        numpy_to_eigen,
+        Observation,
+    )
+
+    DEG = np.pi / 180.0
+    cache_dir = str(pooch.os_cache("layup"))
+    layup_furnish_spiceypy(None)
+    observatory = LayupObservatory(cache_dir=None)
+
+    path = str(files("layup.data.demo.orbitfit").joinpath(obs_file))
+    data = np.atleast_1d(CSVDataReader(path, "csv", primary_id_column_name="provID").read_rows())
+    et = np.array([spice.str2et(r["obsTime"]) for r in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et, usemask=False, asrecarray=True)
+    data = rfn.merge_arrays(
+        [data, observatory.obscodes_to_barycentric(data)], flatten=True, asrecarray=True, usemask=False
+    )
+    detections = [
+        Observation.from_astrometry_with_id(
+            str(d["provID"]),
+            d["ra"] * DEG,
+            d["dec"] * DEG,
+            convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
+            [d["x"], d["y"], d["z"]],
+            [d["vx"], d["vy"], d["vz"]],
+        )
+        for d in data
+    ]
+    ephem = get_ephem(cache_dir)
+    seq = _build_sequence(convert_tdb_date_to_julian_date(data["obsTime"], cache_dir))
+    fit = do_fit(detections, seq, cache_dir=cache_dir, iod="gauss", engine="cartesian")
+    cov = numpy_to_eigen(list(fit.cov), 6, 6)
+    n_obs = len(detections)
+
+    # Warm up (the first call of each also pays one-time sim/ephem setup).
+    predict_sequence(ephem, fit, detections, cov)
+    residuals_at_state(ephem, fit, detections, cov)
+
+    def _time(fn):
+        t0 = time.perf_counter()
+        for _ in range(reps):
+            fn()
+        return (time.perf_counter() - t0) / reps
+
+    t_pred = _time(lambda: predict_sequence(ephem, fit, detections, cov))
+    t_ras = _time(lambda: residuals_at_state(ephem, fit, detections, cov))
+    speedup = t_pred / t_ras if t_ras > 0 else float("inf")
+    return {
+        "name": f"residuals_at_state ({speedup:.0f}x vs predict_sequence)",
+        "n": n_obs,
+        "unit": "obs/s",
+        "seconds": t_ras,
+        "predict_sequence_seconds": t_pred,
+        "speedup": speedup,
+    }
+
+
+BENCHMARKS = [bench_convert, bench_fit, bench_residuals]
 
 
 def _run_all(orbits):
