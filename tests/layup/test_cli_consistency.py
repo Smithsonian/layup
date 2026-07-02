@@ -5,7 +5,9 @@ load -> fit -> convert/predict/visualize workflow chains without surprises:
 
 * every orbit-consuming verb defaults ``-pid`` to ``provID`` (what orbitfit and
   predict write), so a fresh fit output flows on with no extra flag;
-* every ephemeris-using verb accepts the ``--ar`` cache-directory flag.
+* every ephemeris-using verb accepts the ``--ar`` cache-directory flag;
+* the input-config flag is accepted under all its spellings
+  (``--config``/``--conf``) across the verbs.
 
 They parse each verb's argument parser with ``execute`` stubbed out, so nothing
 is actually run (no ephemeris, no network).

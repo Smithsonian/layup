@@ -17,7 +17,9 @@ FIT_OUTPUT = "test_convert_BCART_EQ.csv"
 
 
 def _read_fit_output():
-    # The default primary-id column (provID) must read a fit output with no flag.
+    # Pass provID explicitly -- the shared CLI default (``-pid provID``) -- so this
+    # mirrors how the verbs read a fit output on the chain; it is not relying on
+    # the reader's own default.
     reader = CSVDataReader(get_test_filepath(FIT_OUTPUT), "csv", primary_id_column_name="provID")
     return np.atleast_1d(reader.read_rows())
 
@@ -29,7 +31,9 @@ def test_fit_output_reads_with_default_provid():
 
 
 def test_fit_output_converts_with_default_provid():
-    """fit -> convert works with the shared default primary-id (provID)."""
+    """fit -> convert works when the CLI default primary-id (provID, passed
+    explicitly here to match ``-pid provID``) keys both the fit output and the
+    convert call."""
     data = _read_fit_output()
     out = np.atleast_1d(convert(data, "KEP", num_workers=1, primary_id_column_name="provID"))
     assert "provID" in out.dtype.names

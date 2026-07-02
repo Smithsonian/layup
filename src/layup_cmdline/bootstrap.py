@@ -72,7 +72,7 @@ def execute(args):
     # download new files by running layup and specifying in the config file
     # under the section [AUXILIARY] a new filename and url.
     if args.config:
-        find_file_or_exit(args.c, "-c, --config")
+        find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.config)
     else:
         configs = LayupConfigs()
