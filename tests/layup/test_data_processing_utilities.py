@@ -305,6 +305,33 @@ def test_moving_observatory_coordinate_cache():
             observatory.populate_observatory(obscode, et, row_inconsistent)
 
 
+def test_unknown_obscode_gives_actionable_error():
+    """An obscode absent from the local ObsCodes.json with no observation-supplied
+    position -- typically a ground station added to the MPC list after the cached
+    codes file -- must raise a clear, actionable error pointing at `layup bootstrap`
+    rather than the misleading "invalid coordinates" (issue #404)."""
+    observatory = LayupObservatory()
+    obscode = "ZZZ"  # not a real MPC code -> guaranteed absent from ObservatoryXYZ
+    et = 2451545.0
+    row_dtype = [
+        ("sys", "U7"),
+        ("ctr", "i4"),
+        ("pos1", "<f8"),
+        ("pos2", "<f8"),
+        ("pos3", "<f8"),
+    ]
+    # A normal ground observation: the position columns exist (obs80 always emits
+    # them) but are NaN because there is no embedded observer position.
+    row = np.array(("", 399, np.nan, np.nan, np.nan), dtype=row_dtype)
+    with pytest.raises(ValueError, match="bootstrap"):
+        observatory.populate_observatory(obscode, et, row)
+    # and the message should not be the old misleading wording
+    with pytest.raises(ValueError) as exc:
+        observatory.populate_observatory(obscode, et, row)
+    assert "invalid coordinates" not in str(exc.value)
+    assert obscode in str(exc.value)
+
+
 def test_fixed_observatory_with_zero_parallax_constant():
     """Regression test for issue #286.
 
