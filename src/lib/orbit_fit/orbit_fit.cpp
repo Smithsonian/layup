@@ -268,7 +268,7 @@ namespace orbit_fit
 
             int nrows = (rd.has_delay ? 1 : 0) + (rd.has_doppler ? 1 : 0);
             resid.n_resid = parts.n_resid = nrows;
-            resid.obs_kind = parts.obs_kind = RADAR;
+            resid.obs_kind = parts.obs_kind = ObsKind::Radar;
             resid.has_delay = parts.has_delay = rd.has_delay;
             resid.has_doppler = parts.has_doppler = rd.has_doppler;
             return;
@@ -637,7 +637,7 @@ namespace orbit_fit
             // Radar observations contribute a delay row and/or a Doppler row;
             // they have no astrometry rows, so handle them separately. Loop npar
             // so non-grav columns are filled when active.
-            if (partials_vec[i].obs_kind == RADAR)
+            if (partials_vec[i].obs_kind == ObsKind::Radar)
             {
                 int row = r0;
                 if (partials_vec[i].has_delay)
