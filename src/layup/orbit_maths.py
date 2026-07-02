@@ -59,7 +59,7 @@ class ClassicalConic:
 
 
 # --- converter ---
-def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid: str) -> ClassicalConic:
+def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid = "provID") -> ClassicalConic:
     """
     Convert cartesian elements into classical conic elements (L, e, i, Omega, omega)
 
@@ -161,7 +161,7 @@ def convert_cart_to_classical_conic(rows: np.ndarray, mu: float, pid: str) -> Cl
 
 # --- frame swapping ---
 def rv_to_cart(
-    obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: np.ndarray, pid: str
+    obj_id: np.ndarray, r: np.ndarray, v: np.ndarray, epochMJD_TDB: np.ndarray, pid="provID"
 ) -> np.ndarray:
     """
     Wrapper function to create structured array of cartesian elements from position+velocity state vectors
@@ -379,9 +379,9 @@ def convert_sun_to_baryecliptic(ephem: Ephem, epochJD: np.ndarray) -> tuple[np.n
 def prepopulate_orbit_variants(
     rows: np.ndarray,
     orbit_format: ORBIT_FORMAT,
-    pid: str,
     input_plane: Literal["equatorial", "ecliptic"],
     input_origin: Literal["heliocentric", "barycentric"],
+    pid = "provID"
 ) -> tuple[
     dict[tuple[str, str], ClassicalConic],
     dict[tuple[str, str], np.ndarray],
@@ -428,7 +428,11 @@ def prepopulate_orbit_variants(
     # # (mu_sun = heliocentric, mu_total = barycentric)
     ephem, mu_sun, mu_total = build_ephem_and_mus()
 
-    obj_id = rows[pid].astype(str)
+    try:
+        obj_id = rows[pid].astype(str)
+    except ValueError as e:
+        logger.error(f"Column '{pid}' not found in orbit data")
+        raise ValueError(f"Column '{pid}' not found in orbit data") from e
     epochJD = rows["epochMJD_TDB"].astype(float) + 2400000.5
 
     # grab state vectors
