@@ -41,3 +41,18 @@ def test_bench_convert_runs():
     assert result["unit"] == "rows/s"
     assert 64 / result["seconds"] > 0
     assert not np.isnan(result["seconds"])
+
+
+@requires_ephem
+def test_bench_residuals_runs():
+    """The residuals benchmark runs, reports positive throughput, and confirms
+    residuals_at_state is faster than predict_sequence (never a fixed floor)."""
+    rb = _load()
+    result = rb.bench_residuals(reps=1)
+    assert result["seconds"] > 0
+    assert result["n"] > 0
+    assert result["unit"] == "obs/s"
+    assert not np.isnan(result["seconds"])
+    # residuals_at_state reuses the fit's single-pass integration, so it must beat
+    # predict_sequence's N-from-epoch integrations (the whole point of the change).
+    assert result["speedup"] > 1.0
