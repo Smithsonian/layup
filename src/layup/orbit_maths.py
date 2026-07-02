@@ -5,7 +5,7 @@ from typing import Literal, Optional
 import numpy as np
 
 from layup.utilities.layup_configs import LayupConfigs
-from layup.utilities.bootstrap_utilties.download_utilities import make_retriever
+from layup.utilities.bootstrap_utilties.download_utilities import make_retriever, layup_downloader
 
 from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_constants import ECL_TO_EQ_ROTATION_MATRIX, EQ_TO_ECL_ROTATION_MATRIX
@@ -318,7 +318,8 @@ def build_ephem_and_mus(cache_dir: Optional[str] = None) -> tuple[Ephem, float, 
 
     retriever = make_retriever(aux, cache_dir)
     ephem = Ephem(
-        planets_path=retriever.fetch(aux.jpl_planets), asteroids_path=retriever.fetch(aux.jpl_small_bodies)
+        planets_path=retriever.fetch(aux.jpl_planets, downloader=layup_downloader()),
+        asteroids_path=retriever.fetch(aux.jpl_small_bodies, downloader=layup_downloader()),
     )
 
     # calculate mu same way as in sorcha

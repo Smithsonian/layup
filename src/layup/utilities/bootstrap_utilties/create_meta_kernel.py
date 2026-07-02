@@ -26,7 +26,7 @@ from layup.utilities.layup_configs import AuxiliaryConfigs
 """
 
 
-def build_meta_kernel_file(auxconfigs: AuxiliaryConfigs, retriever: pooch.Pooch) -> None:
+def build_meta_kernel_file(auxconfigs: AuxiliaryConfigs, retriever: pooch.Pooch, downloader=None) -> None:
     """Builds a specific text file that will be fed into `spiceypy` that defines
     the list of spice kernel to load, as well as the order to load them.
 
@@ -36,6 +36,10 @@ def build_meta_kernel_file(auxconfigs: AuxiliaryConfigs, retriever: pooch.Pooch)
         Dataclass of auxiliary configuration file arguments.
     retriever : pooch
         Pooch object that maintains the registry of files to download
+    downloader : callable, optional
+        pooch downloader to use for any file that still needs fetching (passed to
+        ``Pooch.fetch``). Defaults to None (pooch's default downloader). Callers
+        pass ``layup_downloader()`` for the fail-fast timeout (issue #388).
 
     Returns
     ---------
@@ -51,7 +55,9 @@ def build_meta_kernel_file(auxconfigs: AuxiliaryConfigs, retriever: pooch.Pooch)
         meta_file.write("PATH_SYMBOLS = ('A')\n\n")
         meta_file.write("KERNELS_TO_LOAD=(\n")
         for file_name in auxconfigs.ordered_kernel_files:
-            shortened_file_name = _build_file_name(retriever.abspath, retriever.fetch(file_name))
+            shortened_file_name = _build_file_name(
+                retriever.abspath, retriever.fetch(file_name, downloader=downloader)
+            )
             meta_file.write(f"    '{shortened_file_name}',\n")
         meta_file.write(")\n\n")
         meta_file.write("\\begintext\n")
