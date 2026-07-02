@@ -17,14 +17,7 @@ logger = logging.getLogger(__name__)
 
 # --- orbit types and their columns ---
 ORBIT_FORMAT = Literal["BCART", "BCOM", "BKEP", "CART", "COM", "KEP"]
-REQUIRED_COLUMN_NAMES: dict[str, list[str]] = {
-    "BCART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "BCOM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "BKEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-    "CART": ["ObjID", "FORMAT", "x", "y", "z", "xdot", "ydot", "zdot", "epochMJD_TDB"],
-    "COM": ["ObjID", "FORMAT", "q", "e", "inc", "node", "argPeri", "t_p_MJD_TDB", "epochMJD_TDB"],
-    "KEP": ["ObjID", "FORMAT", "a", "e", "inc", "node", "argPeri", "ma", "epochMJD_TDB"],
-}
+
 
 PLANET_PERIOD_DAYS = {
     "Mercury": 87.969,
