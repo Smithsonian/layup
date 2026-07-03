@@ -426,48 +426,79 @@ def test_element_order_matches_degree_columns():
 
 
 def test_convert_vectorized_matches_rowwise():
-    """The no-covariance path is vectorized; the per-row path carries covariance.
+    """Pin the vectorized path to the per-row reference (``_apply_convert_rowwise``).
 
-    Adding an all-zero covariance (which leaves the element/state values
-    unchanged) forces the per-row path, so the two paths must produce identical
-    converted values for every output format. This guards the vectorized
-    ``_parse_to_bcart_eq`` / ``_bcart_eq_to_elements`` against drifting from the
-    scalar ``universal_cartesian`` / ``universal_keplerian`` / ``universal_cometary``
-    routines. Uses BCOM.csv, whose final row is hyperbolic, so the ``e >= 1``
-    branch is exercised too.
+    ``convert()`` always uses ``_apply_convert_vectorized`` now, so this calls both
+    implementations directly with identical arguments and requires the converted
+    state *and* the propagated covariance to match, for every output format. Guards
+    the vectorized ``_parse_to_bcart_eq`` / ``_bcart_eq_to_elements`` /
+    ``_parse_cov_to_bcart_eq`` and the vmapped covariance transforms against drifting
+    from the scalar routines.
     """
     import numpy.lib.recfunctions as rfn
 
-    from layup.convert import element_order
+    from layup.convert import (
+        ORBIT_FIT_COLS,
+        _apply_convert_rowwise,
+        _apply_convert_vectorized,
+        _create_assist_ephemeris,
+        element_order,
+        get_output_column_names_and_types,
+    )
     from layup.utilities.data_processing_utilities import get_cov_columns
+    from layup.utilities.layup_configs import LayupConfigs
 
-    input_data = CSVDataReader(get_test_filepath("BCOM.csv")).read_rows()
-
-    cov_cols = get_cov_columns()
-    zeros = [np.zeros(len(input_data), dtype="f8") for _ in cov_cols]
-    input_cov = rfn.append_fields(input_data, cov_cols, zeros, usemask=False)
-    assert has_cov_columns(input_cov) and not has_cov_columns(input_data)
-
+    cfg = LayupConfigs()
+    ephem, gm_sun, gm_total = _create_assist_ephemeris(cfg.auxiliary, None)
+    formats = ["BCART_EQ", "BCART", "CART", "KEP", "COM", "BKEP", "BCOM"]
     degree_cols = {"inc", "node", "argPeri", "ma"}
-    for output_format in ["BCART_EQ", "BCART", "CART", "KEP", "COM", "BKEP", "BCOM"]:
-        vectorized = convert(input_data, output_format, num_workers=1)
-        per_row = convert(input_cov, output_format, num_workers=1)
-        for col in element_order[output_format] + ["epochMJD_TDB"]:
-            got = np.asarray(vectorized[col], dtype=float)
-            ref = np.asarray(per_row[col], dtype=float)
-            if col in degree_cols:
-                # compare modulo 360 so the 0/360 wrap boundary can't spuriously fail
-                assert_allclose(
-                    (got - ref + 180) % 360 - 180,
-                    0.0,
-                    atol=1e-7,
-                    err_msg=f"vectorized vs per-row angle mismatch in {col} for {output_format}",
-                )
-            else:
-                assert_allclose(
-                    got,
-                    ref,
-                    rtol=1e-9,
-                    atol=1e-9,
-                    err_msg=f"vectorized vs per-row mismatch in {col} for {output_format}",
-                )
+    cov_names = get_cov_columns()
+
+    def both_paths(data, convert_to, pid="ObjID"):
+        has_cov = has_cov_columns(data)
+        keep = [(c, d) for c, d in ORBIT_FIT_COLS if c in data.dtype.names]
+        req, dts = get_output_column_names_and_types(pid, has_cov, keep)
+        output_dtype = [(c, d) for c, d in zip(req[convert_to], dts)]
+        args = (data, convert_to, ephem, gm_sun, gm_total, pid, has_cov, output_dtype, keep)
+        return _apply_convert_vectorized(*args), _apply_convert_rowwise(*args)
+
+    def check(data, output_formats, with_cov):
+        for output_format in output_formats:
+            vec, ref = both_paths(data, output_format)
+            cols = list(element_order[output_format]) + ["epochMJD_TDB"]
+            if with_cov:
+                cols += cov_names
+            for col in cols:
+                a = np.asarray(vec[col], dtype=float)
+                b = np.asarray(ref[col], dtype=float)
+                if col in degree_cols:
+                    # compare modulo 360 so the 0/360 wrap boundary can't spuriously fail
+                    assert_allclose(
+                        (a - b + 180) % 360 - 180, 0.0, atol=1e-7, err_msg=f"{col} for {output_format}"
+                    )
+                else:
+                    assert_allclose(a, b, rtol=1e-8, atol=1e-8, err_msg=f"{col} for {output_format}")
+
+    def attach_spd_cov(data):
+        rng = np.random.default_rng(0)
+        covs = np.stack(
+            [(lambda A: A @ A.T + np.eye(6) * 1e-9)(rng.standard_normal((6, 6))) for _ in range(len(data))]
+        )
+        fields = []
+        for nm in cov_names:
+            _, i, j = nm.split("_")
+            fields.append(covs[:, int(i), int(j)].copy())
+        return rfn.append_fields(data, cov_names, fields, usemask=False)
+
+    # Values across all formats, including BCOM.csv's hyperbolic final row.
+    check(CSVDataReader(get_test_filepath("BCOM.csv")).read_rows(), formats, with_cov=False)
+
+    # Covariance: attach a non-trivial SPD covariance and compare the propagated
+    # covariance too. BCART_EQ input exercises the batched output transforms;
+    # BCOM input (elliptic subset) exercises the per-row element-input cov parse.
+    kep = CSVDataReader(get_test_filepath("KEP.csv")).read_rows()
+    bcart_eq = convert(kep, "BCART_EQ", num_workers=1)
+    check(attach_spd_cov(bcart_eq), formats, with_cov=True)
+
+    bcom_elliptic = CSVDataReader(get_test_filepath("BCOM.csv")).read_rows()[:-1]
+    check(attach_spd_cov(bcom_elliptic), ["KEP", "BCART_EQ", "BCART"], with_cov=True)
