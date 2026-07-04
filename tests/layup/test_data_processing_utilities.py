@@ -305,6 +305,39 @@ def test_moving_observatory_coordinate_cache():
             observatory.populate_observatory(obscode, et, row_inconsistent)
 
 
+def test_moving_observatory_tolerates_position_reporting_noise():
+    """Two observations at one epoch whose reported observer position differs only
+    at MPC's ~0.01 km reporting precision are consistent and must not raise; a
+    gross (> tolerance) mismatch still raises. Regression for the MPC full-catalog
+    crash on object 47451 (obscode C57 = TESS), whose same-epoch satellite position
+    was reported as [469.133, 397472.997, 15844.053] then [469.144, 397472.992,
+    15844.055] km -- a ~0.01 km difference that tripped the exact-match check.
+    """
+    from layup.utilities.data_processing_utilities import _OBSERVER_POSITION_ATOL_KM
+
+    observatory = LayupObservatory()
+    obscode = "247"  # moving observer: carries its own position
+    et = 2451545.0
+    row_dtype = [("sys", "U7"), ("ctr", "i4"), ("pos1", "<f8"), ("pos2", "<f8"), ("pos3", "<f8")]
+
+    first = np.array(("ICRF_KM", 399, 469.133, 397472.997, 15844.053), dtype=row_dtype)
+    key = observatory.populate_observatory(obscode, et, first)
+
+    # Same epoch, same physical position re-reported at finite precision (< tolerance).
+    noise = np.array(("ICRF_KM", 399, 469.144, 397472.992, 15844.055), dtype=row_dtype)
+    observatory.populate_observatory(obscode, et, noise)  # must not raise
+    assert np.allclose(
+        observatory.ObservatoryXYZ[key], [469.133, 397472.997, 15844.053], atol=_OBSERVER_POSITION_ATOL_KM
+    )
+
+    # A gross mismatch at the same epoch (well beyond the tolerance) still raises.
+    gross = np.array(
+        ("ICRF_KM", 399, 469.133 + 10.0 * _OBSERVER_POSITION_ATOL_KM, 397472.997, 15844.053), dtype=row_dtype
+    )
+    with pytest.raises(ValueError):
+        observatory.populate_observatory(obscode, et, gross)
+
+
 def test_fixed_observatory_with_zero_parallax_constant():
     """Regression test for issue #286.
 

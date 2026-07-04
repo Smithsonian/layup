@@ -26,6 +26,16 @@ from layup.utilities.special_observatories import (
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 
+# Two observations at the same instant from the same moving/space-based observer
+# should report the same geocentric position. MPC 80-column satellite records
+# (and some ADES sources) carry that position at finite precision, so repeats at
+# one epoch can differ at the ~0.01 km reporting level. Treat positions agreeing
+# to this absolute tolerance as consistent: 1 km at 1 au is ~1.4 mas of
+# astrometric shift, far below observational noise, while gross unit/sign/center
+# errors differ by orders of magnitude more and still raise. (Surfaced by
+# object 47451, obscode C57 = TESS, in the MPC full-catalog fit.)
+_OBSERVER_POSITION_ATOL_KM = 1.0
+
 # Start worker processes with "spawn" rather than the platform default.
 #
 # On Linux the default start method is "fork", which clones the whole parent
@@ -539,11 +549,16 @@ class LayupObservatory(SorchaObservatory):
                 # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
                 self.ObservatoryXYZ[obscode_cache_key] = coords
             else:
-                # If the coordinates are not the same, raise an error
-                if not np.allclose(self.ObservatoryXYZ[obscode_cache_key], coords):
+                # Positions agreeing to reporting precision are consistent; only a
+                # gross mismatch (unit/sign/center error) raises. See
+                # _OBSERVER_POSITION_ATOL_KM.
+                if not np.allclose(
+                    self.ObservatoryXYZ[obscode_cache_key], coords, rtol=0.0, atol=_OBSERVER_POSITION_ATOL_KM
+                ):
                     raise ValueError(
-                        f"Observatory {obscode} has different coordinates reported at the same epoch."
-                        f"Coordinates at epoch {et} previously were {self.ObservatoryXYZ[obscode_cache_key]}, but are now {coords}."
+                        f"Observatory {obscode} has different coordinates reported at the same epoch "
+                        f"(beyond {_OBSERVER_POSITION_ATOL_KM} km). Coordinates at epoch {et} previously were "
+                        f"{self.ObservatoryXYZ[obscode_cache_key]}, but are now {coords}."
                     )
             # Save the coordinates in the cache for the given obscode and epoch
             self.ObservatoryXYZ[obscode_cache_key] = coords
