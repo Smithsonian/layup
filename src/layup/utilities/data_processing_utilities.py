@@ -26,15 +26,19 @@ from layup.utilities.special_observatories import (
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 
-# Two observations at the same instant from the same moving/space-based observer
-# should report the same geocentric position. MPC 80-column satellite records
-# (and some ADES sources) carry that position at finite precision, so repeats at
-# one epoch can differ at the ~0.01 km reporting level. Treat positions agreeing
-# to this absolute tolerance as consistent: 1 km at 1 au is ~1.4 mas of
-# astrometric shift, far below observational noise, while gross unit/sign/center
-# errors differ by orders of magnitude more and still raise. (Surfaced by
-# object 47451, obscode C57 = TESS, in the MPC full-catalog fit.)
-_OBSERVER_POSITION_ATOL_KM = 1.0
+# A moving/space-based observer's geocentric position is cached per (obscode,
+# epoch) and that cache is shared across every object processed by one
+# LayupObservatory. Space telescopes (TESS = C57, WISE = C51) image many asteroids
+# in a single exposure, so different objects each carry a record for the same
+# (observatory, epoch); the satellite's one true position at that instant is
+# reported per record at finite (~km) precision, so those records differ slightly.
+# Accept differences up to this many km -- they are the same body at the same
+# instant, astrometrically indistinguishable at the km level, so the most recent is
+# used. A larger difference exceeds any plausible reporting spread and likely
+# signals a units/frame error, so it is logged (never fatal -- a corrupt observer
+# position shows up as a diverging fit). Surfaced by the MPC full-catalog fit:
+# C57 = TESS (~1.4 km, near lunar distance) and C51 = WISE (~4 km, low Earth orbit).
+_OBSERVER_POSITION_WARN_KM = 100.0
 
 # Start worker processes with "spawn" rather than the platform default.
 #
@@ -545,22 +549,19 @@ class LayupObservatory(SorchaObservatory):
             if data["sys"] == "ICRF_AU":
                 coords *= AU_KM
 
-            if obscode_cache_key not in self.ObservatoryXYZ:
-                # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
-                self.ObservatoryXYZ[obscode_cache_key] = coords
-            else:
-                # Positions agreeing to reporting precision are consistent; only a
-                # gross mismatch (unit/sign/center error) raises. See
-                # _OBSERVER_POSITION_ATOL_KM.
-                if not np.allclose(
-                    self.ObservatoryXYZ[obscode_cache_key], coords, rtol=0.0, atol=_OBSERVER_POSITION_ATOL_KM
-                ):
-                    raise ValueError(
-                        f"Observatory {obscode} has different coordinates reported at the same epoch "
-                        f"(beyond {_OBSERVER_POSITION_ATOL_KM} km). Coordinates at epoch {et} previously were "
-                        f"{self.ObservatoryXYZ[obscode_cache_key]}, but are now {coords}."
+            # A repeat position for the same (obscode, epoch) -- e.g. two objects
+            # co-observed by a space telescope in one exposure -- normally differs
+            # only at reporting precision; warn only on a gross difference (a likely
+            # units/frame error) and never crash. See _OBSERVER_POSITION_WARN_KM.
+            if obscode_cache_key in self.ObservatoryXYZ:
+                diff_km = float(np.linalg.norm(self.ObservatoryXYZ[obscode_cache_key] - coords))
+                if diff_km > _OBSERVER_POSITION_WARN_KM:
+                    logger.warning(
+                        f"Observatory {obscode} reported positions differing by {diff_km:.1f} km at the same "
+                        f"epoch {et} ({self.ObservatoryXYZ[obscode_cache_key]} vs {coords}); using the most "
+                        f"recent. A difference this large may indicate a units/frame error."
                     )
-            # Save the coordinates in the cache for the given obscode and epoch
+            # Store (or refresh) the coordinates for this obscode and epoch.
             self.ObservatoryXYZ[obscode_cache_key] = coords
 
             # Optionally cache a user-supplied observer velocity. ADES permits the
