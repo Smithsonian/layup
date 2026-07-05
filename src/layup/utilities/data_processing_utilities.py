@@ -355,6 +355,10 @@ class LayupObservatory(SorchaObservatory):
         # Get Layup configs
         config = LayupConfigs()
 
+        # Kept so space-observatory Horizons lookups land their persistent
+        # (naif_id, jd) -> state cache under the same cache directory.
+        self.cache_dir = cache_dir
+
         # Furnish the spiceypy kernels
         layup_furnish_spiceypy(cache_dir)
 
@@ -629,9 +633,11 @@ class LayupObservatory(SorchaObservatory):
         """Geocentric states of a spacecraft at the given JD(TDB) epochs.
 
         Thin wrapper around :func:`query_horizons_geocentric` -- a seam that
-        tests monkeypatch so they never touch the network.
+        tests monkeypatch so they never touch the network. The persistent
+        (naif_id, jd) -> state cache is keyed under this observatory's cache
+        directory, so it is shared across objects, processes, and runs.
         """
-        return query_horizons_geocentric(naif_id, jd_tdb_list)
+        return query_horizons_geocentric(naif_id, jd_tdb_list, cache_dir=self.cache_dir)
 
     def _populate_space_observatory(self, obscode, et, obscode_cache_key):
         """Resolve a space-based observatory's geocentric state via JPL Horizons.
