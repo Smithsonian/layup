@@ -19,6 +19,7 @@ from layup.routines import (
     run_bk_iod,
     run_bk_native_fit,
     run_from_vector_with_initial_guess,
+    run_sequential_update,
 )
 
 try:
@@ -1152,6 +1153,172 @@ def orbitfit(
         engine=engine,
         fit_nongrav=fit_nongrav,
     )
+
+
+def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None):
+    """Augment one object's observations with the observer barycentric state and
+    build the C++ ``Observation`` list, mirroring ``orbitfit()``'s preprocessing.
+
+    Supports optical astrometry and streak (rate) rows -- the observation kinds a
+    steady-state catalog update sees. (Radar/occultation are not yet handled by
+    the sequential path; the driver's full-refit fallback covers them.)
+    """
+    DEG = np.pi / 180.0
+    kernels_loc = str(pooch.os_cache("layup")) if cache_dir is None else str(cache_dir)
+    observatory = LayupObservatory(cache_dir=cache_dir)
+
+    et = np.array([spice.str2et(row["obsTime"]) for row in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et, usemask=False, asrecarray=True)
+    pos_vel = observatory.obscodes_to_barycentric(data)
+    data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
+
+    column_names = data.dtype.names
+    astcat = "astCat" in column_names
+    program = "program" in column_names
+    rates_present = all(c in column_names for c in ("raRate", "decRate"))
+    rate_unc_present = all(c in column_names for c in ("rmsRArate", "rmsDecrate"))
+
+    if bias_dict is not None:
+        for d in data:
+            d["ra"], d["dec"] = debias(
+                ra=d["ra"],
+                dec=d["dec"],
+                epoch_jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], kernels_loc),
+                catalog=d["astCat"] if astcat else None,
+                bias_dict=bias_dict,
+            )
+
+    observations = []
+    for d in data:
+        jd = convert_tdb_date_to_julian_date(d["obsTime"], kernels_loc)
+        if rates_present and not np.isnan(d["raRate"]) and not np.isnan(d["decRate"]):
+            streak_rate_unc = {}
+            if rate_unc_present and not np.isnan(d["rmsRArate"]) and not np.isnan(d["rmsDecrate"]):
+                streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+                streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+            o = Observation.from_streak_with_id(
+                str(d["provID"]),
+                d["ra"] * DEG,
+                d["dec"] * DEG,
+                d["raRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                d["decRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                jd,
+                [d["x"], d["y"], d["z"]],
+                [d["vx"], d["vy"], d["vz"]],
+                **streak_rate_unc,
+            )
+        else:
+            o = Observation.from_astrometry_with_id(
+                str(d["provID"]),
+                d["ra"] * DEG,
+                d["dec"] * DEG,
+                jd,
+                [d["x"], d["y"], d["z"]],
+                [d["vx"], d["vy"], d["vz"]],
+            )
+        if weight_data:
+            sigma_arcsec = astrometric_uncertainty_Veres2017(
+                obsCode=d["stn"],
+                jd_tdb=jd,
+                catalog=d["astCat"] if astcat else None,
+                program=d["program"] if program else None,
+            )
+            sigma_rad = sigma_arcsec * np.pi / (180.0 * 3600.0)
+            o.ra_unc = sigma_rad
+            o.dec_unc = sigma_rad
+        observations.append(o)
+    return observations
+
+
+def _update_mahalanobis(prior_fit, updated_fit):
+    """Mahalanobis distance of the state update in prior standard deviations:
+    sqrt((x1 - x0)^T P0^-1 (x1 - x0)). This is the dimensionless size of the move
+    the new observations induced, and the natural nonlinearity gate -- a large
+    move means the linearization of the summarized old observations (which is
+    anchored at the prior mean x0) is no longer trustworthy."""
+    dx = np.array(updated_fit.state) - np.array(prior_fit.state)
+    P0 = np.array(list(prior_fit.cov)).reshape(6, 6)
+    try:
+        return float(np.sqrt(dx @ np.linalg.solve(P0, dx)))
+    except np.linalg.LinAlgError:
+        return np.inf
+
+
+def sequential_update(
+    prior,
+    new_data,
+    cache_dir,
+    *,
+    all_data=None,
+    weight_data=False,
+    debias_data=False,
+    max_update_sigma=4.0,
+    iter_max=100,
+):
+    """Sequential / information-filter update of a prior orbit fit (issue #419).
+
+    Refines ``prior`` using ONLY ``new_data`` (the newly reported observations of
+    one object); the previously-fit observations enter through the prior's state
+    and 6x6 covariance, which becomes the information matrix Lambda0 = P0^-1 added
+    to the normal equations. To the extent the prior is locally Gaussian this
+    equals a full batch refit over all observations, at the cost of integrating
+    only the new ones -- the throughput win for steady-state catalog maintenance.
+
+    Parameters
+    ----------
+    prior : FitResult or numpy structured array (one row)
+        The prior fit (state, 6x6 covariance, epoch). A result-catalog row is
+        accepted and parsed via ``parse_fit_result``.
+    new_data : numpy structured array
+        The new observations of this object (optical astrometry and/or streaks).
+    cache_dir : str or None
+        Kernel/ephemeris cache directory (None -> the default layup os_cache).
+    all_data : numpy structured array, optional
+        The full observation set (old + new). Required for the nonlinearity
+        fallback: when the update is too large the driver refits over all_data.
+    weight_data, debias_data : bool
+        Apply Veres (2017) weighting / MPC debiasing to the new observations,
+        matching the corresponding ``orbitfit`` options.
+    max_update_sigma : float
+        Nonlinearity gate. If the update moves the state more than this many prior
+        standard deviations (Mahalanobis), fall back to a full refit over
+        ``all_data`` when provided, else flag the result (flag=8).
+    iter_max : int
+        LM iteration cap.
+
+    Returns
+    -------
+    FitResult
+        The updated fit. ``method`` is ``"sequential_update"`` for an accepted
+        information-filter update, or ``"orbit_fit"`` when the fallback refit ran.
+    """
+    prior_fit = prior if isinstance(prior, FitResult) else parse_fit_result(prior)
+    kernels_loc = str(pooch.os_cache("layup")) if cache_dir is None else str(cache_dir)
+    ephem = get_ephem(kernels_loc)
+    bias_dict = generate_bias_dict(cache_dir) if debias_data else None
+
+    new_obs = _observations_for_update(new_data, cache_dir, weight_data, bias_dict)
+    seq = run_sequential_update(ephem, prior_fit, new_obs, iter_max)
+
+    def _full_refit():
+        if all_data is None:
+            return None
+        all_obs = _observations_for_update(all_data, cache_dir, weight_data, bias_dict)
+        return run_from_vector_with_initial_guess(ephem, prior_fit, all_obs, iter_max)
+
+    # The information update did not converge (e.g. a non-positive-definite prior,
+    # flag 7): fall back to a full refit if we can, else surface the failure.
+    if seq.flag != 0:
+        fallback = _full_refit()
+        return fallback if fallback is not None else seq
+
+    # Nonlinearity gate: a large move means the linearization is untrustworthy.
+    if _update_mahalanobis(prior_fit, seq) > max_update_sigma:
+        fallback = _full_refit()
+        if fallback is not None:
+            return fallback
+        seq.flag = 8  # nonlinear update, no full-obs set supplied to refit
+    return seq
 
 
 def orbitfit_cli(

@@ -641,7 +641,9 @@ namespace orbit_fit
                     Eigen::MatrixXd &chi2,
                     Eigen::MatrixXd &grad,
                     double lambda,
-                    int npar = 6)
+                    int npar = 6,
+                    const Eigen::MatrixXd *prior_info = nullptr,
+                    const Eigen::VectorXd *prior_dx = nullptr)
     {
 
         const int mlength = (int)partials_vec.size();
@@ -712,6 +714,21 @@ namespace orbit_fit
         C = Bt * W * B + lambda * eye; // This is where the extra term for LM is.
 
         grad = Bt * W * resid_v;
+
+        // Gaussian prior / information-filter term (issue #419). For a sequential
+        // update the prior N(x0, P0) summarising the previously-fit observations
+        // contributes its information matrix Lambda0 = P0^-1 to the normal matrix
+        // and Lambda0*(x - x0) to the gradient (x0 = prior mean, x = current
+        // iterate). B and resid_v here are assembled over the NEW observations
+        // only, so C = BtWB + Lambda0 is exactly the batch normal matrix of the
+        // full (old summarised + new) problem, and its inverse (below, after the
+        // LM damping is removed) is the posterior covariance. When prior_info is
+        // null this reduces to the ordinary least-squares step.
+        if (prior_info != nullptr)
+        {
+            C += *prior_info;
+            grad += (*prior_info) * (*prior_dx);
+        }
 
         dX = C.colPivHouseholderQr().solve(-grad);
         // An alternative looks like this.  It's probably less stable.
@@ -870,7 +887,11 @@ namespace orbit_fit
                   double eps, // constant
                   size_t iter_max,
                   int nongrav_mask = 0,    // bitmask of non-grav params to fit (1=A1,2=A2,4=A3)
-                  double *a123io = nullptr) // [A1,A2,A3] seed in / fitted out (3 doubles)
+                  double *a123io = nullptr, // [A1,A2,A3] seed in / fitted out (3 doubles)
+                  const Eigen::MatrixXd *prior_info = nullptr) // #419 sequential update:
+                                                              // prior information matrix
+                                                              // Lambda0 = P0^-1 (npar x npar),
+                                                              // or null for ordinary LSQ
     { // runtime
 
         // Number of fitted parameters: 6 (state) + one per active non-grav param.
@@ -892,6 +913,23 @@ namespace orbit_fit
         for (int k = 0; k < nactive; k++)
             if (a123[active[k]] == 0.0)
                 a123[active[k]] = 1e-15;
+
+        // #419 sequential update: snapshot the prior mean x0 (= the seed state)
+        // so each iteration can form the offset (x - x0) that the prior gradient
+        // term Lambda0*(x - x0) needs. Only used when prior_info is supplied.
+        Eigen::VectorXd x0;
+        if (prior_info != nullptr)
+        {
+            x0.resize(npar);
+            x0(0) = p0.x;
+            x0(1) = p0.y;
+            x0(2) = p0.z;
+            x0(3) = p0.vx;
+            x0(4) = p0.vy;
+            x0(5) = p0.vz;
+            for (int k = 0; k < nactive; k++)
+                x0(6 + k) = a123[active[k]];
+        }
 
         std::vector<size_t> reverse_in_seq;
         std::vector<size_t> reverse_out_seq;
@@ -943,13 +981,34 @@ namespace orbit_fit
                               reverse_out_seq,
                               nongrav_mask, a123);
 
+            // #419 sequential update: offset of the current iterate from the
+            // prior mean, for the prior gradient term Lambda0*(x - x0). Empty and
+            // unused when there is no prior.
+            Eigen::VectorXd prior_dx;
+            if (prior_info != nullptr)
+            {
+                prior_dx.resize(npar);
+                prior_dx(0) = p0.x - x0(0);
+                prior_dx(1) = p0.y - x0(1);
+                prior_dx(2) = p0.z - x0(2);
+                prior_dx(3) = p0.vx - x0(3);
+                prior_dx(4) = p0.vy - x0(4);
+                prior_dx(5) = p0.vz - x0(5);
+                for (int k = 0; k < nactive; k++)
+                    prior_dx(6 + k) = a123[active[k]] - x0(6 + k);
+            }
+
             Eigen::MatrixXd grad;
-            compute_dX(resid_vec, partials_vec, W, dX, C, chi2, grad, lambda, npar);
+            compute_dX(resid_vec, partials_vec, W, dX, C, chi2, grad, lambda, npar,
+                       prior_info, prior_info != nullptr ? &prior_dx : nullptr);
 
             double chi2_d = chi2(0, 0);
             // Track the most recent chi-square so the reported value is honest
             // even when the loop exits by exhausting iter_max (e.g. the LM is
-            // stuck rejecting steps against a gross outlier, dX -> 0).
+            // stuck rejecting steps against a gross outlier, dX -> 0). The
+            // reported value is always the data-only chi-square (over the new
+            // observations); the prior's contribution is folded into the LM gain
+            // ratio below, not into chi2_final.
             chi2_final = chi2_d;
 
             // A NaN chi-square means the fit has diverged (e.g. from a
@@ -962,7 +1021,16 @@ namespace orbit_fit
                 break;
             }
 
-            double rho = (chi2_prev - chi2_d) / (dX.transpose() * (lambda * dX - grad)).norm();
+            // Full regularised objective for the LM gain ratio: data chi-square
+            // over the new obs plus the prior quadratic (x - x0)^T Lambda0 (x - x0).
+            // With a strong prior and few new obs (the common steady-state case)
+            // the new-obs chi-square barely moves, so scoring steps on the data
+            // term alone would stall the damping; the prior term keeps it honest.
+            double obj = chi2_d;
+            if (prior_info != nullptr)
+                obj += prior_dx.dot((*prior_info) * prior_dx);
+
+            double rho = (chi2_prev - obj) / (dX.transpose() * (lambda * dX - grad)).norm();
 
             if (rho > rho_accept)
             {
@@ -981,7 +1049,7 @@ namespace orbit_fit
                 p0.vz += dX(5);
                 for (int k = 0; k < nactive; k++)
                     a123[active[k]] += dX(6 + k);
-                chi2_prev = chi2_d;
+                chi2_prev = obj;
             }
             else
             {
@@ -1003,9 +1071,17 @@ namespace orbit_fit
             }
         }
 
-        size_t ndof = total_residual_rows(detections) - npar;
+        // Degrees of freedom for the reduced-chi-square quality check. In an
+        // ordinary fit the npar parameters are estimated from the observations, so
+        // dof = rows - npar. In a #419 sequential update those npar parameters are
+        // constrained by the prior information (Lambda0), not consumed from the new
+        // observations, so the data-only chi-square (chi2_final) is assessed over
+        // the new-obs rows themselves. Skip the check when there are no rows to
+        // avoid a divide-by-zero (a prior-only update, which the driver avoids).
+        size_t nrows = total_residual_rows(detections);
+        size_t ndof = (prior_info != nullptr) ? nrows : (nrows - npar);
         double thresh = 10.0;
-        if ((chi2_final / ndof) > thresh)
+        if (ndof > 0 && (chi2_final / ndof) > thresh)
         {
             flag = 2;
         }
@@ -1242,6 +1318,95 @@ namespace orbit_fit
 
     }
 
+    // #419 sequential / information-filter update. Refine a prior orbit fit using
+    // ONLY new observations, folding the previously-fit observations in through
+    // their Gaussian summary (the prior state + covariance). To the extent the
+    // prior is well approximated by a Gaussian at its mean, the result equals a
+    // full batch refit over old+new observations -- the assumption the Python
+    // driver guards with a nonlinearity check and a full-refit fallback. The fit
+    // epoch is pinned to the prior's epoch, so the prior covariance needs no
+    // state-transition propagation.
+    //
+    // The prior is passed as a covariance (FitResult.cov); the information matrix
+    // Lambda0 = P0^-1 is formed here via a Cholesky (LLT) solve. Passing the prior
+    // as a covariance rather than a raw information matrix keeps the boundary
+    // square-root-friendly: a future SRIF variant can carry the Cholesky factor of
+    // Lambda0 through this same signature without changing callers.
+    FitResult run_sequential_update(struct assist_ephem *ephem,
+                                    FitResult prior,
+                                    std::vector<Observation> &new_detections,
+                                    size_t iter_max = 100)
+    {
+        size_t iters = 0;
+        double chi2_final = HUGE_VAL;
+        double eps = 1e-12;
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> cov;
+
+        std::vector<residuals> resid_vec(new_detections.size());
+        std::vector<partials> partials_vec(new_detections.size());
+
+        double epoch = prior.epoch; // pin the update epoch to the prior
+
+        FitResult result;
+        result.method = "sequential_update";
+        result.epoch = epoch;
+        result.nongrav_mask = 0;
+        for (int i = 0; i < 6; i++)
+            result.state[i] = prior.state[i]; // fallback state if the update fails
+
+        // Prior information matrix Lambda0 = P0^-1 (6x6 state block). P0 is a fit
+        // covariance, hence symmetric positive-definite; the LLT (Cholesky) solve
+        // is its stable inverse and the natural SRIF upgrade point.
+        Eigen::Matrix<double, 6, 6> P0;
+        for (int i = 0; i < 6; i++)
+            for (int j = 0; j < 6; j++)
+                P0(i, j) = prior.cov[i * 6 + j];
+
+        Eigen::LLT<Eigen::Matrix<double, 6, 6>> llt(P0);
+        if (llt.info() != Eigen::Success)
+        {
+            // Prior covariance not positive-definite (a degenerate prior); the
+            // information update is ill-posed. Flag failure so the driver falls
+            // back to a full refit over all observations.
+            result.flag = 7;
+            return result;
+        }
+        Eigen::MatrixXd Lambda0 = llt.solve(Eigen::Matrix<double, 6, 6>::Identity());
+
+        reb_particle p1;
+        p1.x = prior.state[0];
+        p1.y = prior.state[1];
+        p1.z = prior.state[2];
+        p1.vx = prior.state[3];
+        p1.vy = prior.state[4];
+        p1.vz = prior.state[5];
+
+        int flag = orbit_fit(
+            ephem, p1, epoch, new_detections,
+            resid_vec, partials_vec, iters, chi2_final, cov,
+            eps, iter_max, /*nongrav_mask=*/0, /*a123io=*/nullptr, &Lambda0);
+
+        result.flag = flag;
+        result.csq = chi2_final;
+        // #419 dof convention: the prior supplies the npar parameter constraints,
+        // so the data-only chi-square is assessed over the new-obs rows.
+        result.ndof = total_residual_rows(new_detections);
+        result.niter = iters;
+        result.state[0] = p1.x;
+        result.state[1] = p1.y;
+        result.state[2] = p1.z;
+        result.state[3] = p1.vx;
+        result.state[4] = p1.vy;
+        result.state[5] = p1.vz;
+        if (flag == 0)
+        {
+            for (int i = 0; i < 6; i++)
+                for (int j = 0; j < 6; j++)
+                    result.cov[i * 6 + j] = cov(i, j); // posterior (Lambda0 + BtWB)^-1
+        }
+        return result;
+    }
+
 // Universal-BK fit (LM driver in BK basis).  Inlined here, inside
 // `namespace orbit_fit`, so all of layup's existing Cartesian-fit
 // helpers (compute_residuals, create_sequences, get_weight_matrix,
@@ -1273,6 +1438,20 @@ namespace orbit_fit
                 (`iter_max`, default 100), and runs orbit fit. Reducing
                 iter_max gives a cheap screening pass for use in
                 multi-candidate IOD picker loops.
+            )pbdoc");
+        m.def("run_sequential_update",
+              &orbit_fit::run_sequential_update,
+              py::arg("ephem"), py::arg("prior"),
+              py::arg("new_detections"), py::arg("iter_max") = 100,
+              R"pbdoc(
+                Sequential / information-filter orbit update (issue #419). Takes a
+                prior FitResult (its state, 6x6 covariance and epoch summarise the
+                previously-fit observations) and ONLY the new observations, and
+                returns the updated fit. The prior covariance enters as the
+                information matrix Lambda0 = P0^-1 added to the normal equations, so
+                the result equals a full batch refit over old+new observations when
+                the prior is locally Gaussian. The epoch is pinned to the prior's.
+                Fails (flag != 0) if the prior covariance is not positive-definite.
             )pbdoc");
         m.def("residuals_at_state", &orbit_fit::residuals_at_state,
               py::arg("ephem"), py::arg("fit"), py::arg("detections"), py::arg("cov"),
