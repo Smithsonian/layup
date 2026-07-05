@@ -81,7 +81,5 @@ def test_nonlinearity_gate_falls_back_to_full_refit(fits):
 
 def test_nonlinearity_gate_flags_when_no_fallback_data(fits):
     # Same tight gate but no all_data to refit -> the result is flagged (8), not skipped.
-    res = sequential_update(
-        fits["prior"], fits["new"], cache_dir=None, all_data=None, max_update_sigma=1e-12
-    )
+    res = sequential_update(fits["prior"], fits["new"], cache_dir=None, all_data=None, max_update_sigma=1e-12)
     assert res.flag == 8
