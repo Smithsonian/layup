@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import re
@@ -188,7 +189,70 @@ def _get_result_dtypes(primary_id_column_name: str, nongrav_names=()):
         + [  # non-grav params (issue #351), value + 1-sigma per fitted param
             (col, "f8") for n in nongrav_names for col in (n.lower(), n.lower() + "_unc")
         ]
+        # Observation provenance / incremental fingerprint (issue #419): a
+        # deterministic hash of the observation set this orbit was fit from, plus
+        # the number of fittable observations. Kept last so the positional output
+        # tuples above the conditional non-grav columns are unaffected. Lets a
+        # steady-state pipeline skip re-fitting objects whose observations are
+        # unchanged since the prior catalog (see ``_obs_fingerprint``).
+        + [("obs_hash", "O"), ("nobs_fit", "i4")]
     )
+
+
+# Observation columns that determine the fit and therefore the fingerprint. Any
+# change to these (new obs, corrected astrometry, changed uncertainties) yields a
+# different hash and forces a re-fit; changes to purely cosmetic columns (e.g. a
+# magnitude) do not. Only the columns actually present in the data are hashed.
+_FINGERPRINT_COLUMNS = (
+    "obsTime",  # epoch
+    "ra",
+    "dec",  # optical astrometry (raw, pre-debias)
+    "stn",  # observatory code
+    "raStar",
+    "decStar",  # occultation astrometry
+    "rmsRA",
+    "rmsDec",  # reported astrometric uncertainties
+    "astCat",  # star catalog (feeds debiasing + weighting)
+    "raRate",
+    "decRate",
+    "rmsRArate",
+    "rmsDecrate",  # streak rates
+    "delay",
+    "doppler",
+    "freqTx",  # radar observables
+)
+
+
+def _fmt_fingerprint_value(v):
+    """Canonical, round-trip-stable string for one observation field value.
+
+    Uses Python's shortest round-trip ``repr`` for floats (deterministic across
+    runs and platforms) and decodes bytes so a numpy ``S``/``O`` string column
+    hashes identically however it was loaded.
+    """
+    if isinstance(v, bytes):
+        return v.decode("utf-8", "replace")
+    if isinstance(v, (np.floating, float)):
+        return repr(float(v))
+    return str(v)
+
+
+def _obs_fingerprint(data, column_names):
+    """Deterministic fingerprint of an object's fittable observation set.
+
+    Returns ``(nobs, hash16)`` where ``nobs`` is the row count and ``hash16`` is a
+    16-hex-character SHA-1 digest over the fit-relevant columns (``_FINGERPRINT_COLUMNS``).
+    The per-row strings are sorted before hashing, so the fingerprint is
+    order-independent: the same physical observations produce the same hash
+    regardless of row order (an LM fit over a set is itself order-independent).
+    Computed on the raw observations before any in-place debiasing so it reflects
+    what was reported, not the current bias model.
+    """
+    cols = [c for c in _FINGERPRINT_COLUMNS if c in column_names]
+    rows = ["\x1f".join(_fmt_fingerprint_value(d[c]) for c in cols) for d in data]
+    rows.sort()
+    payload = "\x1e".join(rows).encode("utf-8")
+    return len(rows), hashlib.sha1(payload).hexdigest()[:16]
 
 
 def _is_radar(d, column_names):
@@ -515,9 +579,64 @@ def create_empty_result(id, dtypes):
             + (np.nan,) * 36  # Flat covariance matrix
             # non-grav columns (issue #351): NaN per a1/a2/a3 (+ _unc) that is present
             + tuple(np.nan for n in ("a1", "a2", "a3") if n in dtypes.names for _ in (0, 1))
+            # obs fingerprint (issue #419): empty hash never matches, so a failed
+            # or invalid fit is always retried next cycle rather than skipped.
+            + (("", 0) if "obs_hash" in dtypes.names else ())
         ],
         dtype=dtypes,
     )
+
+
+def _carry_forward_result(prior_row, dtypes):
+    """Copy a prior fit result forward under the current output dtype (issue #419).
+
+    Used by the skip-unchanged path: when an object's observations are unchanged,
+    its stored fit is emitted verbatim rather than recomputed. Fields shared with
+    ``dtypes`` are copied by name (so the carried row is identical to the prior
+    fit); any field present in ``dtypes`` but absent from the prior (e.g. a
+    non-grav column the prior run did not fit) is left at its type default.
+    """
+    prior_row = prior_row[0] if getattr(prior_row, "shape", None) == (1,) else prior_row
+    out = np.zeros(1, dtype=dtypes)
+    for name in dtypes.names:
+        if name in prior_row.dtype.names:
+            out[name][0] = prior_row[name]
+    return out
+
+
+def _partition_unchanged(data, initial_guess, primary_id_column_name, fit_nongrav):
+    """Split raw observations into (to_fit, carried_forward) by obs fingerprint.
+
+    The steady-state pre-filter for ``orbitfit(skip_unchanged=True)`` (issue #419):
+    an object whose fingerprint matches a converged prior fit over the same
+    observation set is carried forward verbatim (cast to the current output
+    dtype); every other object's rows are returned for fitting. Runs before any
+    ephemeris/observatory setup, so a skipped object costs only a fingerprint
+    hash. The fingerprint is computed on the raw (pre-debias) observations, so it
+    matches the one ``_orbitfit`` stores.
+    """
+    _, nongrav_names = _parse_nongrav(fit_nongrav)
+    out_dtype = _get_result_dtypes(primary_id_column_name, nongrav_names)
+    prior = np.atleast_1d(initial_guess)
+    prior_by_id = {row[primary_id_column_name]: row for row in prior}
+    ids = data[primary_id_column_name]
+    keep = np.ones(len(data), dtype=bool)
+    carried = []
+    for oid in np.unique(ids):
+        obj_mask = ids == oid
+        nobs, obs_hash = _obs_fingerprint(data[obj_mask], data.dtype.names)
+        p = prior_by_id.get(oid)
+        if (
+            p is not None
+            and int(p["flag"]) == 0
+            and "nobs_fit" in prior.dtype.names
+            and int(p["nobs_fit"]) == nobs
+            and str(p["obs_hash"]) == obs_hash
+        ):
+            keep[obj_mask] = False
+            carried.append(_carry_forward_result(p, out_dtype))
+    carried_arr = np.concatenate(carried) if carried else np.array([], dtype=out_dtype)
+    return data[keep], carried_arr
 
 
 def do_gauss_iod(observations, seq):
@@ -824,6 +943,7 @@ def _orbitfit(
     iod: str = "gauss",
     engine: str = "cartesian",
     fit_nongrav: bool = False,
+    skip_unchanged: bool = False,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -896,6 +1016,26 @@ def _orbitfit(
         position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
         rate_unc_columns_present = all(col in column_names for col in ["rmsRArate", "rmsDecrate"])
         radar_columns_present = any(col in column_names for col in ["delay", "doppler"])
+
+        # Fingerprint the raw observation set (issue #419), before any in-place
+        # debiasing mutates ra/dec, so it reflects what was reported.
+        nobs_fit, obs_hash = _obs_fingerprint(data, column_names)
+
+        # Lever 1 (skip-unchanged): if a prior converged fit for this object was
+        # built from the identical observation set, carry it forward verbatim
+        # instead of re-fitting. ``initial_guess`` has already been filtered to
+        # this object and reset to None when its flag != 0, so a match here is a
+        # successful prior fit over the same obs. Requires the prior catalog to
+        # carry the fingerprint columns; otherwise this never triggers and we fit.
+        if (
+            skip_unchanged
+            and initial_guess is not None
+            and "obs_hash" in initial_guess.dtype.names
+            and "nobs_fit" in initial_guess.dtype.names
+            and int(initial_guess["nobs_fit"][0]) == nobs_fit
+            and str(initial_guess["obs_hash"][0]) == obs_hash
+        ):
+            return _carry_forward_result(initial_guess, _RESULT_DTYPES)
 
         # Accommodate occultation measurements. These measurements are implied when
         # the "ra" and "dec" columns are None. In this case, we will use the "starra"
@@ -1067,6 +1207,7 @@ def _orbitfit(
                 )
                 + cov_matrix  # Flat covariance matrix
                 + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
+                + (obs_hash, nobs_fit)  # obs fingerprint (issue #419)
             ],
             dtype=_RESULT_DTYPES,
         )
@@ -1085,6 +1226,7 @@ def orbitfit(
     iod="gauss",
     engine="cartesian",
     fit_nongrav=False,
+    skip_unchanged=False,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -1118,7 +1260,32 @@ def orbitfit(
         an ``a{n}`` value and ``a{n}_unc`` 1-sigma column (au/day^2) are added to
         the result. Cartesian engine only; params weakly constrained on short arcs
         are reported as NaN (issue #351).
+    skip_unchanged : bool
+        Incremental / steady-state mode (issue #419). When True and ``initial_guess``
+        is a prior result catalog carrying the ``obs_hash`` fingerprint columns, any
+        object whose observation set is byte-for-byte unchanged since that catalog is
+        carried forward verbatim instead of re-fitting. Objects with changed obs are
+        re-fit, warm-started from the prior state when available. Default False (every
+        object is fit). The output always carries the ``obs_hash``/``nobs_fit``
+        columns so it can seed the next cycle.
     """
+
+    # Incremental / steady-state pre-filter (issue #419). Before any per-obs
+    # ephemeris or observatory setup, drop objects whose observation set is
+    # unchanged since the prior catalog and carry their stored fit forward
+    # verbatim. This is where the steady-state throughput win comes from -- a
+    # skipped object costs one fingerprint hash, not a fit. Changed objects fall
+    # through and are re-fit below, warm-started from the prior state via
+    # ``initial_guess`` (which is retained for exactly that purpose).
+    carried_forward = None
+    if (
+        skip_unchanged
+        and initial_guess is not None
+        and "obs_hash" in getattr(initial_guess, "dtype", np.dtype([])).names
+    ):
+        data, carried_forward = _partition_unchanged(data, initial_guess, primary_id_column_name, fit_nongrav)
+        if len(data) == 0:  # everything unchanged -> nothing to fit
+            return carried_forward
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
 
@@ -1140,7 +1307,7 @@ def orbitfit(
     if debias:
         bias_dict = generate_bias_dict(cache_dir)
 
-    return process_data_by_id(
+    fitted = process_data_by_id(
         data,
         num_workers,
         _orbitfit,
@@ -1152,7 +1319,12 @@ def orbitfit(
         iod=iod,
         engine=engine,
         fit_nongrav=fit_nongrav,
+        skip_unchanged=skip_unchanged,
     )
+    # Re-attach objects carried forward unchanged by the #419 pre-filter.
+    if carried_forward is not None and len(carried_forward):
+        return np.concatenate([fitted, carried_forward])
+    return fitted
 
 
 def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None):
