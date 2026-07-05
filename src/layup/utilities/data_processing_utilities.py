@@ -531,9 +531,20 @@ class LayupObservatory(SorchaObservatory):
                         f"The data must have a '{field}' field for non-fixed position observatory {obscode}."
                     )
             coords = np.array([data["pos1"], data["pos2"], data["pos3"]])
-            # If any of the coordinates are None or NaN, raise an error
+            # NaN here means this obscode has no parallax constants in the local
+            # ObsCodes.json AND the observation carried no position. That is almost
+            # always a *ground* station added to the MPC list after the cached
+            # ObsCodes.json -- not a genuinely non-fixed observatory (those carry a
+            # real pos1/pos2/pos3). Give an actionable message pointing at the stale
+            # codes file rather than the misleading "invalid coordinates" (issue #404).
             if coords is None or np.isnan(coords).any():
-                raise ValueError(f"Observatory {obscode} has invalid coordinates at epoch {et}: {coords}")
+                raise ValueError(
+                    f"Observatory code '{obscode}' is not in the local observatory-codes "
+                    f"file (ObsCodes.json) and no position was supplied with the observation. "
+                    f"If it is a ground station, refresh the codes with `layup bootstrap` -- "
+                    f"the cached list may predate it; otherwise the code may be invalid. "
+                    f"(epoch et={et})"
+                )
 
             # Check if the coordinates are in a reference frame that we support.
             if data["sys"] not in ["ICRF_KM", "ICRF_AU"]:
