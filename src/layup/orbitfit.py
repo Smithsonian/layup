@@ -1600,6 +1600,193 @@ def sequential_update(
     return seq
 
 
+def _obs_row_keys(data, column_names):
+    """Per-observation identity keys over the fit-relevant columns (issue #419).
+
+    Each key is the same per-row string that ``_obs_fingerprint`` hashes, so a
+    row's key equals its contribution to the object's fingerprint. Used to diff a
+    current observation set against the one a prior fit was built from.
+    """
+    cols = [c for c in _FINGERPRINT_COLUMNS if c in column_names]
+    return ["\x1f".join(_fmt_fingerprint_value(d[c]) for c in cols) for d in data]
+
+
+def _append_only_new_obs(current, prior_obs):
+    """Return the rows of ``current`` absent from ``prior_obs`` if the change is
+    append-only, else ``None``.
+
+    Append-only means every observation the prior was fit from is still present
+    (none removed or modified) -- the case the sequential update handles exactly.
+    If any prior observation is gone, the summarised old-obs information no longer
+    matches the current set, so the object must be fully re-fit and this returns
+    ``None``.
+    """
+    cur_keys = _obs_row_keys(current, current.dtype.names)
+    prior_keys = set(_obs_row_keys(prior_obs, prior_obs.dtype.names))
+    if not prior_keys.issubset(cur_keys):
+        return None  # an old observation was removed or changed -> not append-only
+    mask = np.array([k not in prior_keys for k in cur_keys], dtype=bool)
+    return current[mask]
+
+
+def _group_by_id(data, primary_id_column_name):
+    if data is None:
+        return {}
+    ids = data[primary_id_column_name]
+    return {oid: data[ids == oid] for oid in np.unique(ids)}
+
+
+def _fitresult_to_row(fit, obj_id, obs_hash, nobs_fit, dtypes):
+    """Pack a FitResult (from the sequential update or its refit fallback) into one
+    result-catalog row carrying the current-obs fingerprint, so the row is
+    identical in shape to ``orbitfit`` output and can seed the next cycle."""
+    success = fit.flag == 0
+    cov = tuple(fit.cov[i] for i in range(36)) if success else (np.nan,) * 36
+    row = (
+        (obj_id, (fit.csq if success else np.nan), fit.ndof)
+        + (tuple(fit.state[i] for i in range(6)) if success else (np.nan,) * 6)
+        + (
+            (fit.epoch - 2400000.5) if success else np.nan,
+            fit.niter,
+            fit.method,
+            fit.flag,
+            "BCART_EQ" if success else "NONE",
+        )
+        + cov
+        + (obs_hash, nobs_fit)
+    )
+    return np.array([row], dtype=dtypes)
+
+
+def incremental_orbitfit(
+    data,
+    cache_dir,
+    prior_catalog,
+    *,
+    prior_obs=None,
+    primary_id_column_name="provID",
+    weight_data=False,
+    debias=False,
+    max_update_sigma=4.0,
+    iod="gauss",
+    engine="cartesian",
+    num_workers=1,
+):
+    """Steady-state incremental fit over a batch of objects (issue #419 capstone).
+
+    Ties the three levers into one operational maintenance pass. For each object
+    in ``data`` (the current observations), routes:
+
+    * **skip** -- the observation set is unchanged since ``prior_catalog`` (matching
+      fingerprint): carry the prior fit forward verbatim, no fit.
+    * **sequential update** -- observations were only appended (``prior_obs`` given
+      and every prior observation is still present): update the prior with the new
+      observations only, via :func:`sequential_update` (integrating just the new
+      obs). Its nonlinearity gate falls back to a full refit when the update is
+      too large.
+    * **full refit** -- observations were removed or changed, or no per-object
+      ``prior_obs`` is available: refit over all current obs, warm-started from the
+      prior state when there is one, cold (IOD) when the object is new.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        Current observations for all objects (grouped by ``primary_id_column_name``).
+    cache_dir : str or None
+        Kernel/ephemeris cache directory (None -> the default layup os_cache).
+    prior_catalog : numpy structured array or None
+        Prior fit results carrying state/cov/epoch and the ``obs_hash``/``nobs_fit``
+        fingerprint columns (i.e. produced by ``orbitfit``/this driver). None -> every
+        object is cold-fit.
+    prior_obs : numpy structured array, optional
+        The observations the prior catalog was fit from, grouped by id. Enables the
+        sequential route (needs the per-object obs to diff). Without it, changed
+        objects are fully refit.
+    weight_data, debias : bool
+        Veres (2017) weighting / MPC debiasing, as in ``orbitfit``.
+    max_update_sigma : float
+        Nonlinearity gate passed to :func:`sequential_update`.
+
+    Returns
+    -------
+    (numpy structured array, dict)
+        The updated result catalog (one row per object, same schema as
+        ``orbitfit`` output) and a routing tally
+        ``{"skip", "sequential", "sequential_fallback", "full", "cold"}``.
+    """
+    from collections import Counter
+
+    pid = primary_id_column_name
+    out_dtype = _get_result_dtypes(pid)
+    prior_by_id = {row[pid]: row for row in np.atleast_1d(prior_catalog)} if prior_catalog is not None else {}
+    prior_obs_by_id = _group_by_id(prior_obs, pid)
+
+    routing = Counter()
+    carried, seq_rows = [], []
+    warm_ids, cold_ids = [], []
+
+    for oid in np.unique(data[pid]):
+        cur = data[data[pid] == oid]
+        nobs, obs_hash = _obs_fingerprint(cur, cur.dtype.names)
+        p = prior_by_id.get(oid)
+        has_prior = p is not None and int(p["flag"]) == 0 and "obs_hash" in np.atleast_1d(p).dtype.names
+
+        # Route 1: unchanged -> skip (carry the prior row forward).
+        if has_prior and str(p["obs_hash"]) == obs_hash and int(p["nobs_fit"]) == nobs:
+            carried.append(_carry_forward_result(p, out_dtype))
+            routing["skip"] += 1
+            continue
+
+        # Route 2: append-only change with the prior obs available -> sequential update.
+        if has_prior and oid in prior_obs_by_id:
+            new_rows = _append_only_new_obs(cur, prior_obs_by_id[oid])
+            if new_rows is not None and len(new_rows) > 0:
+                seq = sequential_update(
+                    p,
+                    new_rows,
+                    cache_dir,
+                    all_data=cur,
+                    weight_data=weight_data,
+                    debias_data=debias,
+                    max_update_sigma=max_update_sigma,
+                )
+                routing["sequential" if seq.method == "sequential_update" else "sequential_fallback"] += 1
+                seq_rows.append(_fitresult_to_row(seq, oid, obs_hash, nobs, out_dtype))
+                continue
+
+        # Route 3: full refit (warm if a prior exists, else cold IOD).
+        (warm_ids if has_prior else cold_ids).append(oid)
+        routing["full" if has_prior else "cold"] += 1
+
+    # Full/cold refits go through orbitfit (warm objects filtered to their priors;
+    # cold objects with no initial guess). Two calls keep _orbitfit's per-object
+    # initial-guess lookup happy (it errors on a guess with no row for the object).
+    fit_parts = []
+    common = dict(
+        cache_dir=cache_dir,
+        primary_id_column_name=pid,
+        weight_data=weight_data,
+        debias=debias,
+        iod=iod,
+        engine=engine,
+        num_workers=num_workers,
+    )
+    if warm_ids:
+        sub = data[np.isin(data[pid], warm_ids)]
+        fit_parts.append(orbitfit(sub, initial_guess=prior_catalog, **common))
+    if cold_ids:
+        sub = data[np.isin(data[pid], cold_ids)]
+        fit_parts.append(orbitfit(sub, initial_guess=None, **common))
+
+    parts = (
+        ([np.concatenate(carried)] if carried else [])
+        + ([np.concatenate(seq_rows)] if seq_rows else [])
+        + [p for p in fit_parts if len(p)]
+    )
+    result = np.concatenate(parts) if parts else np.array([], dtype=out_dtype)
+    return result, dict(routing)
+
+
 def orbitfit_cli(
     input: str,
     input_file_format: Literal["MPC80col", "ADES_csv", "ADES_psv", "ADES_xml", "ADES_hdf5"],
