@@ -807,7 +807,7 @@ class LayupObservatory(SorchaObservatory):
             res.append(np.array((x, y, z, vx, vy, vz), dtype=output_dtype))
 
         # Combine all of our results into a single structured array
-        return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
+        return np.array(res)
 
 
 def get_format(data):
