@@ -223,6 +223,15 @@ def test_j4767_wise_excerpt_no_positionless_satellite():
     assert not np.isnan(data["pos1"]).any()
 
 
+def test_blank_and_truncated_lines_are_skipped(tmp_path):
+    """Blank or truncated lines (shorter than the note-2 column) must be skipped,
+    not fed to convert_obs80 where they raise (issue #407)."""
+    reader = Obs80DataReader(_write(tmp_path, [_SAT1_S, _SAT1_s, "", "03666  short", _GROUND]))
+    data = reader.read_rows()
+    assert len(data) == 2 == reader.get_row_count()
+    assert sorted(data["stn"]) == ["C51", "W84"]
+
+
 def test_desync_count_matches_read_and_objects(tmp_path):
     """get_row_count, read_rows and read_objects must all agree on the record
     set even when the file contains a desyncing orphan continuation line."""

@@ -245,6 +245,10 @@ class Obs80DataReader(ObjectDataReader):
             if check_header and self._is_header_row(line):
                 continue
             check_header = False
+            # Skip blank / truncated lines (issue #407): note 2 is at column 15,
+            # so anything shorter cannot be an obs80 record.
+            if len(line.rstrip("\n")) < 15:
+                continue
             if deleted_observation(line):
                 # A deleted/replaced observation. If it was the first line of a
                 # two-line record its continuation is now orphaned and will be
