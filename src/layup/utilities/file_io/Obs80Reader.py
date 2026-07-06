@@ -3,16 +3,60 @@ import numpy as np
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
 
+# Column 15 (0-indexed 14) is the MPC "note 2" / observation-type code. The
+# codes S (satellite), R (radar) and V (roving observer) each emit a SECOND
+# line carrying the observer position/data; that continuation line repeats the
+# designation and carries the same code in lower case (s / r / v).
+_TWO_LINE_FIRST_NOTES = ("S", "R", "V")
+_TWO_LINE_CONT_NOTES = ("s", "r", "v")
+# Note 2 codes X / x flag an observation the MPC has deleted or replaced. Such a
+# line is not a usable observation and must not be read as one -- in particular a
+# deleted satellite (C-code) astrometry line carries no observer position, so
+# emitting it produces a positionless record that would fall back to a per-row
+# JPL Horizons lookup during fitting.
+_DELETED_NOTES = ("X", "x")
+
+
+def deleted_observation(line):
+    """Checks if the MPC Obs80 line is a deleted/replaced observation (note 2
+    code X or x), which should be skipped entirely."""
+    return len(line) > 14 and line[14] in _DELETED_NOTES
+
+
 def two_line_row_start(line):
     """Checks if the MPC Obs80 line is the first line of a two-line row format.
 
-    Column 15 (0-indexed 14) is the MPC "note 2" / observation-type code. The
-    codes S (satellite), R (radar) and V (roving observer) each emit a second
-    line carrying the observer position/data, so a line bearing one of them is
-    the first of a two-line record.
+    A line bearing an upper-case S, R or V in note 2 (column 15) is the first
+    of a two-line record.
     """
-    note2 = line[14]
-    return note2 == "S" or note2 == "R" or note2 == "V"
+    return len(line) > 14 and line[14] in _TWO_LINE_FIRST_NOTES
+
+
+def two_line_row_continuation(line):
+    """Checks if the MPC Obs80 line is the second (continuation) line of a
+    two-line record.
+
+    The continuation line repeats note 2 in lower case (s / r / v) and carries
+    the observer position rather than an astrometric measurement. It must never
+    be emitted as a standalone observation: on its own its position columns
+    would be misread as RA/Dec and it would carry no observatory position.
+    """
+    return len(line) > 14 and line[14] in _TWO_LINE_CONT_NOTES
+
+
+def two_line_rows_match(first_line, second_line):
+    """Checks that ``second_line`` is the continuation line belonging to
+    ``first_line``: it is a continuation line, repeats the same designation
+    (columns 1-14) and reports the same observatory code (columns 78-80).
+
+    This guards against a desynchronised file (an orphan continuation line, or
+    a first line whose continuation is missing) silently mis-pairing.
+    """
+    if not two_line_row_continuation(second_line):
+        return False
+    if first_line[0:14] != second_line[0:14]:
+        return False
+    return first_line[77:80] == second_line[77:80]
 
 
 def ra_to_deg_ra(ra):
@@ -160,8 +204,9 @@ class Obs80DataReader(ObjectDataReader):
             True if the line is a header row, False otherwise.
         """
         # We know a line is a header row if it starts with an all-caps 3 letter code
-        # followed by a space.
-        return line[0:3].isupper() and line[3] == " "
+        # followed by a space. The length guard tolerates a blank/short leading
+        # line (issue #407).
+        return len(line) >= 4 and line[0:3].isupper() and line[3] == " "
 
     def get_reader_info(self):
         """Return a string identifying the current reader name
@@ -173,6 +218,59 @@ class Obs80DataReader(ObjectDataReader):
             The reader information.
         """
         return f"Obs80DataReader:{self.filename}"
+
+    def _iter_records(self, f):
+        """Yield one ``(main_line, second_line)`` tuple per logical obs80 record.
+
+        This is the single source of truth for how the raw lines of the file
+        group into records; every read path (``get_row_count``, ``read_rows``,
+        ``read_objects``) walks it so their record counts and ordering always
+        agree. It pairs each two-line record (S/R/V first line + its lower-case
+        s/r/v continuation line) and, crucially, refuses to emit a malformed
+        observation:
+
+        * a deleted/replaced observation (note 2 code X / x) is skipped;
+        * an orphan continuation line (one with no matching preceding first
+          line) is skipped -- it carries no astrometry of its own and would
+          otherwise be emitted as a positionless observation whose position
+          columns are misread as RA/Dec;
+        * a first line whose continuation is missing is dropped rather than
+          paired with the next unrelated line.
+
+        ``main_line`` is the astrometry line; ``second_line`` is the
+        observer-position line, or ``None`` for a single-line observation.
+        """
+        prev_first = None
+        check_header = True
+        for line in f:
+            if check_header and self._is_header_row(line):
+                continue
+            check_header = False
+            # Skip blank / truncated lines (issue #407): note 2 is at column 15,
+            # so anything shorter cannot be an obs80 record.
+            if len(line.rstrip("\n")) < 15:
+                continue
+            if deleted_observation(line):
+                # A deleted/replaced observation. If it was the first line of a
+                # two-line record its continuation is now orphaned and will be
+                # skipped by the branch below.
+                prev_first = None
+                continue
+            if two_line_row_start(line):
+                # Start of a two-line record. Any unconsumed previous first line
+                # had no continuation and is dropped.
+                prev_first = line
+                continue
+            if two_line_row_continuation(line):
+                if prev_first is not None and two_line_rows_match(prev_first, line):
+                    yield prev_first, line
+                # else: orphan / mismatched continuation -> skip (emit nothing).
+                prev_first = None
+                continue
+            # A normal single-line observation. Any unconsumed previous first
+            # line lacked its continuation and is dropped.
+            prev_first = None
+            yield line, None
 
     def get_row_count(self):
         """Return the total number of rows in the file.
@@ -187,10 +285,8 @@ class Obs80DataReader(ObjectDataReader):
         """
         row_cnt = 0
         with open(self.filename, "r") as f:
-            for line in f:
-                # Skip empty lines, header rows, and the starting line of two-line rows.
-                if line.strip() != "" and not self._is_header_row(line) and not two_line_row_start(line):
-                    row_cnt += 1
+            for _ in self._iter_records(f):
+                row_cnt += 1
         return row_cnt
 
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
@@ -218,36 +314,14 @@ class Obs80DataReader(ObjectDataReader):
             The data read in from the file.
         """
         records = []
+        block_end = block_start + block_size if block_size is not None else None
         with open(self.filename, "r") as f:
-            curr_block = 0
-            block_end = block_start + block_size if block_size is not None else None
-            prev_line = None
-            check_header = True
-            for curr_line in f:
-                if check_header and self._is_header_row(curr_line):
-                    continue
-                else:
-                    check_header = False
+            for curr_block, (main_line, second_line) in enumerate(self._iter_records(f)):
                 if block_end is not None and curr_block >= block_end:
                     # We have read enough rows from the file.
                     break
-                if two_line_row_start(curr_line):
-                    # We have a two-line row. We will save our current line
-                    # and wait for the next line to merge them as a single row to process.
-                    prev_line = curr_line
-                    continue
-
-                # Process our current MPC Obs80 row.
                 if curr_block >= block_start:
-                    if prev_line is not None:
-                        # We have a two-line row to process.
-                        records.append(self.convert_obs80(prev_line, second_line=curr_line))
-                        # Remove the previous line so we don't process it again.
-                        prev_line = None
-                    else:
-                        # We have a single line to process.
-                        records.append(self.convert_obs80(curr_line))
-                curr_block += 1
+                    records.append(self.convert_obs80(main_line, second_line=second_line))
 
         return np.array(records, dtype=self.output_dtype)
 
@@ -259,17 +333,8 @@ class Obs80DataReader(ObjectDataReader):
 
         obj_ids = []
         with open(self.filename, "r") as f:
-            check_header = True
-            for curr_line in f:
-                if check_header and self._is_header_row(curr_line):
-                    continue
-                else:
-                    check_header = False
-                if two_line_row_start(curr_line):
-                    # We have a two-line row, so skip it and only
-                    # add the object ID from the final row.
-                    continue
-                obj_id = self.get_obs80_id(curr_line)
+            for main_line, _second_line in self._iter_records(f):
+                obj_id = self.get_obs80_id(main_line)
                 obj_ids.append(obj_id)
                 # Count the number of times we see this object ID.
                 self.obj_id_counts[obj_id] = self.obj_id_counts.get(obj_id, 0) + 1
@@ -299,36 +364,13 @@ class Obs80DataReader(ObjectDataReader):
         skipped_rows = ~np.isin(self.obj_id_table[self._primary_id_column_name], obj_ids)
 
         records = []
-        # The index of the current row we are processing to check against skipped_rows.
-        # We start at -1 because we will increment it before processing the first row.
-        curr_row_idx = -1
-        prev_line = None
-        check_header = True
         with open(self.filename, "r") as f:
-            for curr_line in f:
-                if check_header and self._is_header_row(curr_line):
-                    continue
-                else:
-                    check_header = False
-                if two_line_row_start(curr_line):
-                    # We have a two-line row. We will save our current line
-                    # and wait for the next line to merge them as a single row to process.
-                    prev_line = curr_line
-                    continue
-
-                # We're at a potentially processable row, so increment our index.
-                curr_row_idx += 1
+            # _iter_records enumerates records in the same order as _build_id_map,
+            # so curr_row_idx lines up with skipped_rows.
+            for curr_row_idx, (main_line, second_line) in enumerate(self._iter_records(f)):
                 if skipped_rows[curr_row_idx]:
                     continue
-
-                # Process our current MPC Obs80 row.
-                if prev_line is not None:
-                    records.append(self.convert_obs80(prev_line, curr_line))
-                    # Remove the previous line so we don't process it again.
-                    prev_line = None
-                else:
-                    # Our row is a single line to process.
-                    records.append(self.convert_obs80(curr_line))
+                records.append(self.convert_obs80(main_line, second_line=second_line))
         return np.array(records, dtype=self.output_dtype)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
@@ -431,17 +473,41 @@ class Obs80DataReader(ObjectDataReader):
                 raise ValueError(
                     f"Observatory codes do not match in the second line provided for the observatory position. {obs_code} and {second_line[77:80].rstrip()}"
                 )
-            unit_flag = second_line[32:34].strip()
-            if unit_flag in ["1", "2"]:
-                ades_sys = "ICRF_KM" if unit_flag == "1" else "ICRF_AU"
-                # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
-                obs_geo_x = float(second_line[34] + second_line[35:45].strip())
-                obs_geo_y = float(second_line[46] + second_line[47:57].strip())
-                obs_geo_z = float(second_line[58] + second_line[59:69].strip())
-            else:
+            # The three two-line record types share the S/R/V mechanism but carry
+            # different second-line payloads, so dispatch on the first line's note2
+            # rather than assuming a satellite geocentric position (issue #402).
+            record_type = line[14]
+            if record_type == "S":
+                # Satellite: geocentric equatorial (ICRF) position, km or AU.
+                unit_flag = second_line[32:34].strip()
+                if unit_flag in ["1", "2"]:
+                    ades_sys = "ICRF_KM" if unit_flag == "1" else "ICRF_AU"
+                    # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
+                    obs_geo_x = float(second_line[34] + second_line[35:45].strip())
+                    obs_geo_y = float(second_line[46] + second_line[47:57].strip())
+                    obs_geo_z = float(second_line[58] + second_line[59:69].strip())
+                else:
+                    raise ValueError(
+                        f"Unknown observatory position unit flag '{unit_flag}' in the second line of obs80 data. Should be '1' (km) or '2' (AU)."
+                    )
+            elif record_type == "V":
+                # Roving observer: geodetic East longitude / latitude (degrees) and
+                # altitude (metres) on the WGS84 ellipsoid. We capture the position
+                # and its frame here; the geodetic -> geocentric-ICRF conversion is
+                # the observatory's job (issue #282).
+                ades_sys = "WGS84"
+                obs_geo_x = float(second_line[33:45])  # East longitude (deg)
+                obs_geo_y = float(second_line[45:56])  # latitude (deg)
+                obs_geo_z = float(second_line[56:67])  # altitude (m)
+            elif record_type == "R":
+                # Radar: the second line carries range/Doppler, not an observer
+                # position. Radar is ingested via ADES delay/doppler, not here.
                 raise ValueError(
-                    f"Unknown observatory position unit flag '{unit_flag}' in the second line of obs80 data. Should be '1' (km) or '2' (AU)."
+                    f"Radar (R/r) obs80 two-line records are not supported by Obs80DataReader "
+                    f"(object {obj_id}); ingest radar via ADES delay/doppler columns."
                 )
+            else:
+                raise ValueError(f"Unexpected two-line record type '{record_type}' for object {obj_id}.")
 
         return (
             obj_id,
