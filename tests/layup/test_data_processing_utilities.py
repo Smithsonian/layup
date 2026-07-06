@@ -299,10 +299,55 @@ def test_moving_observatory_coordinate_cache():
         expected_cooreds_au = [x * 149597870.7 for x in expected_coords]
         assert np.allclose(observatory.ObservatoryXYZ[cache_key_au], expected_cooreds_au)
 
-        # Test error when coordinates are inconsistent across epochs
-        row_inconsistent = np.array(("ICRF_KM", 399, 10.0, 12.0, 13.0), dtype=row_dtype)
-        with pytest.raises(ValueError):
-            observatory.populate_observatory(obscode, et, row_inconsistent)
+        # A same-epoch position that differs within an observer's motion is not
+        # fatal (moving observers carry a per-observation position): the most
+        # recent coordinates are used, without raising.
+        row_updated = np.array(("ICRF_KM", 399, 10.0, 12.0, 13.0), dtype=row_dtype)
+        observatory.populate_observatory(obscode, et, row_updated)
+        assert np.allclose(observatory.ObservatoryXYZ[expected_cache_key], [10.0, 12.0, 13.0])
+
+
+def test_moving_observatory_same_epoch_position_not_fatal(caplog):
+    """The observatory-position cache is shared across objects, and space telescopes
+    image many asteroids per exposure, so different objects carry a record for the
+    same (observatory, epoch) whose one true satellite position is reported at ~km
+    precision. Such small differences must not crash the fit (the most recent
+    position is used) and must not warn; only a difference far larger than any
+    reporting spread (a likely units/frame error) is logged, and even that is not
+    fatal. Regression for the MPC full-catalog crashes on C57 (TESS, ~1.4 km) and
+    C51 (WISE, ~4 km).
+    """
+    import logging
+
+    from layup.utilities.data_processing_utilities import _OBSERVER_POSITION_WARN_KM
+
+    observatory = LayupObservatory()
+    obscode = "247"  # moving observer: carries its own position
+    et = 2451545.0
+    key = f"{obscode}_{et}"
+    row_dtype = [("sys", "U7"), ("ctr", "i4"), ("pos1", "<f8"), ("pos2", "<f8"), ("pos3", "<f8")]
+
+    # TESS-like geocentric position (~lunar distance), first report.
+    first = np.array(("ICRF_KM", 399, 469.133, 397472.997, 15844.053), dtype=row_dtype)
+    observatory.populate_observatory(obscode, et, first)
+
+    # Same epoch, position moved a few km (satellite motion within the time
+    # precision): no raise, no warning, most recent position kept.
+    moved = np.array(("ICRF_KM", 399, 469.144, 397476.0, 15848.0), dtype=row_dtype)
+    with caplog.at_level(logging.WARNING):
+        observatory.populate_observatory(obscode, et, moved)
+    assert not any("differing by" in r.message for r in caplog.records)
+    assert np.allclose(observatory.ObservatoryXYZ[key], [469.144, 397476.0, 15848.0])
+
+    # A difference far beyond any observer's motion (units/frame error) is logged
+    # but still not fatal.
+    caplog.clear()
+    gross = np.array(
+        ("ICRF_KM", 399, 469.144, 397476.0, 15848.0 + 10.0 * _OBSERVER_POSITION_WARN_KM), dtype=row_dtype
+    )
+    with caplog.at_level(logging.WARNING):
+        observatory.populate_observatory(obscode, et, gross)  # must not raise
+    assert any("differing by" in r.message for r in caplog.records)
 
 
 def test_unknown_obscode_gives_actionable_error():
