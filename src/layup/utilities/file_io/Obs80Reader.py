@@ -204,8 +204,9 @@ class Obs80DataReader(ObjectDataReader):
             True if the line is a header row, False otherwise.
         """
         # We know a line is a header row if it starts with an all-caps 3 letter code
-        # followed by a space.
-        return line[0:3].isupper() and line[3] == " "
+        # followed by a space. The length guard tolerates a blank/short leading
+        # line (issue #407).
+        return len(line) >= 4 and line[0:3].isupper() and line[3] == " "
 
     def get_reader_info(self):
         """Return a string identifying the current reader name
@@ -472,17 +473,41 @@ class Obs80DataReader(ObjectDataReader):
                 raise ValueError(
                     f"Observatory codes do not match in the second line provided for the observatory position. {obs_code} and {second_line[77:80].rstrip()}"
                 )
-            unit_flag = second_line[32:34].strip()
-            if unit_flag in ["1", "2"]:
-                ades_sys = "ICRF_KM" if unit_flag == "1" else "ICRF_AU"
-                # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
-                obs_geo_x = float(second_line[34] + second_line[35:45].strip())
-                obs_geo_y = float(second_line[46] + second_line[47:57].strip())
-                obs_geo_z = float(second_line[58] + second_line[59:69].strip())
-            else:
+            # The three two-line record types share the S/R/V mechanism but carry
+            # different second-line payloads, so dispatch on the first line's note2
+            # rather than assuming a satellite geocentric position (issue #402).
+            record_type = line[14]
+            if record_type == "S":
+                # Satellite: geocentric equatorial (ICRF) position, km or AU.
+                unit_flag = second_line[32:34].strip()
+                if unit_flag in ["1", "2"]:
+                    ades_sys = "ICRF_KM" if unit_flag == "1" else "ICRF_AU"
+                    # For each coordinate, the first character is a sign (+/-) and the next 10 characters are the value.
+                    obs_geo_x = float(second_line[34] + second_line[35:45].strip())
+                    obs_geo_y = float(second_line[46] + second_line[47:57].strip())
+                    obs_geo_z = float(second_line[58] + second_line[59:69].strip())
+                else:
+                    raise ValueError(
+                        f"Unknown observatory position unit flag '{unit_flag}' in the second line of obs80 data. Should be '1' (km) or '2' (AU)."
+                    )
+            elif record_type == "V":
+                # Roving observer: geodetic East longitude / latitude (degrees) and
+                # altitude (metres) on the WGS84 ellipsoid. We capture the position
+                # and its frame here; the geodetic -> geocentric-ICRF conversion is
+                # the observatory's job (issue #282).
+                ades_sys = "WGS84"
+                obs_geo_x = float(second_line[33:45])  # East longitude (deg)
+                obs_geo_y = float(second_line[45:56])  # latitude (deg)
+                obs_geo_z = float(second_line[56:67])  # altitude (m)
+            elif record_type == "R":
+                # Radar: the second line carries range/Doppler, not an observer
+                # position. Radar is ingested via ADES delay/doppler, not here.
                 raise ValueError(
-                    f"Unknown observatory position unit flag '{unit_flag}' in the second line of obs80 data. Should be '1' (km) or '2' (AU)."
+                    f"Radar (R/r) obs80 two-line records are not supported by Obs80DataReader "
+                    f"(object {obj_id}); ingest radar via ADES delay/doppler columns."
                 )
+            else:
+                raise ValueError(f"Unexpected two-line record type '{record_type}' for object {obj_id}.")
 
         return (
             obj_id,
