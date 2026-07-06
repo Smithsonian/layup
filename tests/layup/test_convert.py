@@ -423,3 +423,51 @@ def test_element_order_matches_degree_columns():
         for col in cols:
             assert col in order, f"degree column {col!r} missing from element_order[{fmt}]"
             assert 0 <= order.index(col) <= 5
+
+
+def test_convert_vectorized_matches_rowwise():
+    """The no-covariance path is vectorized; the per-row path carries covariance.
+
+    Adding an all-zero covariance (which leaves the element/state values
+    unchanged) forces the per-row path, so the two paths must produce identical
+    converted values for every output format. This guards the vectorized
+    ``_parse_to_bcart_eq`` / ``_bcart_eq_to_elements`` against drifting from the
+    scalar ``universal_cartesian`` / ``universal_keplerian`` / ``universal_cometary``
+    routines. Uses BCOM.csv, whose final row is hyperbolic, so the ``e >= 1``
+    branch is exercised too.
+    """
+    import numpy.lib.recfunctions as rfn
+
+    from layup.convert import element_order
+    from layup.utilities.data_processing_utilities import get_cov_columns
+
+    input_data = CSVDataReader(get_test_filepath("BCOM.csv")).read_rows()
+
+    cov_cols = get_cov_columns()
+    zeros = [np.zeros(len(input_data), dtype="f8") for _ in cov_cols]
+    input_cov = rfn.append_fields(input_data, cov_cols, zeros, usemask=False)
+    assert has_cov_columns(input_cov) and not has_cov_columns(input_data)
+
+    degree_cols = {"inc", "node", "argPeri", "ma"}
+    for output_format in ["BCART_EQ", "BCART", "CART", "KEP", "COM", "BKEP", "BCOM"]:
+        vectorized = convert(input_data, output_format, num_workers=1)
+        per_row = convert(input_cov, output_format, num_workers=1)
+        for col in element_order[output_format] + ["epochMJD_TDB"]:
+            got = np.asarray(vectorized[col], dtype=float)
+            ref = np.asarray(per_row[col], dtype=float)
+            if col in degree_cols:
+                # compare modulo 360 so the 0/360 wrap boundary can't spuriously fail
+                assert_allclose(
+                    (got - ref + 180) % 360 - 180,
+                    0.0,
+                    atol=1e-7,
+                    err_msg=f"vectorized vs per-row angle mismatch in {col} for {output_format}",
+                )
+            else:
+                assert_allclose(
+                    got,
+                    ref,
+                    rtol=1e-9,
+                    atol=1e-9,
+                    err_msg=f"vectorized vs per-row mismatch in {col} for {output_format}",
+                )
