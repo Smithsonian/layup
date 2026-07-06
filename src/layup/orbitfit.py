@@ -52,7 +52,7 @@ from layup.utilities.file_io import (
     HDF5DataReader,
     Obs80DataReader,
 )
-from layup.utilities.file_io.file_output import write_csv, write_hdf5
+from layup.utilities.file_io.file_output import append_hdf5, write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
 
@@ -1282,6 +1282,22 @@ def orbitfit_cli(
 
     chunks = create_chunks(reader, chunk_size)
 
+    # Output is written one chunk at a time. The first write to each file
+    # overwrites any stale file left by a previous run (so re-runs are
+    # idempotent); later chunks append. Without this a re-run, or a re-merge onto
+    # an existing file, would duplicate every row.
+    _written_files = set()
+
+    def _emit(arr, path):
+        first = path not in _written_files
+        _written_files.add(path)
+        if output_file_format == "hdf5":
+            (write_hdf5 if first else append_hdf5)(arr, path, key="data")
+        else:  # csv: write_csv appends when the file already exists
+            if first and os.path.exists(path):
+                os.remove(path)
+            write_csv(arr, path)
+
     for chunk in chunks:
         data = reader.read_objects(chunk)
         initial_guess = None
@@ -1328,30 +1344,14 @@ def orbitfit_cli(
             fit_orbits_success = fit_orbits[success_mask]
             fit_orbits_failed = fit_orbits[~success_mask]
 
-            if output_file_format == "hdf5":
-                if len(fit_orbits_success) > 0:
-                    write_hdf5(fit_orbits_success, output_file, key="data")
+            if len(fit_orbits_success) > 0:
+                _emit(fit_orbits_success, output_file)
 
-                if len(fit_orbits_failed) > 0:
-                    write_hdf5(
-                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]],
-                        output_file_flagged,
-                        key="data",
-                    )
-            else:  # csv output format
-                if len(fit_orbits_success) > 0:
-                    write_csv(fit_orbits_success, output_file)
-
-                if len(fit_orbits_failed) > 0:
-                    write_csv(
-                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged
-                    )
+            if len(fit_orbits_failed) > 0:
+                _emit(fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged)
 
         else:  # All results go to a single output file
-            if output_file_format == "hdf5":
-                write_hdf5(fit_orbits, output_file, key="data")
-            else:
-                write_csv(fit_orbits, output_file)
+            _emit(fit_orbits, output_file)
 
     logger.info(f"Data has been written to {output_file}")
 
