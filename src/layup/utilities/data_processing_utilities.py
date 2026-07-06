@@ -26,6 +26,20 @@ from layup.utilities.special_observatories import (
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 
+# A moving/space-based observer's geocentric position is cached per (obscode,
+# epoch) and that cache is shared across every object processed by one
+# LayupObservatory. Space telescopes (TESS = C57, WISE = C51) image many asteroids
+# in a single exposure, so different objects each carry a record for the same
+# (observatory, epoch); the satellite's one true position at that instant is
+# reported per record at finite (~km) precision, so those records differ slightly.
+# Accept differences up to this many km -- they are the same body at the same
+# instant, astrometrically indistinguishable at the km level, so the most recent is
+# used. A larger difference exceeds any plausible reporting spread and likely
+# signals a units/frame error, so it is logged (never fatal -- a corrupt observer
+# position shows up as a diverging fit). Surfaced by the MPC full-catalog fit:
+# C57 = TESS (~1.4 km, near lunar distance) and C51 = WISE (~4 km, low Earth orbit).
+_OBSERVER_POSITION_WARN_KM = 100.0
+
 # Start worker processes with "spawn" rather than the platform default.
 #
 # On Linux the default start method is "fork", which clones the whole parent
@@ -355,6 +369,10 @@ class LayupObservatory(SorchaObservatory):
         # Get Layup configs
         config = LayupConfigs()
 
+        # Kept so space-observatory Horizons lookups land their persistent
+        # (naif_id, jd) -> state cache under the same cache directory.
+        self.cache_dir = cache_dir
+
         # Furnish the spiceypy kernels
         layup_furnish_spiceypy(cache_dir)
 
@@ -517,9 +535,20 @@ class LayupObservatory(SorchaObservatory):
                         f"The data must have a '{field}' field for non-fixed position observatory {obscode}."
                     )
             coords = np.array([data["pos1"], data["pos2"], data["pos3"]])
-            # If any of the coordinates are None or NaN, raise an error
+            # NaN here means this obscode has no parallax constants in the local
+            # ObsCodes.json AND the observation carried no position. That is almost
+            # always a *ground* station added to the MPC list after the cached
+            # ObsCodes.json -- not a genuinely non-fixed observatory (those carry a
+            # real pos1/pos2/pos3). Give an actionable message pointing at the stale
+            # codes file rather than the misleading "invalid coordinates" (issue #404).
             if coords is None or np.isnan(coords).any():
-                raise ValueError(f"Observatory {obscode} has invalid coordinates at epoch {et}: {coords}")
+                raise ValueError(
+                    f"Observatory code '{obscode}' is not in the local observatory-codes "
+                    f"file (ObsCodes.json) and no position was supplied with the observation. "
+                    f"If it is a ground station, refresh the codes with `layup bootstrap` -- "
+                    f"the cached list may predate it; otherwise the code may be invalid. "
+                    f"(epoch et={et})"
+                )
 
             # Check if the coordinates are in a reference frame that we support.
             if data["sys"] not in ["ICRF_KM", "ICRF_AU"]:
@@ -535,17 +564,19 @@ class LayupObservatory(SorchaObservatory):
             if data["sys"] == "ICRF_AU":
                 coords *= AU_KM
 
-            if obscode_cache_key not in self.ObservatoryXYZ:
-                # Store the coordinates in the ObservatoryXYZ dictionary to be read by barycentricObservatoryRates
-                self.ObservatoryXYZ[obscode_cache_key] = coords
-            else:
-                # If the coordinates are not the same, raise an error
-                if not np.allclose(self.ObservatoryXYZ[obscode_cache_key], coords):
-                    raise ValueError(
-                        f"Observatory {obscode} has different coordinates reported at the same epoch."
-                        f"Coordinates at epoch {et} previously were {self.ObservatoryXYZ[obscode_cache_key]}, but are now {coords}."
+            # A repeat position for the same (obscode, epoch) -- e.g. two objects
+            # co-observed by a space telescope in one exposure -- normally differs
+            # only at reporting precision; warn only on a gross difference (a likely
+            # units/frame error) and never crash. See _OBSERVER_POSITION_WARN_KM.
+            if obscode_cache_key in self.ObservatoryXYZ:
+                diff_km = float(np.linalg.norm(self.ObservatoryXYZ[obscode_cache_key] - coords))
+                if diff_km > _OBSERVER_POSITION_WARN_KM:
+                    logger.warning(
+                        f"Observatory {obscode} reported positions differing by {diff_km:.1f} km at the same "
+                        f"epoch {et} ({self.ObservatoryXYZ[obscode_cache_key]} vs {coords}); using the most "
+                        f"recent. A difference this large may indicate a units/frame error."
                     )
-            # Save the coordinates in the cache for the given obscode and epoch
+            # Store (or refresh) the coordinates for this obscode and epoch.
             self.ObservatoryXYZ[obscode_cache_key] = coords
 
             # Optionally cache a user-supplied observer velocity. ADES permits the
@@ -629,9 +660,11 @@ class LayupObservatory(SorchaObservatory):
         """Geocentric states of a spacecraft at the given JD(TDB) epochs.
 
         Thin wrapper around :func:`query_horizons_geocentric` -- a seam that
-        tests monkeypatch so they never touch the network.
+        tests monkeypatch so they never touch the network. The persistent
+        (naif_id, jd) -> state cache is keyed under this observatory's cache
+        directory, so it is shared across objects, processes, and runs.
         """
-        return query_horizons_geocentric(naif_id, jd_tdb_list)
+        return query_horizons_geocentric(naif_id, jd_tdb_list, cache_dir=self.cache_dir)
 
     def _populate_space_observatory(self, obscode, et, obscode_cache_key):
         """Resolve a space-based observatory's geocentric state via JPL Horizons.
@@ -780,7 +813,7 @@ class LayupObservatory(SorchaObservatory):
             res.append(np.array((x, y, z, vx, vy, vz), dtype=output_dtype))
 
         # Combine all of our results into a single structured array
-        return np.squeeze(np.array(res)) if len(res) > 1 else res[0]
+        return np.array(res)
 
 
 def get_format(data):

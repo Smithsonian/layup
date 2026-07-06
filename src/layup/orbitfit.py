@@ -3,6 +3,7 @@ import logging
 import os
 import re
 from argparse import Namespace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -157,6 +158,81 @@ def _parse_nongrav(fit_nongrav):
     if not names:
         raise ValueError(f"fit_nongrav={fit_nongrav!r}: expected some of 'A1', 'A2', 'A3'.")
     return sum(_NONGRAV_BITS[n] for n in names), names
+
+
+# fit_nongrav="auto" model ladder (issue #357): non-grav models are tried in
+# increasing complexity, and the first that converges, is well-conditioned
+# (flag 0), and is statistically warranted (see NongravAutoThresholds) is adopted;
+# otherwise the gravity-only fit is kept.
+_AUTO_NONGRAV_LADDER = (("A2",), ("A1", "A2"), ("A1", "A2", "A3"))
+
+
+@dataclass(frozen=True)
+class NongravAutoThresholds:
+    """Decision thresholds for adaptive non-grav selection (``fit_nongrav="auto"``,
+    issue #357). Pass a customized instance to ``orbitfit`` to tune how readily a
+    non-gravitational model is adopted; the defaults reproduce the standard
+    "introduce a non-grav only when gravity is unacceptable and the parameter is
+    statistically warranted" behavior.
+
+    Parameters
+    ----------
+    accept_reduced_chi2 : float
+        A gravity-only fit whose reduced chi-square is at or below this is kept
+        as-is; non-grav models are tried only above it. Default 1.5.
+    delta_chi2_per_param : float
+        Minimum chi-square drop required per added non-grav parameter to adopt a
+        model (9.0 ~ 3-sigma). Default 9.0.
+    nsigma : float
+        Each added non-grav parameter must exceed this many times its 1-sigma
+        uncertainty to be adopted. Default 3.0.
+    """
+
+    accept_reduced_chi2: float = 1.5
+    delta_chi2_per_param: float = 9.0
+    nsigma: float = 3.0
+
+
+_AUTO_DEFAULT_THRESHOLDS = NongravAutoThresholds()
+
+
+def _gravity_fit_acceptable(csq, ndof, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Whether a gravity-only fit is good enough that no non-grav is warranted.
+
+    True when the reduced chi-square is at or below the acceptance threshold (or
+    there are no degrees of freedom to judge it by).
+    """
+    return ndof <= 0 or csq / ndof <= thresholds.accept_reduced_chi2
+
+
+def _nongrav_warranted(csq_gravity, res_ng, names, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Whether adopting the (converged, well-conditioned) non-grav fit ``res_ng``
+    for parameters ``names`` over the gravity-only fit is statistically warranted:
+    a significant chi-square drop AND every added parameter individually significant.
+    """
+    if (csq_gravity - res_ng.csq) <= thresholds.delta_chi2_per_param * len(names):
+        return False  # chi-square improvement not significant for the added parameter(s)
+    return all(
+        abs(getattr(res_ng, n.lower())) > thresholds.nsigma * getattr(res_ng, n.lower() + "_unc")
+        for n in names
+    )
+
+
+def _select_nongrav_auto(assist_ephem, res_grav, observations, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Adaptive non-grav selection for ``fit_nongrav="auto"`` (issue #357).
+
+    ``res_grav`` is the converged gravity-only fit. Returns the most parsimonious
+    acceptable model: the gravity-only result unless a non-grav model is both
+    well-conditioned (flag 0) and statistically warranted per ``thresholds``.
+    """
+    if _gravity_fit_acceptable(res_grav.csq, res_grav.ndof, thresholds):
+        return res_grav  # gravity-only fit is acceptable; no non-gravs needed
+    for names in _AUTO_NONGRAV_LADDER:
+        mask = sum(_NONGRAV_BITS[n] for n in names)
+        res_ng = run_from_vector_with_initial_guess(assist_ephem, res_grav, observations, nongrav_mask=mask)
+        if res_ng.flag == 0 and _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
+            return res_ng  # parsimonious, well-determined non-grav model
+    return res_grav  # no non-grav model is warranted
 
 
 def _get_result_dtypes(primary_id_column_name: str, nongrav_names=()):
@@ -943,6 +1019,7 @@ def _orbitfit(
     iod: str = "gauss",
     engine: str = "cartesian",
     fit_nongrav: bool = False,
+    nongrav_auto_thresholds=None,
     skip_unchanged: bool = False,
 ):
     """This function will contain all of the calls to the c++ code that will
@@ -976,8 +1053,14 @@ def _orbitfit(
     # Fitting non-gravitational params (issue #351) uses the joint state+nongrav
     # LM, which only the Cartesian engine supports; the BK-native engine assumes a
     # 6D state. Override with a warning, mirroring the radar path.
-    nongrav_mask, nongrav_names = _parse_nongrav(fit_nongrav)
-    if nongrav_mask and engine != "cartesian":
+    auto_nongrav = isinstance(fit_nongrav, str) and fit_nongrav.strip().lower() == "auto"
+    if auto_nongrav:
+        # 'auto' selects the non-grav model per object (issue #357); the schema
+        # carries all of A1/A2/A3 and each row reports only the adopted params.
+        nongrav_mask, nongrav_names = 0, ["A1", "A2", "A3"]
+    else:
+        nongrav_mask, nongrav_names = _parse_nongrav(fit_nongrav)
+    if (nongrav_mask or auto_nongrav) and engine != "cartesian":
         logger.warning("Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine)
         engine = "cartesian"
 
@@ -1165,7 +1248,16 @@ def _orbitfit(
         # from that solution. They are weakly constrained on short arcs, so if the
         # joint fit is degenerate (flag 6) or fails to converge we keep the
         # 6-parameter result and report the params as NaN (graceful guard).
-        if nongrav_mask and res.flag == 0:
+        if auto_nongrav and res.flag == 0:
+            # Adopt the most parsimonious statistically-warranted non-grav model,
+            # or keep the gravity-only fit (issue #357).
+            res = _select_nongrav_auto(
+                get_ephem(kernels_loc),
+                res,
+                observations,
+                nongrav_auto_thresholds or _AUTO_DEFAULT_THRESHOLDS,
+            )
+        elif nongrav_mask and res.flag == 0:
             res_ng = run_from_vector_with_initial_guess(
                 get_ephem(kernels_loc), res, observations, nongrav_mask=nongrav_mask
             )
@@ -1181,13 +1273,15 @@ def _orbitfit(
         cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
         nongrav_cols = ()
         if nongrav_names:
-            fitted = success and getattr(res, "nongrav_mask", 0) != 0
+            # Report each parameter only if it was actually adopted (its bit is set
+            # in the fit's nongrav_mask); for 'auto' that is the selected subset.
+            fitted_mask = getattr(res, "nongrav_mask", 0) if success else 0
             nongrav_cols = tuple(
                 v
                 for n in nongrav_names
                 for v in (
-                    (getattr(res, n.lower()) if fitted else np.nan),
-                    (getattr(res, n.lower() + "_unc") if fitted else np.nan),
+                    (getattr(res, n.lower()) if (fitted_mask & _NONGRAV_BITS[n]) else np.nan),
+                    (getattr(res, n.lower() + "_unc") if (fitted_mask & _NONGRAV_BITS[n]) else np.nan),
                 )
             )
         output = np.array(
@@ -1226,6 +1320,7 @@ def orbitfit(
     iod="gauss",
     engine="cartesian",
     fit_nongrav=False,
+    nongrav_auto_thresholds=None,
     skip_unchanged=False,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
@@ -1256,10 +1351,21 @@ def orbitfit(
         orbit converges. ``False`` (default) fits none; ``True`` fits A2 (the
         transverse Yarkovsky term, the common asteroid case); a string or iterable
         naming params -- e.g. ``"A2"``, ``"A1A2A3"``, ``["A1", "A3"]`` -- selects a
-        subset of A1 (radial), A2 (transverse), A3 (normal). For each fitted param
-        an ``a{n}`` value and ``a{n}_unc`` 1-sigma column (au/day^2) are added to
-        the result. Cartesian engine only; params weakly constrained on short arcs
-        are reported as NaN (issue #351).
+        subset of A1 (radial), A2 (transverse), A3 (normal). ``"auto"`` selects the
+        model adaptively per object (issue #357): the gravity-only fit is kept
+        unless its reduced chi-square is unacceptable, in which case the most
+        parsimonious non-grav model that is well-conditioned and statistically
+        significant is adopted (the A1/A2/A3 columns are all present, with only the
+        adopted params filled and the rest NaN). For each fitted param an ``a{n}``
+        value and ``a{n}_unc`` 1-sigma column (au/day^2) are added to the result.
+        Cartesian engine only; params weakly constrained on short arcs are reported
+        as NaN (issue #351).
+    nongrav_auto_thresholds : NongravAutoThresholds, optional
+        Decision thresholds used when ``fit_nongrav="auto"`` -- how unacceptable the
+        gravity-only fit must be before a non-grav is tried, and how large the
+        chi-square drop and per-parameter significance must be to adopt one. Default
+        (``None``) uses the standard thresholds; pass a customized
+        ``NongravAutoThresholds`` to tune. Ignored unless ``fit_nongrav="auto"``.
     skip_unchanged : bool
         Incremental / steady-state mode (issue #419). When True and ``initial_guess``
         is a prior result catalog carrying the ``obs_hash`` fingerprint columns, any
@@ -1319,6 +1425,7 @@ def orbitfit(
         iod=iod,
         engine=engine,
         fit_nongrav=fit_nongrav,
+        nongrav_auto_thresholds=nongrav_auto_thresholds,
         skip_unchanged=skip_unchanged,
     )
     # Re-attach objects carried forward unchanged by the #419 pre-filter.

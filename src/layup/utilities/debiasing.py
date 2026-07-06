@@ -91,8 +91,10 @@ def debias(ra, dec, epoch_jd_tdb, catalog, bias_dict, nside=256):
     if catalog_key is None or catalog_key not in bias_dict:
         return ra, dec
 
-    # find pixel from RADEC
-    idx = hp.ang2pix(nside, ra, dec, nest=False, lonlat=True)
+    # find pixel from RADEC. The Farnocchia et al. (2015) / hires-2018 bias tables
+    # are stored in NESTED healpix ordering, so a RING lookup pulls the bias from
+    # the wrong sky pixel.
+    idx = hp.ang2pix(nside, ra, dec, nest=True, lonlat=True)
 
     # Retrieve the offsets and proper motions from the bias dictionary
     ra_off = bias_dict[catalog_key]["ra"][idx]
@@ -100,8 +102,10 @@ def debias(ra, dec, epoch_jd_tdb, catalog, bias_dict, nside=256):
     dec_off = bias_dict[catalog_key]["dec"][idx]
     pm_dec = bias_dict[catalog_key]["pm_dec"][idx]
 
-    # time from epoch in Julian years
-    dt_jy = epoch_jd_tdb / 365.25
+    # time from the bias-table reference epoch (J2000 = JD 2451545.0) in Julian
+    # years, for the proper-motion term. Using the raw JD here extrapolates the
+    # proper motion over ~6700 years, inflating the correction from ~0.3" to ~10".
+    dt_jy = (epoch_jd_tdb - 2451545.0) / 365.25
 
     # bias correction
     ddec = dec_off + dt_jy * pm_dec / 1000
