@@ -338,3 +338,21 @@ def test_orbitfit_driver_fits_a1a2a3():
     assert abs(row["a1"] - _TRUE_A1) / abs(_TRUE_A1) < 1e-2
     assert abs(row["a2"] - _TRUE_A2) / abs(_TRUE_A2) < 1e-2
     assert abs(row["a3"] - _TRUE_A3) / abs(_TRUE_A3) < 1e-2
+
+
+def test_orbitfit_auto_schema_and_keeps_gravity_when_not_warranted():
+    """fit_nongrav='auto' on a purely gravitational arc: the gravity-only fit is
+    already acceptable, so no non-grav parameter is introduced -- a1/a2/a3 are all
+    NaN and the 6-parameter solution is returned (issue #357)."""
+    data, guess = _build_arc_array(a123=(0.0, 0.0, 0.0))  # no non-grav
+    fit = orbitfit(data, cache_dir=CACHE, initial_guess=guess, fit_nongrav="auto")
+    # 'auto' always carries the A1/A2/A3 columns (only adopted params are filled).
+    for col in ("a1", "a1_unc", "a2", "a2_unc", "a3", "a3_unc"):
+        assert col in fit.dtype.names, f"missing column {col}"
+    row = fit[0]
+    assert row["flag"] == 0
+    assert row["ndof"] == 2 * len(data) - 6  # gravity-only (6 parameters)
+    assert np.isnan(row["a1"]) and np.isnan(row["a2"]) and np.isnan(row["a3"])
+    state = np.array([row["x"], row["y"], row["z"], row["xdot"], row["ydot"], row["zdot"]])
+    pos_rel = np.linalg.norm(state[:3] - _STATE[:3]) / np.linalg.norm(_STATE[:3])
+    assert pos_rel < 1e-6

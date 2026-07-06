@@ -18,6 +18,9 @@ reachable when a position is provided.
 """
 
 import logging
+import os
+import tempfile
+from pathlib import Path
 
 import numpy as np
 import requests
@@ -60,7 +63,7 @@ def is_space_observatory(obscode):
     return obscode in SPACE_OBSERVATORIES
 
 
-def query_horizons_geocentric(naif_id, jd_tdb_list, timeout=30):
+def query_horizons_geocentric(naif_id, jd_tdb_list, timeout=30, cache_dir=None):
     """Geocentric ICRF state of a spacecraft at the given epochs, via JPL Horizons.
 
     Parameters
@@ -71,6 +74,15 @@ def query_horizons_geocentric(naif_id, jd_tdb_list, timeout=30):
         Observation epochs as Julian Date (TDB).
     timeout : float, optional
         Per-request HTTP timeout in seconds.
+    cache_dir : str or path or None or False, optional
+        Location of the persistent ``(naif_id, jd) -> state`` disk cache. The
+        states are geometric (``VEC_CORR='NONE'``) and therefore deterministic and
+        safe to cache across objects, processes, and runs -- one Horizons call per
+        (spacecraft, epoch), ever, instead of once per object per process (which
+        rate-limits to HTTP 503 at catalog scale). Precedence: an explicit
+        ``cache_dir`` (uses a ``horizons/`` subdir under it) > the
+        ``LAYUP_HORIZONS_CACHE`` env var > the default layup pooch cache. Pass
+        ``cache_dir=False`` (or ``LAYUP_HORIZONS_CACHE=0``) to disable.
 
     Returns
     -------
@@ -102,11 +114,94 @@ def query_horizons_geocentric(naif_id, jd_tdb_list, timeout=30):
     matter for very high precision applications such as space-based stellar
     occultations -- flagged here as a known limitation (see PR #377 discussion).
     """
-    out = {}
     jd_list = list(jd_tdb_list)
+    root = _horizons_cache_root(cache_dir)
+    if root is None:
+        return _query_horizons_uncached(naif_id, jd_list, timeout)
+
+    cdir = root / str(naif_id)
+    out, misses = {}, []
+    for jd in jd_list:
+        state = _cache_load(cdir, jd)
+        if state is None:
+            misses.append(jd)
+        else:
+            out[jd] = state
+    if misses:
+        fetched = _query_horizons_uncached(naif_id, misses, timeout)
+        for jd, state in fetched.items():
+            _cache_store(cdir, jd, state)
+            out[jd] = state
+    return out
+
+
+def _query_horizons_uncached(naif_id, jd_list, timeout):
+    """The raw chunked Horizons query, with no disk cache (one network round-trip
+    per ``_TLIST_CHUNK`` epochs)."""
+    out = {}
     for start in range(0, len(jd_list), _TLIST_CHUNK):
         out.update(_query_chunk(naif_id, jd_list[start : start + _TLIST_CHUNK], timeout))
     return out
+
+
+def _horizons_cache_root(cache_dir):
+    """Resolve the persistent-cache root directory, or ``None`` to disable caching.
+
+    See ``query_horizons_geocentric`` for the precedence. Returns a ``Path`` whose
+    per-spacecraft subdirectories hold one ``<jd>.npz`` per cached epoch.
+    """
+    if cache_dir is False:
+        return None
+    env = os.environ.get("LAYUP_HORIZONS_CACHE")
+    if env is not None and env.lower() in ("0", "off", "false", "none", ""):
+        return None
+    if cache_dir:
+        return Path(cache_dir) / "horizons"
+    if env:
+        return Path(env)
+    # No explicit cache_dir and no env override -> caching off, preserving the
+    # historical behavior for direct callers. LayupObservatory threads its own
+    # cache_dir, so the observatory path (and the catalog run) caches by default.
+    return None
+
+
+def _cache_file(cdir, jd):
+    # Round to 1e-6 day (~0.09 s) to match the parser's jd matching, so two obs at
+    # effectively the same epoch share one cache entry.
+    return cdir / f"{round(jd, 6):.6f}.npz"
+
+
+def _cache_load(cdir, jd):
+    path = _cache_file(cdir, jd)
+    if not path.exists():
+        return None
+    try:
+        with np.load(path) as d:
+            return (d["pos"].copy(), d["vel"].copy())
+    except Exception:
+        return None  # corrupt/partial file -> treat as a miss and re-fetch/overwrite
+
+
+def _cache_store(cdir, jd, state):
+    """Best-effort atomic write of one (pos, vel) state. Distinct epochs are
+    distinct files, so this is lock-free and safe on a shared/parallel filesystem;
+    a temp-file-plus-rename keeps a concurrent reader from seeing a partial file.
+    A cache write must never break a fit, so failures are swallowed."""
+    pos, vel = state
+    try:
+        cdir.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=cdir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                np.savez(fh, pos=np.asarray(pos), vel=np.asarray(vel))
+            os.replace(tmp, _cache_file(cdir, jd))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    except Exception:
+        pass
 
 
 def _query_chunk(naif_id, jd_chunk, timeout):

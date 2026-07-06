@@ -107,3 +107,43 @@ def test_debias_accepts_catalog_code_like_a_name():
     assert (ra_code, dec_code) == (ra_name, dec_name)
     # ...and actually apply one (not silently return the input unchanged).
     assert (ra_code, dec_code) != (ra, dec)
+
+
+def test_debias_epoch_and_nested_ordering():
+    """Regression (no data files): the proper-motion term must use *years since
+    J2000*, not the raw JD -- the raw JD extrapolates the proper motion over ~6700
+    years and inflates the correction from sub-arcsec to ~10 arcsec, which turns
+    every catalogued observation into a gross outlier. The bias table must also be
+    read in NESTED healpix ordering. A synthetic one-pixel table pins both: 1"/yr
+    of proper motion placed only at the NESTED pixel of (ra, dec), sampled 10 yr
+    after J2000, must yield exactly 10" -- which requires both the J2000 epoch and
+    the nested lookup.
+    """
+    import healpy as hp
+
+    nside = 256
+    ra, dec = 100.0, 20.0
+    npix = hp.nside2npix(nside)
+    nest_pix = hp.ang2pix(nside, ra, dec, nest=True, lonlat=True)
+    zeros = np.zeros(npix)
+    pm_dec = zeros.copy()
+    pm_dec[nest_pix] = 1000.0  # 1000 mas/yr = 1 arcsec/yr, only at the nested pixel
+    bias_dict = {"q": {"ra": zeros, "dec": zeros, "pm_ra": zeros, "pm_dec": pm_dec}}
+
+    epoch = 2451545.0 + 10.0 * 365.25  # J2000 + 10 Julian years
+    _, dec_deb = debias(ra, dec, epoch, "q", bias_dict)
+    ddec_arcsec = (dec - dec_deb) * 3600.0
+    assert abs(ddec_arcsec - 10.0) < 1e-6, f"expected 10 arcsec (10 yr x 1 arcsec/yr), got {ddec_arcsec}"
+
+
+def test_debias_correction_is_arcsec_scale():
+    """Real bias tables: the total catalog-bias correction at a modern epoch is a
+    fraction of an arcsecond, not ~10 arcsec (the symptom of the J2000-epoch bug)."""
+    cache_dir = pooch.os_cache("layup")
+    bias_dict = generate_bias_dict(cache_dir=cache_dir)
+    ra, dec = 100.0, 20.0
+    epoch = 2459000.5  # ~2020
+    for name in ("PPM", "UCAC4"):
+        ra_deb, dec_deb = debias(ra, dec, epoch, name, bias_dict)
+        shift = np.hypot((ra_deb - ra) * np.cos(np.deg2rad(dec)), dec_deb - dec) * 3600.0
+        assert shift < 2.0, f"{name}: debias shift {shift:.2f} arcsec too large (epoch/ordering bug?)"
