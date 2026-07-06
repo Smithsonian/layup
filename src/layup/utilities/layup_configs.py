@@ -11,7 +11,16 @@ class AuxiliaryConfigs:
     ssd_base_url = "https://ssd.jpl.nasa.gov/ftp/eph"
 
     planet_ephemeris: str = "de440s.bsp"
-    """filename of planet_ephemeris"""
+    """SPICE planetary ephemeris (SPK) used for observatory positions.
+
+    The default ``de440s.bsp`` is the *short* DE440: it spans only 1849-12-26 to
+    2150-01-22 and is ~32 MB, which is ample for modern surveys. Note that ASSIST
+    integrates orbits across the full DE440 span (1550-2650, via ``jpl_planets``),
+    so an **observation before 1849** -- e.g. the oldest numbered asteroids, whose
+    astrometry reaches back to the early 1800s -- has no observer position here and
+    raises ``SPICE(SPKINSUFFDATA)``. To fit such historical arcs, point this and
+    ``planet_ephemeris_url`` at the full ``de440.bsp`` (1550-2650, ~114 MB); Earth
+    orientation before 1962 already falls back to the analytical IAU model."""
     planet_ephemeris_url: str = f"{naif_base_url}/spk/planets/de440s.bsp"
     """url for planet_ephemeris"""
 

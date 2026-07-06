@@ -566,3 +566,54 @@ def test_predict_observational_covariance_matches_refit_scatter(label, obs_filen
     for k, axis in enumerate(("RA", "Dec")):
         ratio = cov_emp[k, k] / cov_pred[k, k]
         assert 0.4 < ratio < 2.5, f"{axis} variance ratio empirical/predicted = {ratio:.2f}"
+
+
+def test_predict_single_time(tmpdir):
+    """Regression: predict() with a length-1 ``times`` must return one row per object
+    rather than crashing.
+
+    ``obscodes_to_barycentric`` returned a 0-d structured scalar for a single
+    observation (the ``... else res[0]`` branch), so ``_predict``'s
+    ``enumerate(obs_pos_vel)`` raised "iteration over a 0-d array". A single epoch is a
+    normal request (e.g. attributing known objects to one visit), so it must work and
+    agree with the multi-time path.
+    """
+
+    class FakeCliArgs:
+        def __init__(self, g=None):
+            self.onsky_data = False
+
+    data = CSVDataReader(
+        get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
+    ).read_rows()
+    n_ids = sum(1 for i in set(data["provID"]) if i)
+
+    t0, t1 = 2461091.50080075, 2461092.50080075
+    one = predict(
+        data,
+        obscode="X05",
+        times=np.array([t0]),
+        num_workers=1,
+        cache_dir=None,
+        primary_id_column_name="provID",
+        args=FakeCliArgs(),
+    )
+    assert len(one) == n_ids
+    assert np.all(np.isfinite(one["ra_deg"])) and np.all(np.isfinite(one["dec_deg"]))
+
+    # The single-time result matches the earliest epoch of a two-time predict, per object.
+    multi = predict(
+        data,
+        obscode="X05",
+        times=np.array([t0, t1]),
+        num_workers=1,
+        cache_dir=None,
+        primary_id_column_name="provID",
+        args=FakeCliArgs(),
+    )
+    first = multi[multi["epoch_JD_TDB"] == multi["epoch_JD_TDB"].min()]
+    o = one[np.argsort(one["provID"].astype(str))]
+    f = first[np.argsort(first["provID"].astype(str))]
+    assert_equal(o["provID"], f["provID"])
+    np.testing.assert_allclose(o["ra_deg"], f["ra_deg"])
+    np.testing.assert_allclose(o["dec_deg"], f["dec_deg"])

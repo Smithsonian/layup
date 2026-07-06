@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from argparse import Namespace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -19,6 +20,7 @@ from layup.routines import (
     run_bk_iod,
     run_bk_native_fit,
     run_from_vector_with_initial_guess,
+    run_sequential_update,
 )
 
 try:
@@ -52,7 +54,7 @@ from layup.utilities.file_io import (
     HDF5DataReader,
     Obs80DataReader,
 )
-from layup.utilities.file_io.file_output import write_csv, write_hdf5
+from layup.utilities.file_io.file_output import append_hdf5, write_csv, write_hdf5
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,81 @@ def _parse_nongrav(fit_nongrav):
     if not names:
         raise ValueError(f"fit_nongrav={fit_nongrav!r}: expected some of 'A1', 'A2', 'A3'.")
     return sum(_NONGRAV_BITS[n] for n in names), names
+
+
+# fit_nongrav="auto" model ladder (issue #357): non-grav models are tried in
+# increasing complexity, and the first that converges, is well-conditioned
+# (flag 0), and is statistically warranted (see NongravAutoThresholds) is adopted;
+# otherwise the gravity-only fit is kept.
+_AUTO_NONGRAV_LADDER = (("A2",), ("A1", "A2"), ("A1", "A2", "A3"))
+
+
+@dataclass(frozen=True)
+class NongravAutoThresholds:
+    """Decision thresholds for adaptive non-grav selection (``fit_nongrav="auto"``,
+    issue #357). Pass a customized instance to ``orbitfit`` to tune how readily a
+    non-gravitational model is adopted; the defaults reproduce the standard
+    "introduce a non-grav only when gravity is unacceptable and the parameter is
+    statistically warranted" behavior.
+
+    Parameters
+    ----------
+    accept_reduced_chi2 : float
+        A gravity-only fit whose reduced chi-square is at or below this is kept
+        as-is; non-grav models are tried only above it. Default 1.5.
+    delta_chi2_per_param : float
+        Minimum chi-square drop required per added non-grav parameter to adopt a
+        model (9.0 ~ 3-sigma). Default 9.0.
+    nsigma : float
+        Each added non-grav parameter must exceed this many times its 1-sigma
+        uncertainty to be adopted. Default 3.0.
+    """
+
+    accept_reduced_chi2: float = 1.5
+    delta_chi2_per_param: float = 9.0
+    nsigma: float = 3.0
+
+
+_AUTO_DEFAULT_THRESHOLDS = NongravAutoThresholds()
+
+
+def _gravity_fit_acceptable(csq, ndof, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Whether a gravity-only fit is good enough that no non-grav is warranted.
+
+    True when the reduced chi-square is at or below the acceptance threshold (or
+    there are no degrees of freedom to judge it by).
+    """
+    return ndof <= 0 or csq / ndof <= thresholds.accept_reduced_chi2
+
+
+def _nongrav_warranted(csq_gravity, res_ng, names, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Whether adopting the (converged, well-conditioned) non-grav fit ``res_ng``
+    for parameters ``names`` over the gravity-only fit is statistically warranted:
+    a significant chi-square drop AND every added parameter individually significant.
+    """
+    if (csq_gravity - res_ng.csq) <= thresholds.delta_chi2_per_param * len(names):
+        return False  # chi-square improvement not significant for the added parameter(s)
+    return all(
+        abs(getattr(res_ng, n.lower())) > thresholds.nsigma * getattr(res_ng, n.lower() + "_unc")
+        for n in names
+    )
+
+
+def _select_nongrav_auto(assist_ephem, res_grav, observations, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Adaptive non-grav selection for ``fit_nongrav="auto"`` (issue #357).
+
+    ``res_grav`` is the converged gravity-only fit. Returns the most parsimonious
+    acceptable model: the gravity-only result unless a non-grav model is both
+    well-conditioned (flag 0) and statistically warranted per ``thresholds``.
+    """
+    if _gravity_fit_acceptable(res_grav.csq, res_grav.ndof, thresholds):
+        return res_grav  # gravity-only fit is acceptable; no non-gravs needed
+    for names in _AUTO_NONGRAV_LADDER:
+        mask = sum(_NONGRAV_BITS[n] for n in names)
+        res_ng = run_from_vector_with_initial_guess(assist_ephem, res_grav, observations, nongrav_mask=mask)
+        if res_ng.flag == 0 and _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
+            return res_ng  # parsimonious, well-determined non-grav model
+    return res_grav  # no non-grav model is warranted
 
 
 def _get_result_dtypes(primary_id_column_name: str, nongrav_names=()):
@@ -823,6 +900,7 @@ def _orbitfit(
     iod: str = "gauss",
     engine: str = "cartesian",
     fit_nongrav: bool = False,
+    nongrav_auto_thresholds=None,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -855,8 +933,14 @@ def _orbitfit(
     # Fitting non-gravitational params (issue #351) uses the joint state+nongrav
     # LM, which only the Cartesian engine supports; the BK-native engine assumes a
     # 6D state. Override with a warning, mirroring the radar path.
-    nongrav_mask, nongrav_names = _parse_nongrav(fit_nongrav)
-    if nongrav_mask and engine != "cartesian":
+    auto_nongrav = isinstance(fit_nongrav, str) and fit_nongrav.strip().lower() == "auto"
+    if auto_nongrav:
+        # 'auto' selects the non-grav model per object (issue #357); the schema
+        # carries all of A1/A2/A3 and each row reports only the adopted params.
+        nongrav_mask, nongrav_names = 0, ["A1", "A2", "A3"]
+    else:
+        nongrav_mask, nongrav_names = _parse_nongrav(fit_nongrav)
+    if (nongrav_mask or auto_nongrav) and engine != "cartesian":
         logger.warning("Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine)
         engine = "cartesian"
 
@@ -1024,7 +1108,16 @@ def _orbitfit(
         # from that solution. They are weakly constrained on short arcs, so if the
         # joint fit is degenerate (flag 6) or fails to converge we keep the
         # 6-parameter result and report the params as NaN (graceful guard).
-        if nongrav_mask and res.flag == 0:
+        if auto_nongrav and res.flag == 0:
+            # Adopt the most parsimonious statistically-warranted non-grav model,
+            # or keep the gravity-only fit (issue #357).
+            res = _select_nongrav_auto(
+                get_ephem(kernels_loc),
+                res,
+                observations,
+                nongrav_auto_thresholds or _AUTO_DEFAULT_THRESHOLDS,
+            )
+        elif nongrav_mask and res.flag == 0:
             res_ng = run_from_vector_with_initial_guess(
                 get_ephem(kernels_loc), res, observations, nongrav_mask=nongrav_mask
             )
@@ -1040,13 +1133,15 @@ def _orbitfit(
         cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
         nongrav_cols = ()
         if nongrav_names:
-            fitted = success and getattr(res, "nongrav_mask", 0) != 0
+            # Report each parameter only if it was actually adopted (its bit is set
+            # in the fit's nongrav_mask); for 'auto' that is the selected subset.
+            fitted_mask = getattr(res, "nongrav_mask", 0) if success else 0
             nongrav_cols = tuple(
                 v
                 for n in nongrav_names
                 for v in (
-                    (getattr(res, n.lower()) if fitted else np.nan),
-                    (getattr(res, n.lower() + "_unc") if fitted else np.nan),
+                    (getattr(res, n.lower()) if (fitted_mask & _NONGRAV_BITS[n]) else np.nan),
+                    (getattr(res, n.lower() + "_unc") if (fitted_mask & _NONGRAV_BITS[n]) else np.nan),
                 )
             )
         output = np.array(
@@ -1084,6 +1179,7 @@ def orbitfit(
     iod="gauss",
     engine="cartesian",
     fit_nongrav=False,
+    nongrav_auto_thresholds=None,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -1113,10 +1209,21 @@ def orbitfit(
         orbit converges. ``False`` (default) fits none; ``True`` fits A2 (the
         transverse Yarkovsky term, the common asteroid case); a string or iterable
         naming params -- e.g. ``"A2"``, ``"A1A2A3"``, ``["A1", "A3"]`` -- selects a
-        subset of A1 (radial), A2 (transverse), A3 (normal). For each fitted param
-        an ``a{n}`` value and ``a{n}_unc`` 1-sigma column (au/day^2) are added to
-        the result. Cartesian engine only; params weakly constrained on short arcs
-        are reported as NaN (issue #351).
+        subset of A1 (radial), A2 (transverse), A3 (normal). ``"auto"`` selects the
+        model adaptively per object (issue #357): the gravity-only fit is kept
+        unless its reduced chi-square is unacceptable, in which case the most
+        parsimonious non-grav model that is well-conditioned and statistically
+        significant is adopted (the A1/A2/A3 columns are all present, with only the
+        adopted params filled and the rest NaN). For each fitted param an ``a{n}``
+        value and ``a{n}_unc`` 1-sigma column (au/day^2) are added to the result.
+        Cartesian engine only; params weakly constrained on short arcs are reported
+        as NaN (issue #351).
+    nongrav_auto_thresholds : NongravAutoThresholds, optional
+        Decision thresholds used when ``fit_nongrav="auto"`` -- how unacceptable the
+        gravity-only fit must be before a non-grav is tried, and how large the
+        chi-square drop and per-parameter significance must be to adopt one. Default
+        (``None``) uses the standard thresholds; pass a customized
+        ``NongravAutoThresholds`` to tune. Ignored unless ``fit_nongrav="auto"``.
     """
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
@@ -1151,7 +1258,174 @@ def orbitfit(
         iod=iod,
         engine=engine,
         fit_nongrav=fit_nongrav,
+        nongrav_auto_thresholds=nongrav_auto_thresholds,
     )
+
+
+def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None):
+    """Augment one object's observations with the observer barycentric state and
+    build the C++ ``Observation`` list, mirroring ``orbitfit()``'s preprocessing.
+
+    Supports optical astrometry and streak (rate) rows -- the observation kinds a
+    steady-state catalog update sees. (Radar/occultation are not yet handled by
+    the sequential path; the driver's full-refit fallback covers them.)
+    """
+    DEG = np.pi / 180.0
+    kernels_loc = str(pooch.os_cache("layup")) if cache_dir is None else str(cache_dir)
+    observatory = LayupObservatory(cache_dir=cache_dir)
+
+    et = np.array([spice.str2et(row["obsTime"]) for row in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et, usemask=False, asrecarray=True)
+    pos_vel = observatory.obscodes_to_barycentric(data)
+    data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
+
+    column_names = data.dtype.names
+    astcat = "astCat" in column_names
+    program = "program" in column_names
+    rates_present = all(c in column_names for c in ("raRate", "decRate"))
+    rate_unc_present = all(c in column_names for c in ("rmsRArate", "rmsDecrate"))
+
+    if bias_dict is not None:
+        for d in data:
+            d["ra"], d["dec"] = debias(
+                ra=d["ra"],
+                dec=d["dec"],
+                epoch_jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], kernels_loc),
+                catalog=d["astCat"] if astcat else None,
+                bias_dict=bias_dict,
+            )
+
+    observations = []
+    for d in data:
+        jd = convert_tdb_date_to_julian_date(d["obsTime"], kernels_loc)
+        if rates_present and not np.isnan(d["raRate"]) and not np.isnan(d["decRate"]):
+            streak_rate_unc = {}
+            if rate_unc_present and not np.isnan(d["rmsRArate"]) and not np.isnan(d["rmsDecrate"]):
+                streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+                streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+            o = Observation.from_streak_with_id(
+                str(d["provID"]),
+                d["ra"] * DEG,
+                d["dec"] * DEG,
+                d["raRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                d["decRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                jd,
+                [d["x"], d["y"], d["z"]],
+                [d["vx"], d["vy"], d["vz"]],
+                **streak_rate_unc,
+            )
+        else:
+            o = Observation.from_astrometry_with_id(
+                str(d["provID"]),
+                d["ra"] * DEG,
+                d["dec"] * DEG,
+                jd,
+                [d["x"], d["y"], d["z"]],
+                [d["vx"], d["vy"], d["vz"]],
+            )
+        if weight_data:
+            sigma_arcsec = astrometric_uncertainty_Veres2017(
+                obsCode=d["stn"],
+                jd_tdb=jd,
+                catalog=d["astCat"] if astcat else None,
+                program=d["program"] if program else None,
+            )
+            sigma_rad = sigma_arcsec * np.pi / (180.0 * 3600.0)
+            o.ra_unc = sigma_rad
+            o.dec_unc = sigma_rad
+        observations.append(o)
+    return observations
+
+
+def _update_mahalanobis(prior_fit, updated_fit):
+    """Mahalanobis distance of the state update in prior standard deviations:
+    sqrt((x1 - x0)^T P0^-1 (x1 - x0)). This is the dimensionless size of the move
+    the new observations induced, and the natural nonlinearity gate -- a large
+    move means the linearization of the summarized old observations (which is
+    anchored at the prior mean x0) is no longer trustworthy."""
+    dx = np.array(updated_fit.state) - np.array(prior_fit.state)
+    P0 = np.array(list(prior_fit.cov)).reshape(6, 6)
+    try:
+        return float(np.sqrt(dx @ np.linalg.solve(P0, dx)))
+    except np.linalg.LinAlgError:
+        return np.inf
+
+
+def sequential_update(
+    prior,
+    new_data,
+    cache_dir,
+    *,
+    all_data=None,
+    weight_data=False,
+    debias_data=False,
+    max_update_sigma=4.0,
+    iter_max=100,
+):
+    """Sequential / information-filter update of a prior orbit fit (issue #419).
+
+    Refines ``prior`` using ONLY ``new_data`` (the newly reported observations of
+    one object); the previously-fit observations enter through the prior's state
+    and 6x6 covariance, which becomes the information matrix Lambda0 = P0^-1 added
+    to the normal equations. To the extent the prior is locally Gaussian this
+    equals a full batch refit over all observations, at the cost of integrating
+    only the new ones -- the throughput win for steady-state catalog maintenance.
+
+    Parameters
+    ----------
+    prior : FitResult or numpy structured array (one row)
+        The prior fit (state, 6x6 covariance, epoch). A result-catalog row is
+        accepted and parsed via ``parse_fit_result``.
+    new_data : numpy structured array
+        The new observations of this object (optical astrometry and/or streaks).
+    cache_dir : str or None
+        Kernel/ephemeris cache directory (None -> the default layup os_cache).
+    all_data : numpy structured array, optional
+        The full observation set (old + new). Required for the nonlinearity
+        fallback: when the update is too large the driver refits over all_data.
+    weight_data, debias_data : bool
+        Apply Veres (2017) weighting / MPC debiasing to the new observations,
+        matching the corresponding ``orbitfit`` options.
+    max_update_sigma : float
+        Nonlinearity gate. If the update moves the state more than this many prior
+        standard deviations (Mahalanobis), fall back to a full refit over
+        ``all_data`` when provided, else flag the result (flag=8).
+    iter_max : int
+        LM iteration cap.
+
+    Returns
+    -------
+    FitResult
+        The updated fit. ``method`` is ``"sequential_update"`` for an accepted
+        information-filter update, or ``"orbit_fit"`` when the fallback refit ran.
+    """
+    prior_fit = prior if isinstance(prior, FitResult) else parse_fit_result(prior)
+    kernels_loc = str(pooch.os_cache("layup")) if cache_dir is None else str(cache_dir)
+    ephem = get_ephem(kernels_loc)
+    bias_dict = generate_bias_dict(cache_dir) if debias_data else None
+
+    new_obs = _observations_for_update(new_data, cache_dir, weight_data, bias_dict)
+    seq = run_sequential_update(ephem, prior_fit, new_obs, iter_max)
+
+    def _full_refit():
+        if all_data is None:
+            return None
+        all_obs = _observations_for_update(all_data, cache_dir, weight_data, bias_dict)
+        return run_from_vector_with_initial_guess(ephem, prior_fit, all_obs, iter_max)
+
+    # The information update did not converge (e.g. a non-positive-definite prior,
+    # flag 7): fall back to a full refit if we can, else surface the failure.
+    if seq.flag != 0:
+        fallback = _full_refit()
+        return fallback if fallback is not None else seq
+
+    # Nonlinearity gate: a large move means the linearization is untrustworthy.
+    if _update_mahalanobis(prior_fit, seq) > max_update_sigma:
+        fallback = _full_refit()
+        if fallback is not None:
+            return fallback
+        seq.flag = 8  # nonlinear update, no full-obs set supplied to refit
+    return seq
 
 
 def orbitfit_cli(
@@ -1282,6 +1556,22 @@ def orbitfit_cli(
 
     chunks = create_chunks(reader, chunk_size)
 
+    # Output is written one chunk at a time. The first write to each file
+    # overwrites any stale file left by a previous run (so re-runs are
+    # idempotent); later chunks append. Without this a re-run, or a re-merge onto
+    # an existing file, would duplicate every row.
+    _written_files = set()
+
+    def _emit(arr, path):
+        first = path not in _written_files
+        _written_files.add(path)
+        if output_file_format == "hdf5":
+            (write_hdf5 if first else append_hdf5)(arr, path, key="data")
+        else:  # csv: write_csv appends when the file already exists
+            if first and os.path.exists(path):
+                os.remove(path)
+            write_csv(arr, path)
+
     for chunk in chunks:
         data = reader.read_objects(chunk)
         initial_guess = None
@@ -1328,30 +1618,14 @@ def orbitfit_cli(
             fit_orbits_success = fit_orbits[success_mask]
             fit_orbits_failed = fit_orbits[~success_mask]
 
-            if output_file_format == "hdf5":
-                if len(fit_orbits_success) > 0:
-                    write_hdf5(fit_orbits_success, output_file, key="data")
+            if len(fit_orbits_success) > 0:
+                _emit(fit_orbits_success, output_file)
 
-                if len(fit_orbits_failed) > 0:
-                    write_hdf5(
-                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]],
-                        output_file_flagged,
-                        key="data",
-                    )
-            else:  # csv output format
-                if len(fit_orbits_success) > 0:
-                    write_csv(fit_orbits_success, output_file)
-
-                if len(fit_orbits_failed) > 0:
-                    write_csv(
-                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged
-                    )
+            if len(fit_orbits_failed) > 0:
+                _emit(fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged)
 
         else:  # All results go to a single output file
-            if output_file_format == "hdf5":
-                write_hdf5(fit_orbits, output_file, key="data")
-            else:
-                write_csv(fit_orbits, output_file)
+            _emit(fit_orbits, output_file)
 
     logger.info(f"Data has been written to {output_file}")
 
