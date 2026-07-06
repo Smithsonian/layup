@@ -3,7 +3,9 @@ import os
 from pathlib import Path
 from typing import Literal
 
+import jax
 import numpy as np
+from scipy.linalg import block_diag
 from sorcha.ephemeris.simulation_geometry import EQ_TO_ECL_ROTATION_MATRIX, equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_parsing import parse_orbit_row
 from sorcha.ephemeris.simulation_setup import _create_assist_ephemeris
@@ -313,18 +315,72 @@ def _bcart_eq_to_elements(mu, coords, vels, epoch_mjd, cometary):
     return np.stack([first, e, incl, node, argperi, sixth])
 
 
-def _apply_convert_vectorized(
-    data, convert_to, ephem, gm_sun, gm_total, primary_id_column_name, output_dtype, cols_to_keep
-):
-    """Vectorized ``_apply_convert`` for the no-covariance case (all formats).
+# Block-diagonal 6x6 rotation congruences for covariance, matching
+# orbit_conversion.covariance_eq_to_ecl / covariance_ecl_to_eq.
+_COV_EQ_TO_ECL = block_diag(EQ_TO_ECL_ROTATION_MATRIX.T, EQ_TO_ECL_ROTATION_MATRIX.T)
+_COV_ECL_TO_EQ = block_diag(ECL_TO_EQ_ROTATION_MATRIX.T, ECL_TO_EQ_ROTATION_MATRIX.T)
 
-    Numerically reproduces the per-row path (validated to ~1e-11 on the test
-    fixtures) while avoiding the per-row jax dispatch, per-row ephemeris query and
-    per-row struct-array construction. ~250x for Cartesian/BCART_EQ inputs (the
-    bulk case), ~30x for element inputs (bounded by the per-row
-    ``universal_cartesian`` Kepler solve). The covariance case is handled by the
-    per-row path in ``_apply_convert``.
+# Batched (vmapped) forms of the pure-jax output covariance transforms.
+_covariance_keplerian_xyz_batch = jax.vmap(covariance_keplerian_xyz, in_axes=(None, 0, 0, 0, 0, 0, 0, 0, 0))
+_covariance_cometary_xyz_batch = jax.vmap(covariance_cometary_xyz, in_axes=(None, 0, 0, 0, 0, 0, 0, 0, 0))
+
+
+def _parse_cov_to_bcart_eq(data, gm_sun, gm_total):
+    """Vectorized ``parse_covariance_row_to_CART``: each row's flattened input
+    covariance -> equatorial Cartesian, as an (N, 6, 6) array.
+
+    Cartesian inputs are a batched rotation congruence; element inputs use the
+    per-row (numba) ``parse_covariance_row_to_CART`` (its Jacobian goes through
+    ``universal_cartesian``, which is not jax-traceable). Assumes any degree-format
+    input covariance has already been rescaled to radians by the caller.
     """
+    fmt = np.asarray(data["FORMAT"])
+    cov = np.empty((len(data), 6, 6))
+    for i in range(6):
+        for j in range(6):
+            cov[:, i, j] = np.asarray(data[f"cov_{i}_{j}"], dtype=float)
+
+    out = cov.copy()
+    m = np.isin(fmt, ("CART", "BCART"))  # ecliptic -> equatorial rotation congruence
+    if m.any():
+        out[m] = _COV_ECL_TO_EQ @ cov[m] @ _COV_ECL_TO_EQ.T
+    for i in np.nonzero(np.isin(fmt, ("COM", "BCOM", "KEP", "BKEP")))[0]:
+        out[i] = parse_covariance_row_to_CART(data[i], gm_total, gm_sun)
+    # BCART_EQ rows are already equatorial Cartesian (unchanged).
+    return out
+
+
+def _apply_convert_vectorized(
+    data,
+    convert_to,
+    ephem,
+    gm_sun,
+    gm_total,
+    primary_id_column_name,
+    has_covariance,
+    output_dtype,
+    cols_to_keep,
+):
+    """Vectorized ``_apply_convert`` for all input/output formats.
+
+    Numerically reproduces the per-row path (``_apply_convert_rowwise``; pinned by
+    ``test_convert_vectorized_matches_rowwise``) while avoiding the per-row jax
+    dispatch, per-row ephemeris query and per-row struct-array build. ~250x for
+    Cartesian/BCART_EQ inputs (the bulk case), ~30x for element inputs (bounded by
+    the per-row ``universal_cartesian`` Kepler solve; element-input covariances
+    likewise fall back to the per-row Jacobian).
+    """
+    if has_covariance:
+        # Copy, float the covariance columns (a CSV of all-zero placeholders may be
+        # read as int), and rescale degree-format input covariances to radians so
+        # the conversion Jacobians -- which work in radians -- stay consistent.
+        cov_names = set(get_cov_columns())
+        data = data.astype([(nm, "f8" if nm in cov_names else data.dtype[nm]) for nm in data.dtype.names])
+        for f in degree_columns:
+            m = data["FORMAT"] == f
+            if m.any():
+                _scale_degree_cov(data, f, np.pi / 180, mask=m)
+
     n = len(data)
     fmt = np.asarray(data["FORMAT"])
     epoch_mjd = np.asarray(data["epochMJD_TDB"], dtype=float)
@@ -343,9 +399,11 @@ def _apply_convert_vectorized(
         sun = _sun_states_by_epoch(ephem, np.asarray(d["epochMJD_TDB"], dtype=float))
         coords, vels = _parse_to_bcart_eq(d, gm_sun, gm_total, sun)
         epoch = np.asarray(d["epochMJD_TDB"], dtype=float)
+        cov = _parse_cov_to_bcart_eq(d, gm_sun, gm_total) if has_covariance else None
 
         if convert_to == "BCART_EQ":
             values = np.vstack([coords, vels])
+            cov_out = cov
         elif convert_to in ("BCART", "CART"):
             if convert_to == "CART":  # heliocentric ecliptic Cartesian
                 coords, vels = coords - sun[:3], vels - sun[3:]
@@ -355,23 +413,44 @@ def _apply_convert_vectorized(
                     _rotate_batch(EQ_TO_ECL_ROTATION_MATRIX, vels),
                 ]
             )
+            cov_out = _COV_EQ_TO_ECL @ cov @ _COV_EQ_TO_ECL.T if has_covariance else None
         else:  # BCOM / COM / BKEP / KEP
             barycentric = convert_to in ("BCOM", "BKEP")
             cometary = convert_to in ("BCOM", "COM")
             mu = gm_total if barycentric else gm_sun
-            if not barycentric:
+            if not barycentric:  # heliocentric: subtract the Sun (equatorial)
                 coords, vels = coords - sun[:3], vels - sun[3:]
-            coords = _rotate_batch(EQ_TO_ECL_ROTATION_MATRIX, coords)
-            vels = _rotate_batch(EQ_TO_ECL_ROTATION_MATRIX, vels)
-            values = _bcart_eq_to_elements(mu, coords, vels, epoch, cometary)
+            if has_covariance:
+                # The output covariance is built from the equatorial state (the basis
+                # covariance_*_xyz expect; they rotate to ecliptic internally).
+                batch = _covariance_cometary_xyz_batch if cometary else _covariance_keplerian_xyz_batch
+                cov_out = np.asarray(
+                    batch(mu, coords[0], coords[1], coords[2], vels[0], vels[1], vels[2], epoch, cov)
+                )
+            else:
+                cov_out = None
+            ecl_coords = _rotate_batch(EQ_TO_ECL_ROTATION_MATRIX, coords)
+            ecl_vels = _rotate_batch(EQ_TO_ECL_ROTATION_MATRIX, vels)
+            values = _bcart_eq_to_elements(mu, ecl_coords, ecl_vels, epoch, cometary)
 
         for k, col in enumerate(value_cols):
             out[col][convertible] = values[k]
+        if has_covariance:
+            for i in range(6):
+                for j in range(6):
+                    out[f"cov_{i}_{j}"][convertible] = cov_out[:, i, j]
 
     for col in value_cols:  # non-convertible (FORMAT == "NONE") rows carry NaN state
         out[col][~convertible] = np.nan
+    if has_covariance:
+        for i in range(6):
+            for j in range(6):
+                out[f"cov_{i}_{j}"][~convertible] = np.nan
+
     for col in degree_columns.get(convert_to, []):
         out[col] = (out[col] * 180 / np.pi) % 360
+    if has_covariance and convert_to in degree_columns:
+        _scale_degree_cov(out, convert_to, 180 / np.pi)
     return out
 
 
@@ -432,13 +511,36 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         for col, dtype in zip(required_colum_names[convert_to], default_column_dtypes, strict=False)
     ]
 
-    # No-covariance conversions are fully vectorized (see _apply_convert_vectorized);
-    # the per-row path below carries the covariance propagation.
-    if not has_covariance:
-        return _apply_convert_vectorized(
-            data, convert_to, ephem, gm_sun, gm_total, primary_id_column_name, output_dtype, cols_to_keep
-        )
+    return _apply_convert_vectorized(
+        data,
+        convert_to,
+        ephem,
+        gm_sun,
+        gm_total,
+        primary_id_column_name,
+        has_covariance,
+        output_dtype,
+        cols_to_keep,
+    )
 
+
+def _apply_convert_rowwise(
+    data,
+    convert_to,
+    ephem,
+    gm_sun,
+    gm_total,
+    primary_id_column_name,
+    has_covariance,
+    output_dtype,
+    cols_to_keep,
+):
+    """Reference per-row implementation of ``_apply_convert``.
+
+    Superseded in production by ``_apply_convert_vectorized`` (which reproduces it
+    to ~1e-11); retained as the equivalence oracle for
+    ``test_convert_vectorized_matches_rowwise``.
+    """
     # A stored degree-format orbit carries its covariance in degrees (consistent
     # with its degree-valued angles). The conversion math below works in radians
     # (parse_covariance_row_to_CART and the element-value parsing use radians), so
