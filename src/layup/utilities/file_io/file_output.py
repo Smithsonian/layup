@@ -42,8 +42,28 @@ def write_csv(data, filepath, move_columns=None):
     logging.info(f"Data written to {filepath}")
 
 
+def _store_hdf5(data, filepath, key, mode):
+    """Write ``data`` to ``filepath`` as an appendable HDF5 table.
+
+    ``mode="w"`` truncates any existing file first (a fresh write); ``mode="a"``
+    appends to it (creating it if absent).
+    """
+    df = pd.DataFrame(data)
+
+    store = pd.HDFStore(filepath, mode=mode)
+    store.append(key, df, format="t", data_columns=True)
+    store.close()
+
+    logging.info(f"Data written to {filepath}")
+
+
 def write_hdf5(data, filepath, key="data"):
-    """Write a numpy structured array to an HDF5 file.
+    """Write a numpy structured array to an HDF5 file, overwriting any existing
+    file so that repeated calls are idempotent.
+
+    To accumulate data across several calls (e.g. writing successive chunks into
+    one file), call this once for the first write and :func:`append_hdf5` for the
+    rest; otherwise a second call to a pre-existing file would duplicate rows.
 
     Parameters
     ----------
@@ -54,10 +74,24 @@ def write_hdf5(data, filepath, key="data"):
     key : str, optional
         The key to use in the HDF5 file.
     """
-    df = pd.DataFrame(data)
+    _store_hdf5(data, filepath, key, mode="w")
 
-    store = pd.HDFStore(filepath)
-    store.append(key, df, format="t", data_columns=True)
-    store.close()
 
-    logging.info(f"Data written to {filepath}")
+def append_hdf5(data, filepath, key="data"):
+    """Append a numpy structured array to an HDF5 table, creating the file if it
+    does not yet exist.
+
+    Use to accumulate chunked output after an initial :func:`write_hdf5`. On its
+    own this grows whatever is already on disk, so it is not idempotent across
+    re-runs -- start each run with :func:`write_hdf5`.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        The data to append to the file.
+    filepath : str
+        The path to the file to write.
+    key : str, optional
+        The key to use in the HDF5 file.
+    """
+    _store_hdf5(data, filepath, key, mode="a")

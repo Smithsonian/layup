@@ -101,10 +101,10 @@ def test_write_hdf5(tmpdir):
     assert_equal(len(obj_data1), 1)
     assert_equal(len(obj_data2), 1)
 
-    # Create a new HDF5 file and write the data in append mode.
+    # Accumulate into a new HDF5 file: an initial write_hdf5 then append_hdf5.
     temp_append_filepath = os.path.join(tmpdir, "test_output_append.h5")
     write_hdf5(obj_data1, temp_append_filepath, key="data")
-    write_hdf5(obj_data2, temp_append_filepath, key="data")
+    append_hdf5(obj_data2, temp_append_filepath, key="data")
 
     # Read the data back in and compare it to the original data.
     hdf5_reader4 = HDF5DataReader(temp_append_filepath)
@@ -112,3 +112,33 @@ def test_write_hdf5(tmpdir):
     assert_equal(len(appended_data), 2)
     assert_equal(appended_data[0], obj_data1[0])
     assert_equal(appended_data[1], obj_data2[0])
+
+
+def test_write_hdf5_is_idempotent(tmpdir):
+    """write_hdf5 overwrites, so re-writing the same file does not duplicate rows
+    (regression: store.append silently doubled rows when a catalog was re-merged
+    onto an existing file)."""
+    data = HDF5DataReader(get_test_filepath("BCOM.h5")).read_rows()
+
+    temp_filepath = os.path.join(tmpdir, "idempotent.h5")
+    write_hdf5(data, temp_filepath)
+    write_hdf5(data, temp_filepath)  # second write must overwrite, not append
+
+    back = HDF5DataReader(temp_filepath).read_rows()
+    assert_equal(len(back), len(data))
+    assert_equal(back, data)
+
+
+def test_append_hdf5_accumulates(tmpdir):
+    """append_hdf5 grows a table; paired with an initial write_hdf5 it is how
+    chunked output accumulates into one file."""
+    data = HDF5DataReader(get_test_filepath("BCOM.h5")).read_rows()
+
+    temp_filepath = os.path.join(tmpdir, "accumulate.h5")
+    write_hdf5(data[0:2], temp_filepath)  # fresh file
+    append_hdf5(data[2:5], temp_filepath)  # +3 rows
+
+    back = HDF5DataReader(temp_filepath).read_rows()
+    assert_equal(len(back), 5)
+    assert_equal(back[0:2], data[0:2])
+    assert_equal(back[2:5], data[2:5])
