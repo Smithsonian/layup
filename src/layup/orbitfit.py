@@ -218,18 +218,35 @@ def _nongrav_warranted(csq_gravity, res_ng, names, thresholds=_AUTO_DEFAULT_THRE
     )
 
 
-def _select_nongrav_auto(assist_ephem, res_grav, observations, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+def _gofr_arg(nongrav_gr):
+    """Normalize a non-grav g(r) argument to the ``[alpha, nm, nn, nk, r0]`` list the
+    C++ fit expects (empty -> the default inverse-square law)."""
+    if nongrav_gr is None:
+        return []
+    gr = list(nongrav_gr)
+    if len(gr) != 5:
+        raise ValueError("nongrav_gr must be [alpha, nm, nn, nk, r0] (5 values) or None")
+    return [float(v) for v in gr]
+
+
+def _select_nongrav_auto(
+    assist_ephem, res_grav, observations, thresholds=_AUTO_DEFAULT_THRESHOLDS, gofr=None
+):
     """Adaptive non-grav selection for ``fit_nongrav="auto"`` (issue #357).
 
     ``res_grav`` is the converged gravity-only fit. Returns the most parsimonious
     acceptable model: the gravity-only result unless a non-grav model is both
     well-conditioned (flag 0) and statistically warranted per ``thresholds``.
+    ``gofr`` selects the g(r) sublimation law (see ``orbitfit``'s ``nongrav_gr``).
     """
     if _gravity_fit_acceptable(res_grav.csq, res_grav.ndof, thresholds):
         return res_grav  # gravity-only fit is acceptable; no non-gravs needed
+    gr = _gofr_arg(gofr)
     for names in _AUTO_NONGRAV_LADDER:
         mask = sum(_NONGRAV_BITS[n] for n in names)
-        res_ng = run_from_vector_with_initial_guess(assist_ephem, res_grav, observations, nongrav_mask=mask)
+        res_ng = run_from_vector_with_initial_guess(
+            assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr
+        )
         if res_ng.flag == 0 and _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
             return res_ng  # parsimonious, well-determined non-grav model
     return res_grav  # no non-grav model is warranted
@@ -1020,6 +1037,7 @@ def _orbitfit(
     engine: str = "cartesian",
     fit_nongrav: bool = False,
     nongrav_auto_thresholds=None,
+    nongrav_gr=None,
     skip_unchanged: bool = False,
 ):
     """This function will contain all of the calls to the c++ code that will
@@ -1276,10 +1294,15 @@ def _orbitfit(
                 res,
                 observations,
                 nongrav_auto_thresholds or _AUTO_DEFAULT_THRESHOLDS,
+                gofr=nongrav_gr,
             )
         elif nongrav_mask and res.flag == 0:
             res_ng = run_from_vector_with_initial_guess(
-                get_ephem(kernels_loc), res, observations, nongrav_mask=nongrav_mask
+                get_ephem(kernels_loc),
+                res,
+                observations,
+                nongrav_mask=nongrav_mask,
+                gofr=_gofr_arg(nongrav_gr),
             )
             if res_ng.flag == 0:
                 res = res_ng
@@ -1341,6 +1364,7 @@ def orbitfit(
     engine="cartesian",
     fit_nongrav=False,
     nongrav_auto_thresholds=None,
+    nongrav_gr=None,
     skip_unchanged=False,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
@@ -1391,6 +1415,12 @@ def orbitfit(
         chi-square drop and per-parameter significance must be to adopt one. Default
         (``None``) uses the standard thresholds; pass a customized
         ``NongravAutoThresholds`` to tune. Ignored unless ``fit_nongrav="auto"``.
+    nongrav_gr : sequence of float, optional
+        The non-gravitational g(r) sublimation law as ``[alpha, nm, nn, nk, r0]`` in
+        ASSIST's parameterization ``g(r) = alpha*(r/r0)^-nm*(1+(r/r0)^nn)^-nk``.
+        Default (``None``) is the asteroidal inverse-square law ``(r/r0)^-2`` used by
+        Yarkovsky A2 fits; pass a cometary law (e.g. Marsden water-ice) to fit a
+        comet's non-gravs. Applies to any non-grav fit (explicit or ``"auto"``).
     skip_unchanged : bool
         Incremental / steady-state mode (issue #419). When True and ``initial_guess``
         is a prior result catalog carrying the ``obs_hash`` fingerprint columns, any
@@ -1451,6 +1481,7 @@ def orbitfit(
         engine=engine,
         fit_nongrav=fit_nongrav,
         nongrav_auto_thresholds=nongrav_auto_thresholds,
+        nongrav_gr=nongrav_gr,
         skip_unchanged=skip_unchanged,
     )
     # Re-attach objects carried forward unchanged by the #419 pre-filter.

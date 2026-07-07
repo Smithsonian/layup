@@ -447,7 +447,8 @@ namespace orbit_fit
                                     std::vector<partials> &partials_vec,
                                     std::vector<size_t> &in_seq,
                                     std::vector<size_t> &out_seq,
-                                    int nongrav_mask = 0, const double *a123 = nullptr)
+                                    int nongrav_mask = 0, const double *a123 = nullptr,
+                                    const double *gofr = nullptr)
     {
 
         // Pass in this simulation stuff to keep it flexible
@@ -488,7 +489,17 @@ namespace orbit_fit
         if (nactive > 0)
         {
             ax->forces = (enum ASSIST_FORCES)(ax->forces | ASSIST_FORCE_NON_GRAVITATIONAL);
-            ax->alpha = 1.0; ax->nm = 2.0; ax->nk = 0.0; ax->nn = 1.0; ax->r0 = 1.0; // g(r) = (r/r0)^-2
+            // g(r) = alpha*(r/r0)^-nm*(1+(r/r0)^nn)^-nk. Default (gofr==nullptr) is the
+            // asteroidal inverse-square law (r/r0)^-2; a comet fit passes its Marsden
+            // law as [alpha, nm, nn, nk, r0] (e.g. water-ice sublimation).
+            if (gofr)
+            {
+                ax->alpha = gofr[0]; ax->nm = gofr[1]; ax->nn = gofr[2]; ax->nk = gofr[3]; ax->r0 = gofr[4];
+            }
+            else
+            {
+                ax->alpha = 1.0; ax->nm = 2.0; ax->nk = 0.0; ax->nn = 1.0; ax->r0 = 1.0;
+            }
             int nreal = 1;
             int nvar = npar; // 6 state + nactive param particles
             pp.assign(3 * (nreal + nvar), 0.0);
@@ -535,7 +546,8 @@ namespace orbit_fit
                            std::vector<size_t> &forward_out_seq,
                            std::vector<size_t> &reverse_in_seq,
                            std::vector<size_t> &reverse_out_seq,
-                           int nongrav_mask = 0, const double *a123 = nullptr)
+                           int nongrav_mask = 0, const double *a123 = nullptr,
+                           const double *gofr = nullptr)
     {
 
         compute_residuals_sequence(ephem, p0, epoch,
@@ -544,7 +556,7 @@ namespace orbit_fit
                                    partials_vec,
                                    forward_in_seq,
                                    forward_out_seq,
-                                   nongrav_mask, a123);
+                                   nongrav_mask, a123, gofr);
 
         compute_residuals_sequence(ephem, p0, epoch,
                                    detections,
@@ -552,7 +564,7 @@ namespace orbit_fit
                                    partials_vec,
                                    reverse_in_seq,
                                    reverse_out_seq,
-                                   nongrav_mask, a123);
+                                   nongrav_mask, a123, gofr);
     }
 
     // Forward declaration: create_sequences is defined later in this translation
@@ -888,10 +900,11 @@ namespace orbit_fit
                   size_t iter_max,
                   int nongrav_mask = 0,    // bitmask of non-grav params to fit (1=A1,2=A2,4=A3)
                   double *a123io = nullptr, // [A1,A2,A3] seed in / fitted out (3 doubles)
-                  const Eigen::MatrixXd *prior_info = nullptr) // #419 sequential update:
+                  const Eigen::MatrixXd *prior_info = nullptr, // #419 sequential update:
                                                               // prior information matrix
                                                               // Lambda0 = P0^-1 (npar x npar),
                                                               // or null for ordinary LSQ
+                  const double *gofr = nullptr) // [alpha,nm,nn,nk,r0] Marsden g(r); null -> r^-2
     { // runtime
 
         // Number of fitted parameters: 6 (state) + one per active non-grav param.
@@ -979,7 +992,7 @@ namespace orbit_fit
                               forward_out_seq,
                               reverse_in_seq,
                               reverse_out_seq,
-                              nongrav_mask, a123);
+                              nongrav_mask, a123, gofr);
 
             // #419 sequential update: offset of the current iterate from the
             // prior mean, for the prior gradient term Lambda0*(x - x0). Empty and
@@ -1218,12 +1231,18 @@ namespace orbit_fit
                                                   FitResult initial_guess,
                                                   std::vector<Observation> &detections,
                                                   size_t iter_max = 100,
-                                                  int nongrav_mask = 0)
+                                                  int nongrav_mask = 0,
+                                                  std::vector<double> gofr = {})
     {
         int success = 1;
         size_t iters;
         double chi2_final;
         size_t dof;
+
+        // Non-grav g(r) law [alpha,nm,nn,nk,r0]; empty -> the default inverse-square.
+        if (!gofr.empty() && gofr.size() != 5)
+            throw std::invalid_argument("gofr must have 5 elements [alpha, nm, nn, nk, r0]");
+        const double *gofr_ptr = gofr.empty() ? nullptr : gofr.data();
 
         std::vector<residuals> resid_vec(detections.size());
         std::vector<partials> partials_vec(detections.size());
@@ -1259,7 +1278,9 @@ namespace orbit_fit
             eps,
             iter_max,
             nongrav_mask,
-            a123);
+            a123,
+            nullptr, // prior_info (ordinary LSQ)
+            gofr_ptr);
 
         int nactive = 0;
         std::vector<int> active;
@@ -1432,6 +1453,7 @@ namespace orbit_fit
               py::arg("ephem"), py::arg("initial_guess"),
               py::arg("detections"), py::arg("iter_max") = 100,
               py::arg("nongrav_mask") = 0,
+              py::arg("gofr") = std::vector<double>{},
               R"pbdoc(
                 Takes an assist_ephem object, a vector of observations, an
                 initial guess, and (optionally) a cap on LM iterations
