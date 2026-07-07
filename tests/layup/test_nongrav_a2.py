@@ -300,6 +300,33 @@ def test_orbitfit_driver_fits_a2():
     assert row["csq"] < 1e-5
 
 
+def test_orbitfit_nongrav_gr_default_and_configurable():
+    """The non-grav g(r) defaults to the asteroidal inverse-square law -- passing it
+    explicitly (``[1, 2, 1, 0, 1]``) is byte-identical -- and a different law
+    (Marsden water-ice) changes the fit, so cometary sublimation laws can be fit.
+    A malformed g(r) raises."""
+    data, guess = _build_arc_array()
+
+    def a2(gr):
+        fit = orbitfit(data, cache_dir=CACHE, initial_guess=guess, fit_nongrav="A2", nongrav_gr=gr)
+        assert fit[0]["flag"] == 0
+        return float(fit[0]["a2"]), float(fit[0]["csq"])
+
+    a2_default, csq_default = a2(None)
+    a2_asteroid, csq_asteroid = a2([1.0, 2.0, 1.0, 0.0, 1.0])
+    a2_water, _ = a2([0.1113, 2.15, 5.093, 4.6142, 2.808])
+
+    # The default is exactly the inverse-square law -- unchanged and byte-identical.
+    assert (a2_default, csq_default) == (a2_asteroid, csq_asteroid)
+    # The arc was generated with r^-2, so it recovers the true A2 there, and a
+    # different g(r) is genuinely used (yielding a different amplitude).
+    assert abs(a2_asteroid - _TRUE_A2) / abs(_TRUE_A2) < 1e-2
+    assert a2_water != a2_asteroid
+    # A malformed g(r) (not 5 values) is rejected.
+    with pytest.raises(ValueError):
+        orbitfit(data, cache_dir=CACHE, initial_guess=guess, fit_nongrav="A2", nongrav_gr=[1.0, 2.0])
+
+
 def test_orbitfit_default_schema_unchanged():
     """Without fit_nongrav the result schema has no a2 columns and the 6-parameter
     fit still succeeds (no regression)."""

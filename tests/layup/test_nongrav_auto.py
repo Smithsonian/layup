@@ -67,7 +67,7 @@ def test_select_auto_keeps_gravity_when_acceptable(monkeypatch):
 def test_select_auto_adopts_most_parsimonious(monkeypatch):
     grav = _res(csq=1000.0, ndof=100)  # reduced chi2 10 -> try non-gravs
 
-    def fake_fit(ephem, res, obs, nongrav_mask=0):
+    def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
         # A2-only already resolves it well and A2 is significant.
         return _res(csq=10.0, flag=0, nongrav_mask=nongrav_mask, a2=1e-13, a2_unc=1e-15)
 
@@ -80,7 +80,7 @@ def test_select_auto_adopts_most_parsimonious(monkeypatch):
 def test_select_auto_escalates_when_a2_alone_insufficient(monkeypatch):
     grav = _res(csq=1000.0, ndof=100)
 
-    def fake_fit(ephem, res, obs, nongrav_mask=0):
+    def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
         # A2 alone is insignificant; A1+A2 both land significant with a big drop.
         if nongrav_mask == O._NONGRAV_BITS["A2"]:
             return _res(csq=995.0, flag=0, nongrav_mask=nongrav_mask, a2=1e-15, a2_unc=1e-15)
@@ -132,7 +132,7 @@ def test_select_auto_threshold_suppresses_nongrav(monkeypatch):
     # A case that adopts A2 under the default thresholds...
     grav = _res(csq=1000.0, ndof=100)  # reduced chi2 10 -> non-grav tried by default
 
-    def fake_fit(ephem, res, obs, nongrav_mask=0):
+    def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
         return _res(csq=10.0, flag=0, nongrav_mask=nongrav_mask, a2=1e-13, a2_unc=1e-15)
 
     monkeypatch.setattr(O, "run_from_vector_with_initial_guess", fake_fit)
