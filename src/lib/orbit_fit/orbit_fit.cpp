@@ -436,10 +436,35 @@ namespace orbit_fit
         }
     }
 
+    // Remap one detection's partial vector into a wider per-arc layout. The
+    // residual functions build partials as [state(6), amp(nactive)]; the per-arc
+    // (piecewise-constant non-grav) fit needs this pass's `nactive` amplitude
+    // columns placed at `amp_col_offset` within a full-width `npar_total` row, so
+    // the earlier arc's amplitudes and the later arc's occupy disjoint columns
+    // (the other arc's columns stay zero for this detection). No-op when the
+    // source already spans npar_total (the ordinary shared-amplitude fit).
+    static void remap_amp_partials(std::vector<double> &v, int nactive,
+                                   int amp_col_offset, int npar_total)
+    {
+        if (v.empty() || (int)v.size() == npar_total)
+            return;
+        std::vector<double> out(npar_total, 0.0);
+        for (int i = 0; i < 6; i++)
+            out[i] = v[i];
+        for (int k = 0; k < nactive; k++)
+            out[amp_col_offset + k] = v[6 + k];
+        v.swap(out);
+    }
+
     // This routine requires that resid_vec and partials_vec are
     // preallocated because the indices in out_seq will be used for
     // random access of locations in those vectors.
     // Also, in_seq and out_seq must be of the same length.
+    //
+    // Per-arc (piecewise-constant non-grav) fit: when npar_total > 0 the partials
+    // are widened to npar_total columns and this pass's amplitude partials placed
+    // at amp_col_offset (see remap_amp_partials). Defaults (npar_total = -1)
+    // preserve the ordinary layout exactly.
     void compute_residuals_sequence(struct assist_ephem *ephem,
                                     struct reb_particle p0, double epoch,
                                     std::vector<Observation> &detections,
@@ -448,7 +473,8 @@ namespace orbit_fit
                                     std::vector<size_t> &in_seq,
                                     std::vector<size_t> &out_seq,
                                     int nongrav_mask = 0, const double *a123 = nullptr,
-                                    const double *gofr = nullptr)
+                                    const double *gofr = nullptr,
+                                    int amp_col_offset = 6, int npar_total = -1)
     {
 
         // Pass in this simulation stuff to keep it flexible
@@ -527,6 +553,17 @@ namespace orbit_fit
                                      resids,
                                      parts,
                                      npar);
+            // Per-arc fit: widen this pass's partials into the shared layout so
+            // the earlier/later arc amplitudes land in disjoint columns.
+            if (npar_total > 0)
+            {
+                remap_amp_partials(parts.x_partials, nactive, amp_col_offset, npar_total);
+                remap_amp_partials(parts.y_partials, nactive, amp_col_offset, npar_total);
+                remap_amp_partials(parts.ra_rate_partials, nactive, amp_col_offset, npar_total);
+                remap_amp_partials(parts.dec_rate_partials, nactive, amp_col_offset, npar_total);
+                remap_amp_partials(parts.delay_partials, nactive, amp_col_offset, npar_total);
+                remap_amp_partials(parts.doppler_partials, nactive, amp_col_offset, npar_total);
+            }
             resid_vec[k] = resids;
             partials_vec[k] = parts;
         }
@@ -547,24 +584,43 @@ namespace orbit_fit
                            std::vector<size_t> &reverse_in_seq,
                            std::vector<size_t> &reverse_out_seq,
                            int nongrav_mask = 0, const double *a123 = nullptr,
-                           const double *gofr = nullptr)
+                           const double *gofr = nullptr,
+                           const double *a123_fwd = nullptr)
     {
+        // Per-arc (piecewise-constant non-grav) switch: the presence of a123_fwd
+        // means the forward march (later apparition, arc B) carries its own
+        // amplitude triple in columns [6+nactive .. 6+2*nactive), while the
+        // reverse march (earlier apparition, arc A) uses a123 in columns
+        // [6 .. 6+nactive). The fit epoch must sit between the two apparitions so
+        // forward=arc B and reverse=arc A. With a123_fwd null this is the ordinary
+        // shared-amplitude fit (npar_total = -1 -> no remap, byte-identical).
+        bool per_arc = (a123_fwd != nullptr);
+        int nactive = 0;
+        for (int i = 0; i < 3; i++)
+            if (nongrav_mask & (1 << i))
+                nactive++;
+        int npar_total = per_arc ? 6 + 2 * nactive : -1;
+        int off_fwd = per_arc ? 6 + nactive : 6;
 
+        // Forward march = later arc (arc B).
         compute_residuals_sequence(ephem, p0, epoch,
                                    detections,
                                    resid_vec,
                                    partials_vec,
                                    forward_in_seq,
                                    forward_out_seq,
-                                   nongrav_mask, a123, gofr);
+                                   nongrav_mask, per_arc ? a123_fwd : a123, gofr,
+                                   off_fwd, npar_total);
 
+        // Reverse march = earlier arc (arc A).
         compute_residuals_sequence(ephem, p0, epoch,
                                    detections,
                                    resid_vec,
                                    partials_vec,
                                    reverse_in_seq,
                                    reverse_out_seq,
-                                   nongrav_mask, a123, gofr);
+                                   nongrav_mask, a123, gofr,
+                                   6, npar_total);
     }
 
     // Forward declaration: create_sequences is defined later in this translation
@@ -904,7 +960,9 @@ namespace orbit_fit
                                                               // prior information matrix
                                                               // Lambda0 = P0^-1 (npar x npar),
                                                               // or null for ordinary LSQ
-                  const double *gofr = nullptr) // [alpha,nm,nn,nk,r0] Marsden g(r); null -> r^-2
+                  const double *gofr = nullptr, // [alpha,nm,nn,nk,r0] Marsden g(r); null -> r^-2
+                  bool per_arc = false,     // piecewise-constant per-arc non-grav amplitudes
+                  double *a123_fwd_io = nullptr) // arc-B [A1,A2,A3] seed in / fitted out (per_arc)
     { // runtime
 
         // Number of fitted parameters: 6 (state) + one per active non-grav param.
@@ -918,14 +976,29 @@ namespace orbit_fit
             if (nongrav_mask & (1 << i))
                 active.push_back(i);
         int nactive = (int)active.size();
-        int npar = 6 + nactive;
+        // Per-arc (piecewise-constant non-grav) fit doubles the amplitude block:
+        // 6 shared state + nactive arc-A amplitudes (cols 6..) + nactive arc-B
+        // amplitudes (cols 6+nactive..). a123 holds arc A (earlier), a123b arc B
+        // (later). Off, a123b is unused and the layout is the ordinary 6+nactive.
+        int npar = per_arc ? 6 + 2 * nactive : 6 + nactive;
         double a123[3] = {0.0, 0.0, 0.0};
+        double a123b[3] = {0.0, 0.0, 0.0};
         if (a123io)
             for (int i = 0; i < 3; i++)
                 a123[i] = a123io[i];
+        if (per_arc)
+        {
+            // Seed arc B from its own input if given, else from arc A.
+            for (int i = 0; i < 3; i++)
+                a123b[i] = (a123_fwd_io != nullptr) ? a123_fwd_io[i] : a123[i];
+        }
         for (int k = 0; k < nactive; k++)
+        {
             if (a123[active[k]] == 0.0)
                 a123[active[k]] = 1e-15;
+            if (per_arc && a123b[active[k]] == 0.0)
+                a123b[active[k]] = 1e-15;
+        }
 
         // #419 sequential update: snapshot the prior mean x0 (= the seed state)
         // so each iteration can form the offset (x - x0) that the prior gradient
@@ -992,7 +1065,8 @@ namespace orbit_fit
                               forward_out_seq,
                               reverse_in_seq,
                               reverse_out_seq,
-                              nongrav_mask, a123, gofr);
+                              nongrav_mask, a123, gofr,
+                              per_arc ? a123b : nullptr);
 
             // #419 sequential update: offset of the current iterate from the
             // prior mean, for the prior gradient term Lambda0*(x - x0). Empty and
@@ -1062,6 +1136,11 @@ namespace orbit_fit
                 p0.vz += dX(5);
                 for (int k = 0; k < nactive; k++)
                     a123[active[k]] += dX(6 + k);
+                // Arc-B amplitudes occupy the second amplitude block (cols
+                // 6+nactive..) in the per-arc fit.
+                if (per_arc)
+                    for (int k = 0; k < nactive; k++)
+                        a123b[active[k]] += dX(6 + nactive + k);
                 chi2_prev = obj;
             }
             else
@@ -1135,6 +1214,9 @@ namespace orbit_fit
         if (nactive > 0 && a123io)
             for (int i = 0; i < 3; i++)
                 a123io[i] = a123[i];
+        if (per_arc && nactive > 0 && a123_fwd_io)
+            for (int i = 0; i < 3; i++)
+                a123_fwd_io[i] = a123b[i];
 
         return flag;
     }
@@ -1232,7 +1314,8 @@ namespace orbit_fit
                                                   std::vector<Observation> &detections,
                                                   size_t iter_max = 100,
                                                   int nongrav_mask = 0,
-                                                  std::vector<double> gofr = {})
+                                                  std::vector<double> gofr = {},
+                                                  bool per_arc = false)
     {
         int success = 1;
         size_t iters;
@@ -1264,6 +1347,11 @@ namespace orbit_fit
 
         // Seed [A1,A2,A3] from the initial guess for the params being fit (#351).
         double a123[3] = {initial_guess.a1, initial_guess.a2, initial_guess.a3};
+        // Per-arc (piecewise-constant) fit: arc-B amplitudes seeded from the
+        // guess's _arc2 fields (or from arc A when those are zero, handled inside
+        // orbit_fit). The fit epoch is expected to sit between the two apparitions.
+        double a123b[3] = {initial_guess.a1_arc2, initial_guess.a2_arc2,
+                           initial_guess.a3_arc2};
 
         flag = orbit_fit(
             ephem,
@@ -1280,7 +1368,9 @@ namespace orbit_fit
             nongrav_mask,
             a123,
             nullptr, // prior_info (ordinary LSQ)
-            gofr_ptr);
+            gofr_ptr,
+            per_arc,
+            per_arc ? a123b : nullptr);
 
         int nactive = 0;
         std::vector<int> active;
@@ -1290,7 +1380,7 @@ namespace orbit_fit
                 active.push_back(i);
                 nactive++;
             }
-        int npar = 6 + nactive;
+        int npar = per_arc ? 6 + 2 * nactive : 6 + nactive;
         dof = total_residual_rows(detections) - npar;
 
         FitResult result;
@@ -1327,6 +1417,7 @@ namespace orbit_fit
         // from the corresponding diagonal entries of the joint covariance. Active
         // params are column 6+k for the k-th active param; inactive stay at zero.
         result.nongrav_mask = nongrav_mask;
+        result.per_arc = per_arc;
         result.a1 = a123[0];
         result.a2 = a123[1];
         result.a3 = a123[2];
@@ -1334,6 +1425,22 @@ namespace orbit_fit
         for (int k = 0; k < nactive; k++)
             *unc[active[k]] =
                 (flag == 0 && cov.rows() >= npar) ? std::sqrt(cov(6 + k, 6 + k)) : NAN;
+
+        // Per-arc fit: arc B (later apparition) amplitudes live in the second
+        // amplitude block (cov columns 6+nactive..). a1/a2/a3 above are arc A.
+        if (per_arc)
+        {
+            result.a1_arc2 = a123b[0];
+            result.a2_arc2 = a123b[1];
+            result.a3_arc2 = a123b[2];
+            double *uncb[3] = {&result.a1_arc2_unc, &result.a2_arc2_unc,
+                               &result.a3_arc2_unc};
+            for (int k = 0; k < nactive; k++)
+                *uncb[active[k]] =
+                    (flag == 0 && cov.rows() >= npar)
+                        ? std::sqrt(cov(6 + nactive + k, 6 + nactive + k))
+                        : NAN;
+        }
 
 	return result;
 
@@ -1454,12 +1561,19 @@ namespace orbit_fit
               py::arg("detections"), py::arg("iter_max") = 100,
               py::arg("nongrav_mask") = 0,
               py::arg("gofr") = std::vector<double>{},
+              py::arg("per_arc") = false,
               R"pbdoc(
                 Takes an assist_ephem object, a vector of observations, an
                 initial guess, and (optionally) a cap on LM iterations
                 (`iter_max`, default 100), and runs orbit fit. Reducing
                 iter_max gives a cheap screening pass for use in
                 multi-candidate IOD picker loops.
+
+                per_arc=True fits piecewise-constant per-apparition non-grav
+                amplitudes (comet linkage): the state and g(r) are shared, but the
+                earlier arc (observations before the fit epoch) and later arc (after)
+                each get their own [A1,A2,A3]. Place the fit epoch between the two
+                apparitions. Results: a1/a2/a3 = earlier arc, a{1,2,3}_arc2 = later.
             )pbdoc");
         m.def("run_sequential_update",
               &orbit_fit::run_sequential_update,

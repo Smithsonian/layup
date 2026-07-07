@@ -31,6 +31,15 @@ namespace orbit_fit
         int nongrav_mask = 0;
         double a1 = 0.0, a2 = 0.0, a3 = 0.0;
         double a1_unc = 0.0, a2_unc = 0.0, a3_unc = 0.0;
+        // Per-arc (piecewise-constant) non-grav amplitudes for the two-apparition
+        // comet-linkage fit. With per_arc on, a1/a2/a3 above are the EARLIER arc
+        // (arc A) and a{1,2,3}_arc2 the LATER arc (arc B); the state and g(r) are
+        // shared. per_arc=false leaves the _arc2 fields zero (unchanged 6/7-param
+        // behavior). Comparing arc A vs arc B amplitudes labels the outcome:
+        // equal -> stable, changed -> recovered, orbit+g(r)-shared/A-differs -> split.
+        bool per_arc = false;
+        double a1_arc2 = 0.0, a2_arc2 = 0.0, a3_arc2 = 0.0;
+        double a1_arc2_unc = 0.0, a2_arc2_unc = 0.0, a3_arc2_unc = 0.0;
     } FitResult;
 
     static void orbit_fit_result_bindings(py::module &m)
@@ -53,7 +62,15 @@ namespace orbit_fit
             .def_readwrite("a3", &orbit_fit::FitResult::a3, "Non-grav A3 normal term (au/day^2)")
             .def_readwrite("a1_unc", &orbit_fit::FitResult::a1_unc, "1-sigma uncertainty on A1 (au/day^2)")
             .def_readwrite("a2_unc", &orbit_fit::FitResult::a2_unc, "1-sigma uncertainty on A2 (au/day^2)")
-            .def_readwrite("a3_unc", &orbit_fit::FitResult::a3_unc, "1-sigma uncertainty on A3 (au/day^2)");
+            .def_readwrite("a3_unc", &orbit_fit::FitResult::a3_unc, "1-sigma uncertainty on A3 (au/day^2)")
+            .def_readwrite("per_arc", &orbit_fit::FitResult::per_arc,
+                           "Whether per-arc (piecewise-constant) non-grav amplitudes were fit")
+            .def_readwrite("a1_arc2", &orbit_fit::FitResult::a1_arc2, "Later-arc (arc B) A1 (au/day^2)")
+            .def_readwrite("a2_arc2", &orbit_fit::FitResult::a2_arc2, "Later-arc (arc B) A2 (au/day^2)")
+            .def_readwrite("a3_arc2", &orbit_fit::FitResult::a3_arc2, "Later-arc (arc B) A3 (au/day^2)")
+            .def_readwrite("a1_arc2_unc", &orbit_fit::FitResult::a1_arc2_unc, "1-sigma uncertainty on arc-B A1")
+            .def_readwrite("a2_arc2_unc", &orbit_fit::FitResult::a2_arc2_unc, "1-sigma uncertainty on arc-B A2")
+            .def_readwrite("a3_arc2_unc", &orbit_fit::FitResult::a3_arc2_unc, "1-sigma uncertainty on arc-B A3");
     }
 
 } // namespace orbit_fit
