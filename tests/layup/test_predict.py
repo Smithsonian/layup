@@ -168,6 +168,47 @@ def test_predict_mixed_and_single_obscode():
         predict(data, ["X05", "500"], times, **kw)
 
 
+def test_predict_sequence_marches_equivalently():
+    """predict_sequence integrates each orbit once across the sorted set of times
+    and interpolates at each (ASSIST integrate_or_interpolate), rather than
+    re-integrating from the epoch per time. Predicting all times in one call must
+    therefore match, per time, predicting each time on its own -- to integrator
+    precision."""
+
+    class FakeCliArgs:
+        def __init__(self):
+            self.onsky_data = False
+
+    data = CSVDataReader(
+        get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
+    ).read_rows()
+    epoch0 = float(data["epochMJD_TDB"][0]) + 2400000.5
+    # times both before and after the epoch, exercising the forward + backward passes
+    times = [epoch0 - 200.0, epoch0 - 40.0, epoch0 + 30.0, epoch0 + 300.0]
+    kw = dict(
+        obscode="X05",
+        num_workers=1,
+        cache_dir=None,
+        primary_id_column_name="provID",
+        args=FakeCliArgs(),
+    )
+
+    # marching: every time in one call
+    march = predict(data, times=times, **kw)
+    by_epoch = {}
+    for r in march:
+        by_epoch.setdefault(round(float(r["epoch_JD_TDB"]), 6), {})[str(r["provID"])] = r
+
+    # reference: each time in its own call (a 1-detection sequence = one integration)
+    for t in times:
+        for r in predict(data, times=[t], **kw):
+            m = by_epoch[round(float(t), 6)][str(r["provID"])]
+            assert float(m["ra_deg"]) == pytest.approx(float(r["ra_deg"]), abs=1e-11)
+            assert float(m["dec_deg"]) == pytest.approx(float(r["dec_deg"]), abs=1e-11)
+            if float(r["a_arcsec"]) > 0:
+                assert float(m["a_arcsec"]) == pytest.approx(float(r["a_arcsec"]), rel=1e-9)
+
+
 def test_predict_output(tmpdir):
     """Compare the output of predict (as run from the command line) against an
     expected output."""
