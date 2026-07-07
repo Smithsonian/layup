@@ -1015,7 +1015,7 @@ def _orbitfit(
     initial_guess=None,
     bias_dict: dict = None,
     sort_array: bool = True,
-    weight_data: bool = False,
+    weight_data=False,  # bool (Veres 2017) or "supplied" (rmsRA/rmsDec columns)
     iod: str = "gauss",
     engine: str = "cartesian",
     fit_nongrav: bool = False,
@@ -1042,9 +1042,14 @@ def _orbitfit(
         A dictionary containing bias corrections for different catalogs.
     sort_array : bool
         Whether to sort the observations by obstime before processing. Default is True.
-    weight_data : bool
-        Whether to apply data weighting based on the observation code, date, catalog
-        and program. Default is False.
+    weight_data : bool or str
+        Astrometric weighting. ``False`` (default) leaves the built-in default
+        uncertainty. ``True`` applies the Veres 2017 model (observation code, date,
+        catalog, program). ``"supplied"`` uses the per-observation ``rmsRA`` /
+        ``rmsDec`` columns (arcseconds) directly -- e.g. ADES-reported
+        uncertainties, or an external weighting model such as era-based historical
+        weighting for old comet apparitions (a row with a NaN/nonpositive value
+        falls back to the default).
     iod : str
         The IOD used to generate an initial guess orbit. Supports 'gauss'
         (default) and 'auto' (Gauss with BK-IOD fallback).
@@ -1098,6 +1103,7 @@ def _orbitfit(
         program_column_present = "program" in column_names
         position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
         rate_unc_columns_present = all(col in column_names for col in ["rmsRArate", "rmsDecrate"])
+        astrom_unc_columns_present = all(col in column_names for col in ["rmsRA", "rmsDec"])
         radar_columns_present = any(col in column_names for col in ["delay", "doppler"])
 
         # Fingerprint the raw observation set (issue #419), before any in-place
@@ -1191,7 +1197,21 @@ def _orbitfit(
                     [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
                 )
 
-            if weight_data:
+            # Astrometric weighting. ``weight_data="supplied"`` uses the per-obs
+            # rmsRA/rmsDec columns (arcsec) directly -- e.g. ADES-reported
+            # uncertainties, or an external weighting model such as era-based
+            # historical weighting for old comet apparitions. ``weight_data=True``
+            # uses the Veres 2017 model; ``False`` leaves the C++ default. Supplied
+            # takes precedence; a NaN/nonpositive supplied value on a row falls
+            # back to the C++ default for that row.
+            if isinstance(weight_data, str) and weight_data.lower() == "supplied":
+                if not astrom_unc_columns_present:
+                    raise ValueError('weight_data="supplied" requires rmsRA and rmsDec columns (arcsec).')
+                if np.isfinite(d["rmsRA"]) and d["rmsRA"] > 0:
+                    o.ra_unc = abs(d["rmsRA"]) * np.pi / (180.0 * 3600.0)
+                if np.isfinite(d["rmsDec"]) and d["rmsDec"] > 0:
+                    o.dec_unc = abs(d["rmsDec"]) * np.pi / (180.0 * 3600.0)
+            elif weight_data:
                 # astrometric_uncertainty_Veres2017 returns the astrometric uncertainty in
                 # ARCSECONDS (per its docstring), but Observation.ra_unc /
                 # dec_unc are stored in RADIANS.  Convert at the assignment.
@@ -1339,9 +1359,14 @@ def orbitfit(
         The name of the primary identifier column for the objects. Default is "provID".
     debias : bool
         Whether to apply debiasing corrections to the observations. Default is False.
-    weight_data : bool
-        Whether to apply data weighting based on the observation code, date, catalog
-        and program. Default is False.
+    weight_data : bool or str
+        Astrometric weighting. ``False`` (default) leaves the built-in default
+        uncertainty. ``True`` applies the Veres 2017 model (observation code, date,
+        catalog, program). ``"supplied"`` uses the per-observation ``rmsRA`` /
+        ``rmsDec`` columns (arcseconds) directly -- e.g. ADES-reported
+        uncertainties, or an external weighting model such as era-based historical
+        weighting for old comet apparitions (a row with a NaN/nonpositive value
+        falls back to the default).
     iod : str
         The IOD used to generate an initial guess orbit. Supports 'gauss'
         (default) and 'auto' (Gauss with BK-IOD fallback).
