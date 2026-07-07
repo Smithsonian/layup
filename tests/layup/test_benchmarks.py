@@ -45,14 +45,17 @@ def test_bench_convert_runs():
 
 @requires_ephem
 def test_bench_residuals_runs():
-    """The residuals benchmark runs, reports positive throughput, and confirms
-    residuals_at_state is faster than predict_sequence (never a fixed floor)."""
+    """The residuals benchmark runs and reports positive throughput. Since
+    predict_sequence now uses the same sorted single-pass march as
+    residuals_at_state, the two are comparable in cost (ratio ~1)."""
     rb = _load()
     result = rb.bench_residuals(reps=1)
     assert result["seconds"] > 0
     assert result["n"] > 0
     assert result["unit"] == "obs/s"
     assert not np.isnan(result["seconds"])
-    # residuals_at_state reuses the fit's single-pass integration, so it must beat
-    # predict_sequence's N-from-epoch integrations (the whole point of the change).
-    assert result["speedup"] > 1.0
+    # predict_sequence marches like residuals_at_state now, so it is no longer
+    # structurally slower and the ratio sits near 1. Guard only against a
+    # pathological regression (predict_sequence more than ~2x slower); a tight
+    # bound would be flaky given CI machine-speed noise, per this file's intent.
+    assert result["speedup"] > 0.5

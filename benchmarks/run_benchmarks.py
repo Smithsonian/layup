@@ -87,14 +87,15 @@ def bench_fit(obs_file="holman_data_working.csv"):
 
 
 def bench_residuals(obs_file="holman_data_working.csv", reps=3):
-    """Speedup of ``residuals_at_state`` over ``predict_sequence`` for a per-
-    observation residual + mapped-covariance sweep (the pass that drives
-    Carpino/OrbFit-style outlier rejection).
+    """``residuals_at_state`` vs ``predict_sequence`` for a per-observation
+    residual + mapped-covariance sweep (the pass that drives Carpino/OrbFit-style
+    outlier rejection).
 
-    ``predict_sequence`` integrates fresh from the epoch to each observation (N
-    integrations); ``residuals_at_state`` reuses the fit's own single forward +
-    backward pass. Reports ``residuals_at_state`` throughput (obs/s) and the
-    speedup factor over ``predict_sequence`` at equal accuracy.
+    Both now use the same sorted single forward + backward pass -- ``predict_sequence``
+    marches with ``integrate_or_interpolate`` (each orbit integrated once) rather
+    than re-integrating fresh from the epoch per observation -- so the two are
+    comparable in cost. Reports ``residuals_at_state`` throughput (obs/s) and the
+    ratio over ``predict_sequence`` at equal accuracy, which now sits near 1.
     """
     from importlib.resources import files
 
