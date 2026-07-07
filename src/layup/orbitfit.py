@@ -252,14 +252,24 @@ def _select_nongrav_auto(
     return res_grav  # no non-grav model is warranted
 
 
-def _get_result_dtypes(primary_id_column_name: str, nongrav_names=()):
+def _get_result_dtypes(primary_id_column_name: str, nongrav_names=(), per_arc=False):
     """Helper function to create the result dtype with the correct primary ID column name.
 
     For each fitted non-gravitational parameter in ``nongrav_names`` (a subset of
     ``A1``/``A2``/``A3``), two columns are appended -- e.g. ``a2`` and ``a2_unc``
     (the value and its 1-sigma uncertainty, au/day^2). With no non-grav params the
     default 6-parameter output schema is unchanged.
+
+    When ``per_arc`` is set (the two-apparition comet-linkage fit), the non-grav
+    columns above hold the *earlier* arc's amplitudes and a second block
+    ``a2_arc2``/``a2_arc2_unc`` is appended for the *later* arc. Both are opt-in,
+    so the ordinary fit schema is unaffected.
     """
+    per_arc_cols = []
+    if per_arc:
+        per_arc_cols = [
+            (col, "f8") for n in nongrav_names for col in (n.lower() + "_arc2", n.lower() + "_arc2_unc")
+        ]
     # Define a structured dtype to match the OrbfitResult fields
     return np.dtype(
         [
@@ -282,6 +292,7 @@ def _get_result_dtypes(primary_id_column_name: str, nongrav_names=()):
         + [  # non-grav params (issue #351), value + 1-sigma per fitted param
             (col, "f8") for n in nongrav_names for col in (n.lower(), n.lower() + "_unc")
         ]
+        + per_arc_cols  # later-arc non-grav amplitudes (comet linkage), when per_arc
         # Observation provenance / incremental fingerprint (issue #419): a
         # deterministic hash of the observation set this orbit was fit from, plus
         # the number of fittable observations. Kept last so the positional output
@@ -1038,6 +1049,7 @@ def _orbitfit(
     fit_nongrav: bool = False,
     nongrav_auto_thresholds=None,
     nongrav_gr=None,
+    per_arc: bool = False,
     skip_unchanged: bool = False,
 ):
     """This function will contain all of the calls to the c++ code that will
@@ -1082,7 +1094,14 @@ def _orbitfit(
         logger.warning("Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine)
         engine = "cartesian"
 
-    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, nongrav_names)
+    # Per-arc (piecewise-constant) non-grav amplitudes need an explicit non-grav
+    # mask (which params to split per apparition); it is meaningless for a
+    # gravity-only or 'auto'-selected fit. Ignore with a warning otherwise.
+    if per_arc and not nongrav_mask:
+        logger.warning("per_arc=True requires an explicit fit_nongrav mask (e.g. 'A1A2A3'); ignoring.")
+        per_arc = False
+
+    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, nongrav_names, per_arc=per_arc)
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
 
@@ -1283,6 +1302,7 @@ def _orbitfit(
                 observations,
                 nongrav_mask=nongrav_mask,
                 gofr=_gofr_arg(nongrav_gr),
+                per_arc=per_arc,
             )
             if res_ng.flag == 0:
                 res = res_ng
@@ -1307,6 +1327,27 @@ def _orbitfit(
                     (getattr(res, n.lower() + "_unc") if (fitted_mask & _NONGRAV_BITS[n]) else np.nan),
                 )
             )
+        # Later-arc amplitudes (comet linkage): the C++ result reports them in the
+        # _arc2 fields only when per_arc fitting was on and converged.
+        per_arc_cols = ()
+        if per_arc:
+            per_arc_on = success and getattr(res, "per_arc", False)
+            per_arc_cols = tuple(
+                v
+                for n in nongrav_names
+                for v in (
+                    (
+                        getattr(res, n.lower() + "_arc2")
+                        if (per_arc_on and fitted_mask & _NONGRAV_BITS[n])
+                        else np.nan
+                    ),
+                    (
+                        getattr(res, n.lower() + "_arc2_unc")
+                        if (per_arc_on and fitted_mask & _NONGRAV_BITS[n])
+                        else np.nan
+                    ),
+                )
+            )
         output = np.array(
             [
                 (
@@ -1324,6 +1365,7 @@ def _orbitfit(
                 )
                 + cov_matrix  # Flat covariance matrix
                 + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
+                + per_arc_cols  # later-arc amplitudes (comet linkage), when per_arc
                 + (obs_hash, nobs_fit)  # obs fingerprint (issue #419)
             ],
             dtype=_RESULT_DTYPES,
@@ -1345,6 +1387,7 @@ def orbitfit(
     fit_nongrav=False,
     nongrav_auto_thresholds=None,
     nongrav_gr=None,
+    per_arc=False,
     skip_unchanged=False,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
@@ -1396,6 +1439,14 @@ def orbitfit(
         Default (``None``) is the asteroidal inverse-square law ``(r/r0)^-2`` used by
         Yarkovsky A2 fits; pass a cometary law (e.g. Marsden water-ice) to fit a
         comet's non-gravs. Applies to any non-grav fit (explicit or ``"auto"``).
+    per_arc : bool, optional
+        Fit piecewise-constant *per-apparition* non-grav amplitudes (comet
+        linkage). The state and ``g(r)`` are shared, but observations before the
+        fit epoch (the earlier arc) and after it (the later arc) each get their own
+        ``[A1,A2,A3]``. Requires an explicit ``fit_nongrav`` mask and an
+        ``initial_guess`` whose epoch sits between the two apparitions. The output
+        adds ``a{1,2,3}_arc2`` columns for the later arc; the base ``a{1,2,3}``
+        columns then hold the earlier arc. Default False.
     skip_unchanged : bool
         Incremental / steady-state mode (issue #419). When True and ``initial_guess``
         is a prior result catalog carrying the ``obs_hash`` fingerprint columns, any
@@ -1457,6 +1508,7 @@ def orbitfit(
         fit_nongrav=fit_nongrav,
         nongrav_auto_thresholds=nongrav_auto_thresholds,
         nongrav_gr=nongrav_gr,
+        per_arc=per_arc,
         skip_unchanged=skip_unchanged,
     )
     # Re-attach objects carried forward unchanged by the #419 pre-filter.
