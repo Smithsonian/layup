@@ -125,6 +125,49 @@ def test_external_predict(tmpdir):
     assert len(predictions) == n_uniq_ids * len(times)
 
 
+def test_predict_mixed_and_single_obscode():
+    """obscode may be a single string (used for all times) or one per time. A
+    string must be byte-identical to a same-code-per-time list (so existing
+    single-observatory callers are unaffected), a per-time list light-corrects
+    each time against its own station, and a length mismatch raises."""
+
+    class FakeCliArgs:
+        def __init__(self):
+            self.onsky_data = False
+
+    data = CSVDataReader(
+        get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
+    ).read_rows()
+    epoch0 = float(data["epochMJD_TDB"][0]) + 2400000.5
+    times = [epoch0 - 100.0, epoch0 + 20.0, epoch0 + 250.0]
+    kw = dict(num_workers=1, cache_dir=None, primary_id_column_name="provID", args=FakeCliArgs())
+
+    # (1) a plain string == a same-code-per-time list, exactly (backward compatible)
+    a = predict(data, "X05", times, **kw)
+    b = predict(data, ["X05"] * len(times), times, **kw)
+    for c in a.dtype.names:
+        if a[c].dtype.kind in "fc":
+            np.testing.assert_array_equal(np.nan_to_num(a[c]), np.nan_to_num(b[c]))
+        else:
+            np.testing.assert_array_equal(a[c], b[c])
+
+    # (2) mixed obscodes: each time matches a single-obscode prediction at that station
+    obscodes = ["X05", "500", "X05"]
+    mixed = predict(data, obscodes, times, **kw)
+    by_epoch = {}
+    for r in mixed:
+        by_epoch.setdefault(round(float(r["epoch_JD_TDB"]), 6), {})[str(r["provID"])] = r
+    for oc, t in zip(obscodes, times):
+        for r in predict(data, oc, [t], **kw):
+            m = by_epoch[round(float(t), 6)][str(r["provID"])]
+            assert float(m["ra_deg"]) == pytest.approx(float(r["ra_deg"]), abs=1e-11)
+            assert float(m["dec_deg"]) == pytest.approx(float(r["dec_deg"]), abs=1e-11)
+
+    # (3) one-obscode-per-time is required when a sequence is given
+    with pytest.raises(ValueError):
+        predict(data, ["X05", "500"], times, **kw)
+
+
 def test_predict_sequence_marches_equivalently():
     """predict_sequence integrates each orbit once across the sorted set of times
     and interpolates at each (ASSIST integrate_or_interpolate), rather than
@@ -139,7 +182,6 @@ def test_predict_sequence_marches_equivalently():
     data = CSVDataReader(
         get_test_filepath("fit_result_file_example.csv"), "csv", primary_id_column_name="provID"
     ).read_rows()
-
     epoch0 = float(data["epochMJD_TDB"][0]) + 2400000.5
     # times both before and after the epoch, exercising the forward + backward passes
     times = [epoch0 - 200.0, epoch0 - 40.0, epoch0 + 30.0, epoch0 + 300.0]

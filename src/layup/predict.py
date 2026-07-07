@@ -410,8 +410,11 @@ def predict(
     ----------
     data : numpy structured array
         The data to be processed.
-    obscode : str
-        The observer code.
+    obscode : str or sequence of str
+        The observer code. A single string is used for every time. A sequence of
+        length ``len(times)`` gives one observatory per time -- a mixed-observatory
+        prediction in one call (each time is light-corrected against its own
+        station).
     times : list
         The times for the predictions, in jd_tdb.
     primary_id_column_name : str
@@ -436,7 +439,22 @@ def predict(
 
     times_et = np.array([spice.str2et(f"jd {t} tdb") for t in times], dtype="<f8")
 
-    obs_data = np.array([(obscode, t) for t in times_et], dtype=[("stn", "<U10"), ("et", "<f8")])
+    # obscode may be a single code -- used for every time (the original behavior) --
+    # or one code per time, which predicts a mixed-observatory sequence in a single
+    # call: each time is light-corrected against its own station, and predict_sequence
+    # integrates each orbit once across the whole (sorted) set. A plain string
+    # reproduces the single-observatory result exactly.
+    if isinstance(obscode, str):
+        obscodes = [obscode] * len(times_et)
+    else:
+        obscodes = [str(o) for o in obscode]
+        if len(obscodes) != len(times_et):
+            raise ValueError(
+                f"predict: obscode has {len(obscodes)} entries but there are {len(times_et)} "
+                "times; pass a single obscode or exactly one per time."
+            )
+
+    obs_data = np.array(list(zip(obscodes, times_et)), dtype=[("stn", "<U10"), ("et", "<f8")])
 
     obs_pos_vel = layup_observatory.obscodes_to_barycentric(obs_data)
 
