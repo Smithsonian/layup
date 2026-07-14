@@ -63,9 +63,12 @@ namespace orbit_fit
     // the legacy value, apply_ias15_adaptive_mode() must run *after*
     // assist_attach, not before like apply_ias15_min_dt.
     //
-    // Default -1 means "leave ASSIST's choice untouched" (no behavior
-    // change for existing callers).
-    static int g_ias15_adaptive_mode = -1;
+    // Default 2 selects the newer (Pham, Rein & Spiegel 2024) controller on
+    // every freshly-attached sim: it steps through close-Earth encounters
+    // gracefully, whereas the legacy controller (mode 1) drives dt -> 0 and can
+    // hang the fit, at no accuracy cost (correctness is mode-independent).
+    // Set to -1 to leave ASSIST's legacy choice untouched, or 1 to force it.
+    static int g_ias15_adaptive_mode = 2;
 
     inline void set_ias15_adaptive_mode(int m) { g_ias15_adaptive_mode = m; }
     inline int  get_ias15_adaptive_mode(void)  { return g_ias15_adaptive_mode; }
