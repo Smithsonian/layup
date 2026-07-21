@@ -2,7 +2,6 @@ import numpy as np
 
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
 
-
 # Column 15 (0-indexed 14) is the MPC "note 2" / observation-type code. The
 # codes S (satellite), R (radar) and V (roving observer) each emit a SECOND
 # line carrying the observer position/data; that continuation line repeats the
