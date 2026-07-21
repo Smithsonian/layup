@@ -12,6 +12,9 @@ Orbit fitting at LSST scale
 [![Template](https://img.shields.io/badge/Template-LINCC%20Frameworks%20Python%20Project%20Template-brightgreen)](https://lincc-ppt.readthedocs.io/en/latest/)
 
 ## Setup
+To install layup, all its dependencies, as well as the ephemeris and reference data, you need about 3.2G of free space.
+Before installing layup, it's a great idea to create a virtual environment with either `conda` or `venv`.
+
 You can download the source code with:
 ```
 git clone --recursive https://github.com/Smithsonian/layup.git
@@ -23,7 +26,7 @@ git submodule update --init
 ```
 to download the required submodules, `assist`, `eigen`, and `rebound`.
 
-Next, run
+Next, enter the layup directory and run
 ```
 pip install -e .
 ```
