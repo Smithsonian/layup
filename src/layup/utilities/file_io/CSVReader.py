@@ -133,7 +133,6 @@ class CSVDataReader(ObjectDataReader):
                     # Skip comment lines
                     self.num_pre_header_lines += 1
                 else:
-                    logger.info(f"Reading the first line of {self.filename} as header:\n{line}")
                     self._check_header_line(line)
                     # Note - header row INDEX is 0-indexed.
                     self.header_row_index = self.num_pre_header_lines
