@@ -784,6 +784,7 @@ def convert_cli(
 
     sample_data = sample_reader.read_rows(block_start=0, block_size=1)
 
+    logger.info(f"Reading the first line of {input_file} as header:\n{sample_data.dtype.names}\n")
     # Check orbit format in the file
     input_format = get_format(sample_data)
 

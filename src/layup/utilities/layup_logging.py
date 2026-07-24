@@ -94,7 +94,7 @@ class LayupLogger:
         """
 
         logger = logging.getLogger("layup")
-
+        logger.propagate = False
         # This logger handles all messages >= DEBUG
         logger.setLevel(logging.DEBUG)
 
