@@ -20,7 +20,7 @@ create and activate a new environment.
 
 .. code-block:: console
 
-   >> conda create env -n <env_name> python=3.11
+   >> conda create -n <env_name> python=3.11
    >> conda activate <env_name>
 
 Alternatively, you can create a virtual environment with python's `venv` module.
