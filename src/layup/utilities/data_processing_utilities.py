@@ -356,7 +356,7 @@ class LayupObservatory(SorchaObservatory):
     A wrapper around Sorcha's Observatory class to provide additional functionality for Layup.
     """
 
-    def __init__(self, cache_dir=None):
+    def __init__(self, cache_dir=str(pooch.os_cache("layup"))):
         """Create an instance of the LayupObservatory class.
 
         Parameters
