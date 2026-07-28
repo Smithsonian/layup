@@ -68,7 +68,7 @@ def _remove_spc(data):
     return data
 
 
-def _assist_integrate(sim, ex, dt, ephem, include_assist=True):
+def _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=True):
     """
     Integrates the simulation across a specified time, and returns the orbits before and after integrating.
 
@@ -95,10 +95,7 @@ def _assist_integrate(sim, ex, dt, ephem, include_assist=True):
         The simulation after integration.
     """
     sim.dt = dt
-    if include_assist:
-        primary = ephem.get_particle("sun", sim.t)
-    else:
-        primary = sim.particles[0]
+    primary = rebound.Particle(m=Mtot)
     oi = sim.particles[-1].orbit(primary=primary)
 
     if include_assist:
@@ -107,16 +104,12 @@ def _assist_integrate(sim, ex, dt, ephem, include_assist=True):
     else:
         sim.integrate(sim.t + dt)
 
-    if include_assist:
-        primary = ephem.get_particle("sun", sim.t)
-    else:
-        primary = sim.particles[0]
     of = sim.particles[-1].orbit(primary=primary)
 
     return oi, of, sim
 
 
-def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
+def _direction_of_integration(sim, ex, step, ephem, Mtot, include_assist=True):
     """
     Determines if the simulation is approaching or receding from d=250au, and from this sets the timestep to be positive or negative in order to approach this distance.
 
@@ -145,15 +138,15 @@ def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
 
     convert_to_rebound = False
     oi, of, sim = _assist_integrate(
-        sim, ex, step, ephem, include_assist=include_assist
+        sim, ex, step, ephem, Mtot, include_assist=include_assist
     )  # Get initial values of oi, of
     if oi.d < of.d:
         # Moving outwards initially
         dt = -abs(step)
-        oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
+        oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=include_assist)
 
         while of.d < oi.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:  # Returns to its perihelion
-            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
+            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=include_assist)
         if sim.t < ASSIST_TIMEFRAME_MIN_MJD:
             convert_to_rebound = True
 
@@ -164,11 +157,11 @@ def _direction_of_integration(sim, ex, step, ephem, include_assist=True):
 
         else:
             dt = -abs(step)
-            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
+            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=include_assist)
     if convert_to_rebound:
         sim = assist.simulation_convert_to_rebound(sim, ephem)
         while of.d < oi.d:  # Returns to its perihelion
-            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=include_assist)
+            oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=include_assist)
 
     return dt, oi, of
 
@@ -215,16 +208,16 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         ex = sim_dict[comet]["ex"]
 
         dt, oi, of = _direction_of_integration(
-            sim, ex, step, ephem
+            sim, ex, step, ephem, Mtot
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
             while of.d > REFERENCE_DISTANCE_AU and oi.d > of.d and sim.t < ASSIST_TIMEFRAME_MAX_MJD:
-                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=True)
 
         else:
             while of.d < REFERENCE_DISTANCE_AU and oi.d < of.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:
-                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=True)
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=True)
 
         if sim.t >= ASSIST_TIMEFRAME_MAX_MJD or sim.t <= ASSIST_TIMEFRAME_MIN_MJD:
             # If comet goes outside assist timeframe, continue the simulation in pure rebound
@@ -247,16 +240,16 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         primary = ephem.get_particle("sun", sim.t)
         of = sim.particles[-1].orbit(primary=primary).d
         dt, oi, of = _direction_of_integration(
-            sim, ex, step, ephem, include_assist=False
+            sim, ex, step, ephem, Mtot, include_assist=False
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
             while of.d > REFERENCE_DISTANCE_AU and oi.d > of.d:
-                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=False)
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=False)
 
         else:
             while of.d < REFERENCE_DISTANCE_AU and oi.d < of.d:
-                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, include_assist=False)
+                oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=False)
         output[comet] = (1 / of.a, of.a, of.d, of.e)
 
     # turn output into an array

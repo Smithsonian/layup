@@ -5,7 +5,6 @@ from layup.utilities.layup_configs import (
     AuxiliaryConfigs,
 )
 
-
 correct_auxciliary_URLs = {
     "de440s.bsp": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp",
     "earth_2025_250826_2125_predict.bpc": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_2025_250826_2125_predict.bpc",

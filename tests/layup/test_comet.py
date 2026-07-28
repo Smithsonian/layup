@@ -2,6 +2,7 @@ import argparse
 import os
 
 import pytest
+import rebound
 import numpy as np
 from numpy.testing import assert_allclose, assert_equal
 from layup.comet import _remove_spc, _assist_integrate, _direction_of_integration, _apply_comet, comet_cli
@@ -88,7 +89,7 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
     initial = sim.particles[-1].xyz
     sim.dt = time_step
 
-    oi, of, sim = _assist_integrate(sim, ex, time_step, ephem, include_assist=include_assist)
+    oi, of, sim = _assist_integrate(sim, ex, time_step, ephem, Mtot, include_assist=include_assist)
     initial_orbit, final_orbit = oi.a, of.a
 
     final = sim.particles[-1].xyz
@@ -99,22 +100,19 @@ def test_assist_integrate(tmpdir, index, time_step, include_assist):
 
     initial_check = sim_check.particles[-1].xyz
     sim_check.dt = time_step
+    primary = rebound.Particle(m=Mtot)
 
     if include_assist == True:
         sim_check = assist.simulation_convert_to_rebound(sim_check, ephem)
         initial_check = sim_check.particles[-1].xyz
-        primary_check = sim_check.particles[0]
-        initial_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
+        initial_orbit_check = sim_check.particles[-1].orbit(primary=primary).a
         sim_check.integrate(sim_check.t + time_step)  # Want to integrate to the same time as the function
-        primary_check = sim_check.particles[0]
 
     else:
-        primary_check = ephem.get_particle("sun", sim_check.t)
-        initial_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
+        initial_orbit_check = sim_check.particles[-1].orbit(primary=primary).a
         sim_check.integrate(sim_check.t + time_step)
-        primary_check = ephem.get_particle("sun", sim_check.t)
     final_check = sim_check.particles[-1].xyz
-    final_orbit_check = sim_check.particles[-1].orbit(primary=primary_check).a
+    final_orbit_check = sim_check.particles[-1].orbit(primary=primary).a
 
     assert_equal(np.array(initial), np.array(initial_check))
     assert_equal(sim.t, sim_check.t)
@@ -154,7 +152,7 @@ def test_direction_of_integration(tmpdir):
     for comet in range(len(data)):
         sim = sim_dict[data[comet]["ObjID"]]["sim"]
         ex = sim_dict[data[comet]["ObjID"]]["ex"]
-        dt, oi, of = _direction_of_integration(sim, ex, 1, ephem, include_assist=True)
+        dt, oi, of = _direction_of_integration(sim, ex, 1, ephem, Mtot, include_assist=True)
         assert dt == data["expected_step"][comet]
 
 
