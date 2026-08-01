@@ -27,7 +27,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: Set up - ${{ matrix.os }} - Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
     # `layup bootstrap` and the observatory tests download the SPICE kernels
