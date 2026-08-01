@@ -9,6 +9,7 @@ from sorcha.ephemeris.simulation_setup import furnish_spiceypy, create_assist_ep
 import assist
 import rebound
 from _layup_cpp._core import FitResult
+from layup.utilities.universal_kepler import universal_step
 
 def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=100):
 
@@ -172,6 +173,9 @@ def find_velocity(t1, tn, r_1, r_n, tolerance, args, aux):
         vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'x')
         vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'y')
         vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'z')
+
+        #vx1, vy1, vz1, [*pos, vxn, vyn, vzn] = find_new_vel_with_universal_kepler(t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn)
+    print(vx1, vy1, vz1)
     spice.kclear()
     return vx1, vy1, vz1, vxn, vyn, vzn,
 
@@ -220,3 +224,25 @@ def find_mag_to_adjust(P, Q, R):
     # will be closest to rho_n next time
     mag = np.dot(R-Q, Q-P)/np.dot(R-Q, R-Q)
     return mag
+
+
+def find_new_vel_with_universal_kepler(t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn):
+    # Initialise state
+    dt = tn-t1
+    state = np.array([x1, y1, z1, vx1, vy1, vz1])
+    GMtotal = 0.0002963092748799319
+    variation_vx = np.array([0, 0, 0, 1, 0, 0])
+    variation_vy = np.array([0, 0, 0, 0, 1, 0])
+    variation_vz = np.array([0, 0, 0, 0, 0, 1])
+
+    var_vx = universal_step(GMtotal, dt, state, variation=variation_vx)
+    diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(var_vx.state[:2]), np.array(var_vx.state[:2]) + np.array(var_vx.variation[:2]))
+    state[3] -= diff
+    var_vy = universal_step(GMtotal, dt, state, variation=variation_vy)
+    diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(var_vy.state[:2]), np.array(var_vy.state[:2]) + np.array(var_vy.variation[:2]))
+    state[4] -= diff
+    var_vz = universal_step(GMtotal, dt, state, variation=variation_vz)
+    diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(var_vz.state[:2]), np.array(var_vz.state[:2]) + np.array(var_vz.variation[:2]))
+    state[5] -= diff
+
+    return vx1, vy1, vz1, np.array(var_vz.state)
