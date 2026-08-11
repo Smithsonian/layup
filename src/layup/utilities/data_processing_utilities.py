@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 
 # default Cache directory name where the layup auxiliary files are stored when layup bootstrap is ran
 # eg on Mac ~/Library/Caches/layup
-cache_dir_name = "layup"
+CACHE_DIR_NAME = "layup"
 
 
 def write_fallback_obscodes():
@@ -360,7 +360,7 @@ class LayupObservatory(SorchaObservatory):
     A wrapper around Sorcha's Observatory class to provide additional functionality for Layup.
     """
 
-    def __init__(self, cache_dir=str(pooch.os_cache(cache_dir_name))):
+    def __init__(self, cache_dir=str(pooch.os_cache(CACHE_DIR_NAME))):
         """Create an instance of the LayupObservatory class.
 
         Parameters
