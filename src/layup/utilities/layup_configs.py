@@ -24,14 +24,14 @@ class AuxiliaryConfigs:
     planet_ephemeris_url: str = f"{naif_base_url}/spk/planets/de440s.bsp"
     """url for planet_ephemeris"""
 
-    earth_predict: str = "earth_2025_250826_2125_predict.bpc"
+    earth_predict: str = "earth_2026_260806_2126_predict.bpc"
     """filename of earth_predict"""
-    earth_predict_url: str = f"{naif_base_url}/pck/earth_2025_250826_2125_predict.bpc"
+    earth_predict_url: str = f"{naif_base_url}/pck/earth_2026_260806_2126_predict.bpc"
     """url for earth_predict"""
 
-    earth_historical: str = "earth_620120_250826.bpc"
+    earth_historical: str = "earth_620120_260806.bpc"
     """filename of earth_histoical"""
-    earth_historical_url: str = f"{naif_base_url}/pck/earth_620120_250826.bpc"
+    earth_historical_url: str = f"{naif_base_url}/pck/earth_620120_260806.bpc"
     """url for earth_historical"""
 
     earth_high_precision: str = "earth_latest_high_prec.bpc"
