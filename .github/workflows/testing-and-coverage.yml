@@ -14,8 +14,10 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        os: ['macos-latest','ubuntu-latest']
-        python-version: ['3.13', '3.14']
+        # DIAGNOSTIC BRANCH -- Linux only, one Python. macOS is green on main;
+        # this branch exists solely to name the test that wedges the Ubuntu legs.
+        os: ['ubuntu-latest']
+        python-version: ['3.13']
 
     runs-on: ${{ matrix.os }}
     # Fail a wedged leg fast instead of running to the 6-hour default. The unit
@@ -23,7 +25,9 @@ jobs:
     # is the recurring flaky-download hang (issue #388), which escapes
     # pytest-timeout when it happens in a spawned worker. Capping keeps reruns
     # cheap instead of burning ~2 hours per hang.
-    timeout-minutes: 20
+    # DIAGNOSTIC: serial runs are several times slower than -n auto, so the
+    # normal 20 would fire before we reach the hang.
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v7
     - name: Set up - ${{ matrix.os }} - Python ${{ matrix.python-version }}
@@ -55,10 +59,24 @@ jobs:
         layup bootstrap
     - name: Run unit tests with pytest
       run: |
-        # -rs prints a summary of skipped tests and their reasons, so silently
-        # skipped suites (e.g. ephem-gated fit/validation tests) are visible in
-        # the CI log (issue #359).
-        python -m pytest -n auto -rs --cov=layup --cov-report=xml
+        # DIAGNOSTIC RUN -- do not merge. Three deliberate departures from the
+        # normal invocation, each needed to name the test that wedges Ubuntu:
+        #
+        #   -n0                     serial. Under `-n auto` the progress output is
+        #                           in completion order across workers, so a stalled
+        #                           worker cannot be tied to a test.
+        #   -v                      one line per test, so the log names what is
+        #                           running when the wedge happens.
+        #   --timeout-method=thread the configured "signal" method cannot interrupt
+        #                           a blocking C call, which is why the 300 s
+        #                           timeout never fires today. The thread method
+        #                           dumps every thread's stack and kills the
+        #                           process. It is rejected in pyproject because it
+        #                           crashes xdist workers -- with -n0 there are
+        #                           none, so it is safe here.
+        #   --timeout=180           the observed stall exceeds 9 minutes, so 3 is
+        #                           ample and keeps the run short.
+        python -m pytest -n0 -v -rs --timeout=180 --timeout-method=thread
     - name: Upload coverage report to codecov
       uses: codecov/codecov-action@v7
       with:
