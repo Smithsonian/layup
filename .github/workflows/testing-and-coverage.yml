@@ -44,7 +44,7 @@ jobs:
         path: |
           ~/.cache/layup
           ~/Library/Caches/layup
-        key: layup-data-${{ runner.os }}-v1
+        key: layup-data-${{ runner.os }}-v2
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
