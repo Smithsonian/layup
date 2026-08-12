@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pytest
 import spiceypy as spice
@@ -5,6 +6,7 @@ from numpy.lib import recfunctions as rfn
 from numpy.testing import assert_array_equal, assert_equal
 
 from layup.utilities.data_processing_utilities import (
+    resolve_num_workers,
     AU_KM,
     LayupObservatory,
     get_cov_columns,
@@ -955,3 +957,45 @@ def test_layup_observatory_falls_back_on_corrupt_obscodes(monkeypatch):
     assert calls[0] is None and calls[1] is not None
     assert "X05" in observatory.ObservatoryXYZ
     assert len(observatory.ObservatoryXYZ) > 2000
+
+
+def test_resolve_num_workers_honours_an_explicit_request():
+    """An explicit count always wins, including 0 and 1."""
+    for n in (0, 1, 3, 64):
+        assert resolve_num_workers(n) == n
+
+
+def test_resolve_num_workers_auto_is_positive_and_bounded_by_the_machine():
+    """The automatic path returns a usable count, never 0 or None."""
+    n = resolve_num_workers(-1)
+    assert n >= 1
+    assert n <= (os.cpu_count() or 1)
+
+
+def test_resolve_num_workers_env_override(monkeypatch):
+    """LAYUP_NUM_WORKERS states this process's share of the machine."""
+    monkeypatch.setenv("LAYUP_NUM_WORKERS", "2")
+    assert resolve_num_workers(-1) == 2
+    # ...but it only applies to the automatic path.
+    assert resolve_num_workers(5) == 5
+
+
+def test_resolve_num_workers_env_override_rejects_nonsense(monkeypatch):
+    monkeypatch.setenv("LAYUP_NUM_WORKERS", "all-of-them")
+    with pytest.raises(ValueError, match="LAYUP_NUM_WORKERS"):
+        resolve_num_workers(-1)
+
+
+def test_resolve_num_workers_is_one_inside_a_pool_worker(monkeypatch):
+    """A layup pool child must not size a pool of its own (nested parallelism)."""
+    monkeypatch.setattr(
+        "layup.utilities.data_processing_utilities.multiprocessing.parent_process",
+        lambda: object(),
+    )
+    assert resolve_num_workers(-1) == 1
+
+
+def test_resolve_num_workers_is_one_under_pytest_xdist(monkeypatch):
+    """N xdist workers x N spawned children is what wedges a small CI runner."""
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw3")
+    assert resolve_num_workers(-1) == 1

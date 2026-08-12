@@ -46,6 +46,7 @@ from layup.utilities.data_processing_utilities import (
     get_format,
     parse_fit_result,
     process_data_by_id,
+    resolve_num_workers,
 )
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.debiasing import debias, generate_bias_dict
@@ -1974,8 +1975,7 @@ def orbitfit_cli(
                 else Path(f"{output_file_stem_flagged}.h5")
             )
 
-    if num_workers < 0:
-        num_workers = os.cpu_count()
+    num_workers = resolve_num_workers(num_workers)
 
     # Check that input file exists
     if not input_file.exists():
