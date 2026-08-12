@@ -23,14 +23,7 @@ jobs:
     # is the recurring flaky-download hang (issue #388), which escapes
     # pytest-timeout when it happens in a spawned worker. Capping keeps reruns
     # cheap instead of burning ~2 hours per hang.
-    #
-    # Raised 20 -> 40 alongside the cache-key bump below. A cold cache re-fetches
-    # the whole auxiliary set, which includes linux_p1550p2650.440 at ~600 MB, so
-    # the first run on a new key is far slower than the ~12 min a cold run
-    # normally costs. 20 minutes would have failed that run for the wrong reason.
-    # This is a ceiling, not a budget: a healthy warm leg still finishes in ~6 min,
-    # so a leg that reaches 40 is wedged, not merely slow.
-    timeout-minutes: 40
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
     - name: Set up - ${{ matrix.os }} - Python ${{ matrix.python-version }}
