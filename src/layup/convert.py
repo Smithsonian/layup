@@ -15,6 +15,7 @@ from layup.utilities.data_processing_utilities import (
     get_format,
     has_cov_columns,
     process_data,
+    resolve_num_workers,
 )
 from layup.utilities.file_io import CSVDataReader, HDF5DataReader
 from layup.utilities.file_io.file_output import write_csv, write_hdf5
@@ -767,8 +768,7 @@ def convert_cli(
 
     primary_id_column_name = cli_args.primary_id_column_name if cli_args else "ObjID"
 
-    if num_workers < 0:
-        num_workers = os.cpu_count()
+    num_workers = resolve_num_workers(num_workers)
 
     # Open the input file and read the first line
     reader_class = INPUT_READERS.get(file_format)

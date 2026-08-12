@@ -28,6 +28,7 @@ from layup.utilities.data_processing_utilities import (
     process_data,
     process_data_by_id,
     skyplane_cov_to_radec_cov,
+    resolve_num_workers,
 )
 from layup.utilities.file_io import CSVDataReader
 from layup.utilities.file_io.file_output import write_csv
@@ -420,7 +421,10 @@ def predict(
     primary_id_column_name : str
         The name of the primary ID column.
     num_workers : int
-        The number of workers to use for parallelization. If -1, use all available cores.
+        The number of workers to use for parallelization. Negative means decide
+        automatically: the CPUs available to this process, or 1 when layup is
+        already running inside someone else's worker, or ``LAYUP_NUM_WORKERS``
+        when set. See ``resolve_num_workers``.
     cache_dir : str or None
         The directory to the cached kernels. If None, use the default cache directory.
     args : argparse
@@ -432,8 +436,7 @@ def predict(
     -------
     numpy structured array with the flattened results
     """
-    if num_workers < 0:
-        num_workers = os.cpu_count()
+    num_workers = resolve_num_workers(num_workers)
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
 
@@ -535,8 +538,7 @@ def predict_cli(
 
     num_workers = cli_args.n
 
-    if num_workers < 0:
-        num_workers = os.cpu_count()
+    num_workers = resolve_num_workers(num_workers)
 
     times = np.arange(start_date, end_date + timestep_day, step=timestep_day)
 

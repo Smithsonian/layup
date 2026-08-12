@@ -57,7 +57,87 @@ _OBSERVER_POSITION_WARN_KM = 100.0
 # cheaper, but "spawn" is the most portable and matches the macOS default.)
 _MP_CONTEXT = multiprocessing.get_context("spawn")
 
+# Environment override for the automatic worker count, mirroring OMP_NUM_THREADS
+# and friends: a caller that already knows how much of the machine it owns can
+# say so without threading the value through every layup call.
+_NUM_WORKERS_ENV = "LAYUP_NUM_WORKERS"
+
 logger = logging.getLogger(__name__)
+
+
+def _running_inside_a_worker():
+    """Whether this process is already one of several running in parallel.
+
+    Two ways that happens:
+
+    * ``multiprocessing.parent_process()`` is set -- we are a child of a process
+      pool, either layup's own (a fit that calls ``convert``, say) or the
+      caller's.
+    * ``PYTEST_XDIST_WORKER`` is set -- pytest-xdist has given this process one
+      slice of the machine. xdist workers are started by execnet, not by
+      multiprocessing, so the first check does not see them.
+
+    Both mean the same thing operationally: this process does not own the whole
+    machine and must not size a pool as though it did.
+    """
+    if multiprocessing.parent_process() is not None:
+        return True
+    return bool(os.environ.get("PYTEST_XDIST_WORKER"))
+
+
+def resolve_num_workers(num_workers):
+    """Resolve a requested worker count to the number of processes to start.
+
+    ``num_workers >= 0`` is honoured as given -- an explicit request always wins.
+    A negative value means "decide for me", and that decision is the point of
+    this function: **the automatic answer must account for parallelism we are
+    already inside of.**
+
+    ``os.cpu_count()`` reports the size of the machine, not the share of it this
+    process owns. When several layup processes run at once -- N pytest-xdist
+    workers, a SLURM array task per core, a caller's own pool -- each one sizing
+    its pool at ``os.cpu_count()`` oversubscribes the machine by a factor of N.
+    On a small runner that is enough to wedge it: N x N spawned interpreters,
+    each re-importing layup and JAX, thrashing a handful of cores. The same
+    mistake one level down (N workers x N OpenBLAS threads) is what
+    ``tests/layup/conftest.py`` pins the threadpool variables to avoid.
+
+    So, for a negative request, in order:
+
+    1. ``LAYUP_NUM_WORKERS`` if set -- an explicit statement of our share.
+    2. 1, if we are already inside a worker process (see
+       :func:`_running_inside_a_worker`).
+    3. The number of CPUs actually available to us. On Linux that is the
+       affinity mask, which respects cgroup/taskset limits; ``os.cpu_count()``
+       does not.
+
+    Parameters
+    ----------
+    num_workers : int
+        Requested worker count. Negative means automatic.
+
+    Returns
+    -------
+    int
+        Worker count to use, always >= 1 for the automatic path.
+    """
+    if num_workers is not None and num_workers >= 0:
+        return num_workers
+
+    override = os.environ.get(_NUM_WORKERS_ENV)
+    if override:
+        try:
+            return max(1, int(override))
+        except ValueError:
+            raise ValueError(f"{_NUM_WORKERS_ENV} must be an integer; got {override!r}.") from None
+
+    if _running_inside_a_worker():
+        return 1
+
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:  # not Linux
+        return max(1, os.cpu_count() or 1)
 
 
 def write_fallback_obscodes():
