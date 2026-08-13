@@ -366,7 +366,7 @@ def do_herget_iod(observations, seq, args, aux):
         A collection of orbit fit results that can be used to perform a higher
         quality fit estimate.
     """
-    # Get gauss solution, using the first, middle, and last observation
+    # Get Herget solution, using first and last point
     # of the primary sequence
     solns = herget_with_assist(observations, seq, 0.01, args=args, aux=aux)
     print(solns[0].niter)

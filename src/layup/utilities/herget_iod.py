@@ -10,6 +10,9 @@ import assist
 import rebound
 from _layup_cpp._core import FitResult
 from layup.utilities.universal_kepler import universal_step, KeplerConvergenceError
+import copy
+
+SPEED_OF_LIGHT_AU_DAY = 173.145
 
 def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1000):
 
@@ -18,7 +21,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     obs_1 = observations[0]
     r_e_1 = obs_1.observer_position
     rho_hat_1 = np.array(obs_1.rho_hat) 
-    rho_1 = 30 # this is the magnitude of rho, direction given by rho_hat, initial guess is 30au
+    rho_1 = 30 # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
     t_1 = obs_1.epoch
     r_1 = r_e_1 + rho_1*rho_hat_1
 
@@ -26,7 +29,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     obs_n = observations[-1]
     r_e_n = obs_n.observer_position
     rho_hat_n = np.array(obs_n.rho_hat)
-    rho_n = 30 # this is the magnitude of rho, direction given by rho_hat, initial guess is 30au
+    rho_n = 30 # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
     t_n = obs_n.epoch
     r_n = r_e_n + rho_n*rho_hat_n
 
@@ -34,15 +37,30 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     iteration = 0
     delta_rho1 = tolerance + 1
     delta_rhon = tolerance + 1
+
+    # Get original epochs so we can adjust them each iteration
+    epochs = np.zeros(len(observations))
+    for i, observation in enumerate(observations):
+        epochs[i] = observation.epoch
+
     while (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance and iteration < max_iterations:
+
+        # Light-time correct the observation times
+        for i, observation in enumerate(observations):
+            #print(observation.epoch)
+            observation.epoch = epochs[i] - ((rho_1) + (rho_n))/(2*SPEED_OF_LIGHT_AU_DAY)
+            #print(observation.epoch)
+        
         
         delta_rho1, delta_rhon, x_1, y_1, z_1, vx1, vy1, vz1 = find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n)
         
         # Update rho values
-        rho_1 -= delta_rho1
+        rho_1 -= 5*delta_rho1
         r_1 = r_e_1 + rho_1*np.array(rho_hat_1)
-        rho_n -= delta_rhon 
+        rho_n -= 5*delta_rhon 
         r_n = r_e_n + rho_n*np.array(rho_hat_n)
+        print(delta_rho1, delta_rhon)
+        print(rho_1, rho_n)
 
         iteration += 1
 
@@ -65,6 +83,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     
 
 def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n): 
+
     # Find velocities at rho_1 and rho_n
     vx1, vy1, vz1, vxn, vyn, vzn = find_velocity(t_1, t_n, r_1, r_n, tolerance, args, aux)
 
@@ -173,9 +192,9 @@ def find_velocity(t1, tn, r_1, r_n, tolerance, args, aux):
         [vx1, vy1, vz1], [*pos, vxn, vyn, vzn] = find_new_vel_with_universal_kepler(t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn)
         pos = np.array(pos)
 
-            #vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'x')
-            #vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'y')
-            #vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'z')
+        #vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'x')
+        #vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'y')
+        #vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'z')
 
         
         #print(pos, r_n)
@@ -203,21 +222,21 @@ def find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change):
         sim.t = t1 - ephem.jd_ref
         sim.integrate(tn - ephem.jd_ref)
         diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(sim.particles[0].xyz), np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz))
-        vx1 -= diff 
+        vx1 += diff 
     elif change == 'y':
         var.particles[0].vy = 1
         ex = assist.Extras(sim, ephem)
         sim.t = t1 - ephem.jd_ref
         sim.integrate(tn - ephem.jd_ref)
         diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(sim.particles[0].xyz), np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz))
-        vy1 -= diff
+        vy1 += diff
     elif change == 'z':
         var.particles[0].vz = 1
         ex = assist.Extras(sim, ephem)
         sim.t = t1 - ephem.jd_ref
         sim.integrate(tn - ephem.jd_ref)
         diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(sim.particles[0].xyz), np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz))
-        vz1 -= diff 
+        vz1 += diff 
     [vxn, vyn, vzn] = sim.particles[0].vxyz
     return vx1, vy1, vz1, vxn, vyn, vzn, np.array(sim.particles[0].xyz)
 
@@ -226,7 +245,7 @@ def find_mag_to_adjust(P, Q, R):
     # that is closest to a point outside the line, P
     # For our purpose, this is the scale factor to vary the velocity by so that it
     # will be closest to rho_n next time
-    mag = np.dot(R-Q, Q-P)/np.dot(R-Q, R-Q)
+    mag = np.dot(R-Q, P-Q)/np.dot(R-Q, R-Q)
     return mag
 
 
@@ -241,12 +260,12 @@ def find_new_vel_with_universal_kepler(t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn
 
     var_vx = universal_step(GMtotal, dt, state, variation=variation_vx)
     diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(var_vx.state[:3]), np.array(var_vx.state[:3]) + np.array(var_vx.variation[:3]))
-    state[3] -= diff
+    state[3] += diff
     var_vy = universal_step(GMtotal, dt, state, variation=variation_vy)
     diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(var_vy.state[:3]), np.array(var_vy.state[:3]) + np.array(var_vy.variation[:3]))
-    state[4] -= diff
+    state[4] += diff
     var_vz = universal_step(GMtotal, dt, state, variation=variation_vz)
     diff = find_mag_to_adjust(np.array([xn, yn, zn]), np.array(var_vz.state[:3]), np.array(var_vz.state[:3]) + np.array(var_vz.variation[:3]))
-    state[5] -= diff
+    state[5] += diff
 
     return state[3:], np.array(var_vz.state)
