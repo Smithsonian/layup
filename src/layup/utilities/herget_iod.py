@@ -38,7 +38,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     delta_rho1 = tolerance + 1
     delta_rhon = tolerance + 1
 
-    # Get original epochs so we can adjust them each iteration
+    # Get original epochs so we can light-time correct them each iteration
     epochs = np.zeros(len(observations))
     for i, observation in enumerate(observations):
         epochs[i] = observation.epoch
@@ -55,9 +55,9 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
         delta_rho1, delta_rhon, x_1, y_1, z_1, vx1, vy1, vz1 = find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n)
         
         # Update rho values
-        rho_1 -= 5*delta_rho1
+        rho_1 -= delta_rho1
         r_1 = r_e_1 + rho_1*np.array(rho_hat_1)
-        rho_n -= 5*delta_rhon 
+        rho_n -= delta_rhon 
         r_n = r_e_n + rho_n*np.array(rho_hat_n)
         print(delta_rho1, delta_rhon)
         print(rho_1, rho_n)
