@@ -440,7 +440,7 @@ class LayupObservatory(SorchaObservatory):
     A wrapper around Sorcha's Observatory class to provide additional functionality for Layup.
     """
 
-    def __init__(self, cache_dir=str(pooch.os_cache(CACHE_DIR_NAME))):
+    def __init__(self, cache_dir=None):
         """Create an instance of the LayupObservatory class.
 
         Parameters
@@ -449,6 +449,10 @@ class LayupObservatory(SorchaObservatory):
             The location of the cache directory containing the bootstrapped files.
             If the files or cache is not present, the files will be downloaded, by default None
         """
+
+        if cache_dir is None:
+            cache_dir = str(pooch.os_cache(CACHE_DIR_NAME))
+        self.cache_dir = cache_dir
 
         # Get Layup configs
         config = LayupConfigs()
