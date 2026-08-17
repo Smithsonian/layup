@@ -4,7 +4,11 @@ It has a corresponding layup_cmdline verb, `log` as well."""
 # These imports are needed only for the demo
 import os
 import numpy as np
-from layup.utilities.data_processing_utilities import process_data, process_data_by_id
+from layup.utilities.data_processing_utilities import (
+    process_data,
+    process_data_by_id,
+    resolve_num_workers,
+)
 
 # NOTE - The following is the "configuration" required to log from this module.
 import logging
@@ -60,7 +64,7 @@ def log_cli():
     logger.info(f"In `log_cli` function.")
 
     samples = 25
-    num_workers = os.cpu_count()
+    num_workers = resolve_num_workers(-1)
 
     result = log_by_chunk(samples, num_workers)
     logger.debug(f"Processed data with this length: {len(result)}")

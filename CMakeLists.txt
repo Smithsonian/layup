@@ -78,7 +78,19 @@ find_package(pybind11 CONFIG REQUIRED)
 # this)
 python_add_library(_core MODULE src/main.cpp WITH_SOABI)
 # link all the required libraries
-target_link_libraries(_core PRIVATE pybind11::headers ${LIBASSIST_SO} ${LIBREBOUND_SO})
+if(APPLE)
+  # assist and rebound ship their C libraries as Python extension modules, and
+  # whether those come out as dynamic libraries (MH_DYLIB, linkable) or bundles
+  # (MH_BUNDLE, loadable only) depends on the toolchain that built them. Xcode 26
+  # / AppleClang 21 produces bundles, and `ld` refuses to link against those
+  # ("unsupported mach-o filetype"), which breaks the macOS build entirely --
+  # issue #457. Do not link them here; layup.routines loads the bundled copies
+  # with RTLD_GLOBAL before importing _core, so the symbols are resolved through
+  # the flat namespace that -undefined dynamic_lookup searches.
+  target_link_libraries(_core PRIVATE pybind11::headers)
+else()
+  target_link_libraries(_core PRIVATE pybind11::headers ${LIBASSIST_SO} ${LIBREBOUND_SO})
+endif()
 
 # This is passing in the version as a define just as an example
 target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
