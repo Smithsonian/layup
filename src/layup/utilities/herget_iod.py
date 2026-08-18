@@ -60,7 +60,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
         rho_n -= delta_rhon 
         r_n = r_e_n + rho_n*np.array(rho_hat_n)
         print(delta_rho1, delta_rhon)
-        print(rho_1, rho_n)
+        #print(rho_1, rho_n)
 
         iteration += 1
 
@@ -188,7 +188,7 @@ def find_velocity(t1, tn, r_1, r_n, tolerance, args, aux):
     pos = r_n + abs(tolerance) + 100
     
     # Find new values for vx, vy and vz in turn
-    while abs(np.sqrt(sum(r_n**2)) - np.sqrt(sum(pos**2))) > tolerance:
+    while np.linalg.norm(pos - r_n) > tolerance:
         [vx1, vy1, vz1], [*pos, vxn, vyn, vzn] = find_new_vel_with_universal_kepler(t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn)
         pos = np.array(pos)
 
