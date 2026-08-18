@@ -452,7 +452,6 @@ class LayupObservatory(SorchaObservatory):
 
         if cache_dir is None:
             cache_dir = str(pooch.os_cache(CACHE_DIR_NAME))
-        self.cache_dir = cache_dir
 
         # Get Layup configs
         config = LayupConfigs()
