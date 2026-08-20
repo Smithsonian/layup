@@ -64,6 +64,10 @@ _NUM_WORKERS_ENV = "LAYUP_NUM_WORKERS"
 
 logger = logging.getLogger(__name__)
 
+# default Cache directory name where the layup auxiliary files are stored when layup bootstrap is ran
+# eg on Mac ~/Library/Caches/layup
+CACHE_DIR_NAME = "layup"
+
 
 def _running_inside_a_worker():
     """Whether this process is already one of several running in parallel.
@@ -445,6 +449,9 @@ class LayupObservatory(SorchaObservatory):
             The location of the cache directory containing the bootstrapped files.
             If the files or cache is not present, the files will be downloaded, by default None
         """
+
+        if cache_dir is None:
+            cache_dir = str(pooch.os_cache(CACHE_DIR_NAME))
 
         # Get Layup configs
         config = LayupConfigs()

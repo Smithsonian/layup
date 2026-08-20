@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pooch
 import pytest
 import spiceypy as spice
 from numpy.lib import recfunctions as rfn
@@ -999,3 +1000,8 @@ def test_resolve_num_workers_is_one_under_pytest_xdist(monkeypatch):
     """N xdist workers x N spawned children is what wedges a small CI runner."""
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw3")
     assert resolve_num_workers(-1) == 1
+
+
+def test_layup_observatory_explicit_none_uses_layup_cache():
+    obs = LayupObservatory(cache_dir=None)
+    assert obs.cache_dir == str(pooch.os_cache("layup"))
