@@ -7,6 +7,7 @@ from typing import Literal, Optional
 import numpy as np
 import pooch
 import spiceypy as spice
+from time import sleep
 
 from numpy.lib import recfunctions as rfn
 
@@ -346,7 +347,7 @@ def do_gauss_iod(observations, seq):
     idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
     logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
     solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
-    print(solns[0].niter)
+
     return solns
 
 

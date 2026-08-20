@@ -183,8 +183,6 @@ def find_velocity(t1, tn, r_1, r_n, tolerance, args, aux):
     vy1 = (yn - y1) / delta_t
     vz1 = (zn - z1) / delta_t
 
-    furnish_spiceypy(args, aux)
-    ephem, _, _ = create_assist_ephemeris(args, aux)
     pos = r_n + abs(tolerance) + 100
     
     # Find new values for vx, vy and vz in turn
@@ -199,7 +197,6 @@ def find_velocity(t1, tn, r_1, r_n, tolerance, args, aux):
         
         #print(pos, r_n)
     #print(vx1, vy1, vz1)
-    spice.kclear()
     return vx1, vy1, vz1, vxn, vyn, vzn,
 
 def find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change):
