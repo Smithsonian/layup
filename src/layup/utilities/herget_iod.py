@@ -21,7 +21,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     obs_1 = observations[0]
     r_e_1 = obs_1.observer_position
     rho_hat_1 = np.array(obs_1.rho_hat) 
-    rho_1 = 30 # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
+    rho_1 = 40 # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
     t_1 = obs_1.epoch
     r_1 = r_e_1 + rho_1*rho_hat_1
 
@@ -29,7 +29,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     obs_n = observations[-1]
     r_e_n = obs_n.observer_position
     rho_hat_n = np.array(obs_n.rho_hat)
-    rho_n = 30 # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
+    rho_n = 40 # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
     t_n = obs_n.epoch
     r_n = r_e_n + rho_n*rho_hat_n
 
@@ -86,6 +86,7 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
 
     # Find velocities at rho_1 and rho_n
     vx1, vy1, vz1, vxn, vyn, vzn = find_velocity(t_1, t_n, r_1, r_n, tolerance, args, aux)
+    var_vx1, var_vy1, var_vz1, _, _, _ = find_velocity(t_1, t_n, r_1 + rho_hat_1, r_n, tolerance, args, aux)
 
     # Simulation setup
     ephem, _, _ = create_assist_ephemeris(args, aux)
@@ -94,6 +95,8 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     sim.add(x = r_1[0], y = r_1[1], z = r_1[2], vx = vx1, vy =vy1, vz = vz1)
     var = sim.add_variation(testparticle=0)
     var.particles[0].xyz = rho_hat_1
+    var.particles[0].vxyz = np.array([var_vx1 - vx1, var_vy1 - vy1, var_vz1 - vz1])
+    
     ex = assist.Extras(sim, ephem)
     sim.t = t_1 - ephem.jd_ref
     a1, a2, b = np.zeros((3, 2*len(observations)))
@@ -112,16 +115,15 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
         r = sim.particles[0].xyz
         r_var = var.particles[0].xyz
         rho = r - r_e
-        rho_var = r_var
 
 
         # Add these to the arrays
-        b[2*i] = np.dot(rho, A)
-        b[2*i + 1] = np.dot(rho, D)
-        a1[2*i] = (b[2*i] - np.dot(rho + rho_var, A))
-        a1[2*i + 1] = (b[2*i + 1] - np.dot(rho + rho_var, D))
+        b[2*i] = np.dot(rho/np.linalg.norm(rho), A)
+        b[2*i + 1] = np.dot(rho/np.linalg.norm(rho), D)
+        a1[2*i] = b[2*i] - np.dot((rho + r_var)/np.linalg.norm(rho + r_var), A)
+        a1[2*i + 1] = b[2*i + 1] - np.dot((rho + r_var)/np.linalg.norm(rho + r_var), D)
 
-    
+    _, _, _, var_vxn, var_vyn, var_vzn = find_velocity(t_1, t_n, r_1, r_n + rho_hat_n, tolerance, args, aux)
 
     # Do the same for rho_n, set up simulation again
     vxn, vyn, vzn = sim.particles[0].vxyz
@@ -129,6 +131,8 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     sim.add(x = r_n[0], y = r_n[1], z = r_n[2], vx = vxn, vy =vyn, vz = vzn)
     var = sim.add_variation(testparticle=0)
     var.particles[0].xyz = rho_hat_n
+    var.particles[0].vxyz = np.array([var_vxn - vxn, var_vyn - vyn, var_vzn - vzn])
+    
     ex = assist.Extras(sim, ephem)
     sim.t = t_n - ephem.jd_ref
 
@@ -147,8 +151,8 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
         rho = r - r_e
         
         # Add to array
-        a2[2*i] = (b[2*i] - np.dot(rho + r_var, A))
-        a2[2*i + 1] = (b[2*i + 1] - np.dot(rho + r_var, D))
+        a2[2*i] = (b[2*i] - np.dot((rho + r_var)/np.linalg.norm(rho + r_var), A))
+        a2[2*i + 1] = (b[2*i + 1] - np.dot((rho + r_var)/np.linalg.norm(rho + r_var), D))
 
         
 
