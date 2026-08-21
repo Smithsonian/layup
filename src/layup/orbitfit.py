@@ -369,7 +369,7 @@ def do_herget_iod(observations, seq, args, aux):
     """
     # Get Herget solution, using first and last point
     # of the primary sequence
-    solns = herget_with_assist(observations, seq, 0.01, args=args, aux=aux)
+    solns = herget_with_assist(observations, seq, 0.001, args=args, aux=aux)
     print(solns[0].niter)
     return solns
 
@@ -486,7 +486,7 @@ def _orbitfit(
     weight_data: bool = False,
     iod: str = "gauss",
     args=None,
-    aux=None
+    aux=None,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -619,7 +619,14 @@ def _orbitfit(
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
             if iod.lower() in ["gauss", "herget"]:
-                res = do_fit(observations=observations, seq=sequence, cache_dir=kernels_loc, iod=iod.lower(), args=args, aux=aux)
+                res = do_fit(
+                    observations=observations,
+                    seq=sequence,
+                    cache_dir=kernels_loc,
+                    iod=iod.lower(),
+                    args=args,
+                    aux=aux,
+                )
             else:
                 res = do_other_fit(iod=iod.lower())
         else:
@@ -724,7 +731,7 @@ def orbitfit_cli(
     chunk_size: int = 10_000,
     num_workers: int = -1,
     cli_args: Optional[Namespace] = None,
-    aux: any = None
+    aux: any = None,
 ):
     """This is the function that is called from the command line
 

@@ -106,6 +106,7 @@ _TOL = 1e-13
 def _converged(ds: float, s: float) -> bool:
     return abs(ds) <= _TOL * max(1.0, abs(s))
 
+
 # Below this |f| the Wronskian form of gdot loses precision; see note 3 above.
 _F_FLOOR = 1e-8
 
@@ -379,20 +380,14 @@ def universal_step(gm, dt, state, variation=None) -> KeplerStep:
 
         fpr = (gm * g2 / (r0 * r0)) * r0pr - (gm / r0) * g2pr
         gpr = -gm * g3pr
-        fdotpr = (
-            (gm / (r * r * r0)) * g1 * rpr
-            + (gm / (r * r0 * r0)) * g1 * r0pr
-            - (gm / (r * r0)) * g1pr
-        )
+        fdotpr = (gm / (r * r * r0)) * g1 * rpr + (gm / (r * r0 * r0)) * g1 * r0pr - (gm / (r * r0)) * g1pr
         gdotpr = (gm / (r * r)) * g2 * rpr - (gm / r) * g2pr
 
         var_out = np.empty(6)
         var_out[:3] = f * dr + g * dv + fpr * r0vec + gpr * v0vec
         var_out[3:] = fdot * dr + gdot * dv + fdotpr * r0vec + gdotpr * v0vec
 
-    return KeplerStep(
-        state=out, variation=var_out, s=s, r=r, n_rev=n_rev, n_iter=n_iter, solver=solver
-    )
+    return KeplerStep(state=out, variation=var_out, s=s, r=r, n_rev=n_rev, n_iter=n_iter, solver=solver)
 
 
 def state_transition_matrix(gm, dt, state) -> np.ndarray:

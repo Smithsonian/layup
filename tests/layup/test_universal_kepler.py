@@ -47,6 +47,7 @@ HERE = pathlib.Path(__file__).parent
 # Test states.  Named so a failure report says which regime broke.
 # --------------------------------------------------------------------------
 
+
 def _state(a, e, gm=GM):
     """A planar state at aphelion for semimajor axis a and eccentricity e.
 
@@ -92,6 +93,7 @@ def _period(state, gm=GM):
 # --------------------------------------------------------------------------
 # 1. Stumpff functions
 # --------------------------------------------------------------------------
+
 
 def _stumpff_series(k, z, nterms=40):
     """c_k(z) = sum_n (-z)^n / (2n+k)!  -- direct summation, independent
@@ -143,6 +145,7 @@ def test_stumpff_recurrence(z):
 # --------------------------------------------------------------------------
 # 2. The propagated state
 # --------------------------------------------------------------------------
+
 
 def _propagate_via_elements(gm, dt, state):
     """Independent two-body propagation through classical elements.
@@ -263,6 +266,7 @@ def test_zero_dt_is_identity():
 # 3. The variational output -- the reason this module exists
 # --------------------------------------------------------------------------
 
+
 def _fd_stm(gm, dt, state, rel=1e-7):
     """Central-difference d state(t+dt) / d state(t)."""
     stm = np.empty((6, 6))
@@ -272,9 +276,7 @@ def _fd_stm(gm, dt, state, rel=1e-7):
         plus, minus = state.copy(), state.copy()
         plus[j] += h
         minus[j] -= h
-        stm[:, j] = (
-            universal_step(gm, dt, plus).state - universal_step(gm, dt, minus).state
-        ) / (2.0 * h)
+        stm[:, j] = (universal_step(gm, dt, plus).state - universal_step(gm, dt, minus).state) / (2.0 * h)
     return stm
 
 
@@ -316,9 +318,7 @@ def test_stm_is_symplectic(name):
     rubber stamp.
     """
     state = STATES[name]
-    J = np.block(
-        [[np.zeros((3, 3)), np.eye(3)], [-np.eye(3), np.zeros((3, 3))]]
-    )
+    J = np.block([[np.zeros((3, 3)), np.eye(3)], [-np.eye(3), np.zeros((3, 3))]])
     for frac in (0.11, 0.5, 1.7):
         M = state_transition_matrix(GM, frac * _period(state), state)
         floor = 20.0 * np.linalg.norm(M) ** 2 * np.finfo(float).eps
@@ -341,6 +341,7 @@ def test_variation_is_linear():
 # --------------------------------------------------------------------------
 # Multi-revolution: where the C is wrong
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("n", [0, 1, 2, 5, 40])
 def test_state_is_periodic_across_revolutions(n):
@@ -387,10 +388,7 @@ def test_partials_grow_secularly_with_revolutions():
     reason a state-only multi-rev fix would have been wrong."""
     state = STATES["mainbelt"]
     P = _period(state)
-    norms = [
-        np.linalg.norm(state_transition_matrix(GM, (n + 0.3) * P, state))
-        for n in (0, 1, 2, 5)
-    ]
+    norms = [np.linalg.norm(state_transition_matrix(GM, (n + 0.3) * P, state)) for n in (0, 1, 2, 5)]
     assert norms == sorted(norms), f"STM norm should increase with revolutions: {norms}"
     assert norms[-1] > 3.0 * norms[0]
 
@@ -398,6 +396,7 @@ def test_partials_grow_secularly_with_revolutions():
 # --------------------------------------------------------------------------
 # 4. Faithfulness to the original C
 # --------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def c_universal_step(tmp_path_factory):
@@ -539,6 +538,7 @@ def test_c_is_wrong_past_one_period_and_the_port_is_not(c_universal_step):
 # --------------------------------------------------------------------------
 # Input handling
 # --------------------------------------------------------------------------
+
 
 def test_rejects_bad_shapes():
     with pytest.raises(ValueError):
