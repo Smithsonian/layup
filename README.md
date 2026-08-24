@@ -89,6 +89,24 @@ method, non-gravitational parameters, parallel workers, …):
 layup orbitfit --help
 ```
 
+### Control how many CPUs layup uses
+
+`--num-workers` (CLI) and `num_workers=` (API) default to `-1`, meaning decide
+automatically: `$LAYUP_NUM_WORKERS` if set, otherwise 1 when layup is already
+running inside another worker process, otherwise the CPUs available to this
+process.
+
+Set `LAYUP_NUM_WORKERS` when layup does not own the whole machine — running it
+from your own process pool, or as one of several jobs on a shared node:
+
+```
+export LAYUP_NUM_WORKERS=4
+```
+
+Otherwise each copy would size its pool to the whole machine and oversubscribe
+it. This is separate from `OMP_NUM_THREADS` and friends, which control threads
+within a worker rather than the number of workers.
+
 ### Use the Python API
 
 The same load → fit → convert → predict workflow is available directly from

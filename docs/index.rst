@@ -57,5 +57,6 @@ Notes:
    :hidden:
 
    Home page <self>
+   Controlling parallelism <parallelism>
    API Reference <autoapi/index>
    Notebooks <notebooks>
