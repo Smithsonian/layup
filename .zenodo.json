@@ -1,0 +1,108 @@
+{
+  "upload_type": "software",
+  "title": "Layup: Orbit Fitting at LSST Scale",
+  "description": "Layup is an open-source package for orbit determination at the scale of the Vera C. Rubin Observatory's Legacy Survey of Space and Time (LSST), and a companion to the Sorcha survey simulator. It is built on REBOUND/ASSIST for ephemeris-quality numerical integrations, with a C++ engine behind a Python command-line interface and API. Layup ingests optical astrometry in obs80 and ADES formats, radar range and Doppler measurements, streak (position and rate) measurements from shift-and-stack surveys, and observations from space-based platforms, and fits all of them with the same machinery. It offers a six-parameter Cartesian state and a Bernstein-Khushalani basis, fits gravitational and non-gravitational accelerations, and reports a full state covariance that it propagates through element and frame conversions and through ephemeris predictions.",
+  "license": "mit",
+  "access_right": "open",
+  "creators": [
+    {
+      "name": "Holman, Matthew J.",
+      "affiliation": "Center for Astrophysics | Harvard & Smithsonian, 60 Garden St., MS 51, Cambridge, MA 02138, USA",
+      "orcid": "0000-0002-1139-4880"
+    },
+    {
+      "name": "Schwamb, Megan E.",
+      "affiliation": "Astrophysics Research Centre, School of Mathematics and Physics, Queen’s University Belfast, Belfast, BT7 1NN, UK",
+      "orcid": "0000-0003-4365-1455"
+    },
+    {
+      "name": "Napier, Kevin J.",
+      "affiliation": "Center for Astrophysics | Harvard & Smithsonian, 60 Garden St., MS 51, Cambridge, MA 02138, USA",
+      "orcid": "0000-0003-4827-5049"
+    },
+    {
+      "name": "Bernardinelli, Pedro H.",
+      "affiliation": "DiRAC Institute and the Department of Astronomy, University of Washington, 3910 15th Ave NE, Seattle, WA 98195, USA",
+      "orcid": "0000-0003-0743-9422"
+    },
+    {
+      "name": "Lyttle, Ryan R.",
+      "affiliation": "Astrophysics Research Centre, School of Mathematics and Physics, Queen’s University Belfast, Belfast, BT7 1NN, UK",
+      "orcid": "0009-0007-8602-2954"
+    },
+    {
+      "name": "Murtagh, Joseph",
+      "affiliation": "Astrophysics Research Centre, School of Mathematics and Physics, Queen’s University Belfast, Belfast, BT7 1NN, UK",
+      "orcid": "0000-0001-9505-1131"
+    },
+    {
+      "name": "Wilson, Adam",
+      "affiliation": "Astrophysics Research Centre, School of Mathematics and Physics, Queen’s University Belfast, Belfast, BT7 1NN, UK"
+    },
+    {
+      "name": "Rein, Hanno",
+      "affiliation": "Department of Physical and Environmental Sciences, University of Toronto at Scarborough, Toronto, Ontario, M1C 1A4, Canada",
+      "orcid": "0000-0003-1927-731X"
+    },
+    {
+      "name": "Oldag, Drew",
+      "affiliation": "DiRAC Institute and the Department of Astronomy, University of Washington, 3910 15th Ave NE, Seattle, WA 98195, USA",
+      "orcid": "0000-0001-6984-8411"
+    },
+    {
+      "name": "West, Maxine",
+      "affiliation": "DiRAC Institute and the Department of Astronomy, University of Washington, 3910 15th Ave NE, Seattle, WA 98195, USA",
+      "orcid": "0009-0003-3171-3118"
+    },
+    {
+      "name": "Beebe, Wilson",
+      "affiliation": "DiRAC Institute and the Department of Astronomy, University of Washington, 3910 15th Ave NE, Seattle, WA 98195, USA",
+      "orcid": "0009-0003-1791-8707"
+    },
+    {
+      "name": "Jurić, Mario",
+      "affiliation": "DiRAC Institute and the Department of Astronomy, University of Washington, 3910 15th Ave NE, Seattle, WA 98195, USA",
+      "orcid": "0000-0003-1996-9252"
+    },
+    {
+      "name": "Eggl, Siegfried",
+      "affiliation": "Department of Aerospace Engineering, Grainger College of Engineering, University of Illinois at Urbana-Champaign,Urbana, IL 61801, USA",
+      "orcid": "0000-0002-1398-6302"
+    },
+    {
+      "name": "Makadia, Rahil",
+      "affiliation": "Department of Aerospace Engineering, Grainger College of Engineering, University of Illinois at Urbana-Champaign,Urbana, IL 61801, USA",
+      "orcid": "0000-0001-9265-2230"
+    },
+    {
+      "name": "Moeyens, Joachim",
+      "affiliation": "Asteroid Institute, 20 Sunnyside Ave., Suite 427, Mill Valley, CA 94941, USA",
+      "orcid": "0000-0001-5820-3925"
+    },
+    {
+      "name": "Chandler, Colin Orion",
+      "affiliation": "DiRAC Institute and the Department of Astronomy, University of Washington, 3910 15th Ave NE, Seattle, WA 98195, USA",
+      "orcid": "0000-0001-7335-1715"
+    },
+    {
+      "name": "Ruch, Thomas R.",
+      "affiliation": "University of Michigan, Ann Arbor, MI 48109, USA",
+      "orcid": "0000-0003-0403-0891"
+    },
+    {
+      "name": "Holt, Carrie E.",
+      "affiliation": "Las Cumbres Observatory, 6740 Cortona Drive, Suite 102, Goleta, CA 93117, USA",
+      "orcid": "0000-0002-4043-6445"
+    }
+  ],
+  "keywords": [
+    "astronomy",
+    "solar system",
+    "orbit determination",
+    "asteroids",
+    "trans-Neptunian objects",
+    "ephemerides",
+    "LSST",
+    "Rubin Observatory"
+  ]
+}
