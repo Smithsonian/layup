@@ -336,10 +336,15 @@ def test_layup_get_residual_vectors():
     vectors = np.array([[1, 2, 3], [4, 5, 6], [0.7, 0.8, 0.9]])
     output_A, output_D = layup_get_residual_vectors(vectors)
 
+    # layup_get_residual_vectors is the vectorised form: it takes the (3, N) array
+    # whose COLUMNS are the input vectors and returns A and D in the same layout, so
+    # the i-th result is output_A[:, i]. Comparing output_A[i] (a row) silently
+    # compared unrelated quantities -- and, before these assertions were armed, did
+    # not compare anything at all.
     for i in range(len(vectors[0])):
         sorcha_A, sorcha_D = get_residual_vectors(vectors.T[i])
-        np.allclose(output_A[i], sorcha_A)
-        np.allclose(output_D[i], sorcha_D)
+        assert np.allclose(output_A[:, i], sorcha_A), f"A vector differs from sorcha at i={i}"
+        assert np.allclose(output_D[:, i], sorcha_D), f"D vector differs from sorcha at i={i}"
 
 
 def test_layup_calculate_rates_and_geometry():
@@ -398,11 +403,11 @@ def test_layup_calculate_rates_and_geometry():
         geom_param.rho_mag = ephem_geom_params.rho_mag.T[i]
         geom_param.r_ast = ephem_geom_params.r_ast.T[i]
         geom_param.v_ast = ephem_geom_params.v_ast.T[i]
-        print()
         sorcha_output = calculate_rates_and_geometry(pointing, geom_param)
         for j in range(3, len(sorcha_output)):
-            print(output[j][i], sorcha_output[j])
-            np.allclose(output[j][i], sorcha_output[j])
+            assert np.allclose(output[j][i], sorcha_output[j]), (
+                f"field {j} differs from sorcha at pointing {i}: " f"{output[j][i]} != {sorcha_output[j]}"
+            )
 
 
 def test_get_onsky_data_output(tmpdir):
@@ -448,7 +453,9 @@ def test_get_onsky_data_output(tmpdir):
         "Obj_Sun_vz_LTC_km_s",
         "phase_deg",
     ]:
-        np.allclose(results[column], expected[column])
+        assert np.allclose(
+            results[column], expected[column]
+        ), f"column {column} differs from the expected output"
 
 
 def test_residuals_at_state_matches_predict_sequence():

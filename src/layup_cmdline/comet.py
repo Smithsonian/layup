@@ -77,7 +77,9 @@ def main():
     optional.add_argument(
         "-n",
         "--num-workers",
-        help="Number of CPU workers to use for parallel processing each chunk. -1 uses all available CPUs.",
+        help="Number of CPU workers for parallel processing. -1 (default) decides "
+        "automatically: $LAYUP_NUM_WORKERS if set, else 1 when layup is already "
+        "running inside another worker process, else the CPUs available to this process.",
         dest="n",
         type=int,
         default=-1,
