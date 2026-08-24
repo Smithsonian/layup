@@ -1,0 +1,52 @@
+
+# Compile the JOSS paper to PDF so co-authors can read the typeset version
+# rather than the markdown, and so problems in paper.md or paper.bib surface
+# here rather than at submission.
+#
+# The action is Open Journals' own generator -- the same pipeline JOSS runs --
+# so a failure here is a failure JOSS would also hit. It does not check
+# scientific content; it checks that the paper builds, the frontmatter parses,
+# and every citation resolves against paper.bib.
+#
+# The PDF is uploaded as a build artifact. It is deliberately NOT committed to
+# the repository: it is a derived product, and a binary that changes on every
+# edit makes for poor diffs.
+
+name: Draft JOSS paper
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'paper/**', '.github/workflows/draft-paper.yml' ]
+  pull_request:
+    branches: [ main ]
+    paths: [ 'paper/**', '.github/workflows/draft-paper.yml' ]
+  # Allow a manual run, e.g. to produce a PDF for circulation without an edit.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build the paper
+        uses: openjournals/openjournals-draft-action@master
+        with:
+          journal: joss
+          # Path to the paper directory, relative to the repository root.
+          paper-path: paper/paper.md
+
+      - name: Upload the PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          # The action writes the PDF next to the source.
+          path: paper/paper.pdf
+          if-no-files-found: error
