@@ -182,8 +182,22 @@ def test_bk_native_fit_recovers_known_state(name, state, arc_days, nobs):
         atol=1e-9,
         err_msg=f"[{name}] BK fit did not recover the truth state",
     )
-    # 2N residuals, 6 free params, noise-free obs -> chi2 essentially zero.
-    assert result.csq < 1e-12, f"[{name}] BK fit chi-square unexpectedly large: {result.csq}"
+    # 2N residuals, 6 free params, noise-free obs -> the DATA chi-square is
+    # essentially zero.  result.csq also carries the bound-orbit energy prior on
+    # gdot, and under the 1/gamma-scaled convention (issue #445) that term is no
+    # longer zero here: gdot is now gamma*(v.n0), the velocity along the fiducial
+    # line of sight, where it used to be d(gamma)/dt = -gamma^2*(r_hat.v).  These
+    # truth states are circular at the epoch (r.v = 0 exactly), so the old gdot
+    # -- and with it the prior -- vanished identically.  That was an accident of
+    # the truth states, not a property of the fit, and the old 1e-12 threshold
+    # was calibrated on it.
+    #
+    # The floor is therefore gdot^2 / sigma_gdot_sq evaluated at truth: 3.8e-9
+    # for the mainbelt case and 6.2e-12 for the TNO.  Both are far below the
+    # per-observation weight, so they are irrelevant against real astrometry
+    # (chi2 ~ 2N ~ 24 for 1" data), and the state-recovery assertion above --
+    # which is unchanged and tight -- is what actually pins the fit.
+    assert result.csq < 1e-6, f"[{name}] BK fit chi-square unexpectedly large: {result.csq}"
 
 
 @pytest.mark.parametrize(
