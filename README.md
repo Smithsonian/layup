@@ -8,11 +8,34 @@ Orbit fitting at LSST scale
 [![ci](https://github.com/Smithsonian/layup/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/Smithsonian/layup/actions/workflows/smoke-test.yml)
 [![pytest](https://github.com/Smithsonian/layup/actions/workflows/testing-and-coverage.yml/badge.svg)](https://github.com/Smithsonian/layup/actions/workflows/testing-and-coverage.yml)
 [![Documentation Status](https://readthedocs.org/projects/layup/badge/?version=latest)](https://layup.readthedocs.io/en/latest/?badge=latest)
+<!-- PyPI badge removed 2026-08-24. The `layup` name on PyPI currently holds only
+     version 0.0.1, uploaded 2025-01-09 (four days before this repository's first
+     commit): a 1.3 kB wheel containing an empty __init__.py, with no dependencies.
+     `pip install layup` therefore succeeds and installs nothing, with no error.
+     The badge advertised that as if it were the package.
+     Restore this line once a real release is published -- see issue #436, which
+     also covers the direct-URL sorcha dependency that currently prevents one.
 [![PyPI - Version](https://img.shields.io/pypi/v/layup)](https://pypi.python.org/pypi/layup)
+-->
 [![Template](https://img.shields.io/badge/Template-LINCC%20Frameworks%20Python%20Project%20Template-brightgreen)](https://lincc-ppt.readthedocs.io/en/latest/)
 
 ## Setup
-To install layup, all its dependencies, as well as the ephemeris and reference data, you need about 3.2G of free space.
+
+### Requirements
+
+| | |
+|---|---|
+| Python | **3.11 or newer** |
+| Compiler | a **C++17** compiler — `layup` builds a C++ extension. Xcode command line tools on macOS; `build-essential` or equivalent on Linux |
+| pip | **21.3 or newer** (editable installs of `pyproject.toml`-only projects need PEP 660 support) |
+| Platforms | macOS and Linux. Windows is not supported and is not tested |
+| Disk | about **3.2 GB** free — roughly 1.5 GB of that is the ephemeris and reference data fetched by `layup bootstrap` |
+
+If `pip install -e .` fails with *"File `setup.py` or `setup.cfg` not found"*, your
+pip predates PEP 660: run `pip install --upgrade pip` first. Note that the
+`python3` shipped with macOS is too old; install a newer Python before creating
+the environment.
+
 Before installing layup, it's a great idea to create a virtual environment with either `conda` or `venv`.
 
 You can download the source code with:
@@ -20,11 +43,15 @@ You can download the source code with:
 git clone --recursive https://github.com/Smithsonian/layup.git
 ```
 
-If you cloned the repository without `--recursive` flag, you can run
+The `--recursive` flag matters: `layup` vendors **`eigen`** and **`autodiff`** as
+git submodules under `include/`, and the C++ build fails with a bare
+`fatal error: 'Eigen/Dense' file not found` if they are absent. If you already
+cloned without it, run
 ```
 git submodule update --init
 ```
-to download the required submodules, `assist`, `eigen`, and `rebound`.
+(`assist` and `rebound` are *not* submodules — they are installed as ordinary
+Python dependencies.)
 
 Next, enter the layup directory and run
 ```
@@ -35,6 +62,14 @@ to create an editable install of `layup`. If you're doing development work, you 
 pip install -e ".[dev]"
 ```
 to install all of the development packages as well.
+
+### Running the tests
+Run `layup bootstrap` first — a large fraction of the suite is skipped without the
+ephemeris and reference data, so a run that has not bootstrapped will report
+success while validating none of the orbit fitting. Then:
+```
+pytest
+```
 
 ### Adding new submodule 
 Note that to get the new submodules added in an existing copy of the repo you want to run
@@ -50,7 +85,8 @@ git clone --recursive https://github.com/Smithsonian/layup.git
 
 Once `layup` is installed, download the ephemeris and reference data it needs
 (SPICE planetary kernels, the small-body kernel, MPC observatory codes, and the
-astrometry debiasing tables). This is a one-time download of a few hundred MB:
+astrometry debiasing tables). This is a one-time download of roughly 1 GB, which
+expands to about 1.5 GB on disk:
 ```
 layup bootstrap
 ```
