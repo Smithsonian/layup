@@ -103,20 +103,20 @@ layup demo howto orbitfit
 asteroid (3666) Holman, in ADES CSV form — to the current directory, and `howto`
 prints the ready-to-run command. Fit it with:
 ```
-layup orbitfit holman_data_working.csv ADES_csv -o my_orbit
+layup orbitfit holman_data_working.csv ADES_csv -o demo_orbitfit_output
 ```
 This writes the best-fit barycentric Cartesian orbit and its covariance to
-`my_orbit.csv`. Supported input formats are `MPC80col`, `ADES_csv`, `ADES_psv`,
+`demo_orbitfit_output.csv`. Supported input formats are `MPC80col`, `ADES_csv`, `ADES_psv`,
 `ADES_xml`, and `ADES_hdf5`.
 
 Convert the result to another orbit representation (Cometary, Keplerian, …):
 ```
-layup convert my_orbit.csv KEP -o my_orbit_kep
+layup convert demo_orbitfit_output.csv KEP -o demo_orbit_kep
 ```
 
 Predict future on-sky positions, with uncertainties, for an observatory:
 ```
-layup predict my_orbit.csv --days 30 --station X05 -o my_predictions
+layup predict demo_orbitfit_output.csv --days 30 --station X05 -o my_predictions
 ```
 
 Every verb takes `--help` for its full set of options (engine choice, IOD
@@ -149,3 +149,6 @@ The same load → fit → convert → predict workflow is available directly fro
 Python. See the worked-example notebook
 [`docs/notebooks/orbit_fitting_api.ipynb`](docs/notebooks/orbit_fitting_api.ipynb)
 and the full documentation at [layup.readthedocs.io](https://layup.readthedocs.io).
+
+Note that a plain `pip install -e .` does not install Jupyter — it is in the `dev`
+extra. To run the notebook locally, install with `pip install -e ".[dev]"`.
