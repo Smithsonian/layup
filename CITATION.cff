@@ -1,0 +1,82 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Layup: Orbit Fitting at LSST Scale"
+abstract: >-
+  Layup is an open-source Python and C++ package for orbit determination at
+  the scale of the Vera C. Rubin Observatory's Legacy Survey of Space and Time.
+  It ingests optical astrometry, shift-and-stack (position and rate)
+  measurements, radar range and Doppler observations, and observations from
+  space-based platforms; fits both gravitational and non-gravitational orbits
+  in Cartesian and Bernstein-Khushalani parameterizations; and reports a full
+  state covariance with every fit, propagated consistently through element and
+  frame conversions and through ephemeris predictions.
+type: software
+license: MIT
+repository-code: "https://github.com/Smithsonian/layup"
+url: "https://layup.readthedocs.io"
+keywords:
+  - orbit determination
+  - asteroids
+  - solar system
+  - astronomy
+  - LSST
+authors:
+  - family-names: Holman
+    given-names: Matthew J.
+    orcid: "https://orcid.org/0000-0002-1139-4880"
+  - family-names: Schwamb
+    given-names: Megan E.
+    orcid: "https://orcid.org/0000-0003-4365-1455"
+  - family-names: Napier
+    given-names: Kevin J.
+    orcid: "https://orcid.org/0000-0003-4827-5049"
+  - family-names: Bernardinelli
+    given-names: Pedro H.
+    orcid: "https://orcid.org/0000-0003-0743-9422"
+  - family-names: Lyttle
+    given-names: Ryan R.
+    orcid: "https://orcid.org/0009-0007-8602-2954"
+  - family-names: Murtagh
+    given-names: Joseph
+    orcid: "https://orcid.org/0000-0001-9505-1131"
+  - family-names: Wilson
+    given-names: Adam
+    orcid: "https://orcid.org/0009-0001-2321-3784"
+  - family-names: Rein
+    given-names: Hanno
+    orcid: "https://orcid.org/0000-0003-1927-731X"
+  - family-names: Oldag
+    given-names: Drew
+    orcid: "https://orcid.org/0000-0001-6984-8411"
+  - family-names: West
+    given-names: Maxine
+    orcid: "https://orcid.org/0009-0003-3171-3118"
+  - family-names: Beebe
+    given-names: Wilson
+    orcid: "https://orcid.org/0009-0003-1791-8707"
+  - family-names: Jurić
+    given-names: Mario
+    orcid: "https://orcid.org/0000-0003-1996-9252"
+  - family-names: Eggl
+    given-names: Siegfried
+    orcid: "https://orcid.org/0000-0002-1398-6302"
+  - family-names: Makadia
+    given-names: Rahil
+    orcid: "https://orcid.org/0000-0001-9265-2230"
+  - family-names: Moeyens
+    given-names: Joachim
+    orcid: "https://orcid.org/0000-0001-5820-3925"
+  - family-names: Chandler
+    given-names: Colin Orion
+    orcid: "https://orcid.org/0000-0001-7335-1715"
+  - family-names: Ruch
+    given-names: Thomas R.
+    orcid: "https://orcid.org/0000-0003-0403-0891"
+  - family-names: Holt
+    given-names: Carrie E.
+    orcid: "https://orcid.org/0000-0002-4043-6445"
+
+# TODO before the v1.0.0 release, per RELEASE_CHECKLIST.md Phase 4:
+#   version: 1.0.0
+#   date-released: YYYY-MM-DD
+#   doi: <Zenodo version DOI, minted when the GitHub Release is published>
