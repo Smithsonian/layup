@@ -1,7 +1,4 @@
-
 .. layup documentation main file.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
 
 .. image:: images/layup_logo.png
   :width: 410
@@ -10,53 +7,169 @@
 
 ========================================================================================
 
-Dev Guide - Getting Started
----------------------------
+**Layup** is an open-source package for orbit determination at the scale of the
+Vera C. Rubin Observatory's Legacy Survey of Space and Time (LSST). It is a
+companion to the `Sorcha <https://sorcha.readthedocs.io>`_ survey simulator.
 
-Before installing any dependencies or writing code, it's a great idea to create a
-virtual environment. LINCC-Frameworks engineers primarily use `conda` to manage virtual
-environments. If you have conda installed locally, you can run the following to
-create and activate a new environment.
+Layup is built on REBOUND/ASSIST for ephemeris-quality numerical integrations,
+with a C++ engine behind a Python command-line interface and API. It can ingest
 
-.. code-block:: console
+* optical astrometry in obs80 and ADES formats,
+* radar range and Doppler measurements,
+* streak (position + rate) measurements from shift-and-stack surveys, and
+* observations from space-based platforms,
 
-   >> conda create -n <env_name> python=3.11
-   >> conda activate <env_name>
+and it fits all of them with the same machinery. Layup offers two orbit
+parameterizations — a six-parameter Cartesian state and a Bernstein-Khushalani
+basis of distance-scaled parameters in a local tangent-plane frame — and can fit
+both gravitational and non-gravitational accelerations. Every fit reports a full
+state covariance, which Layup propagates through element and frame conversions
+and through ephemeris predictions, to support attribution and linking.
 
-Alternatively, you can create a virtual environment with python's `venv` module.
+
+Installation
+------------
+
+Layup builds a C++ extension, so installing it needs a compiler as well as a
+recent Python.
+
+============  ==================================================================
+Python        3.11 or newer
+Compiler      a C++17 compiler — Xcode command line tools on macOS,
+              ``build-essential`` or equivalent on Linux
+pip           21.3 or newer (editable installs need PEP 660 support)
+Platforms     macOS and Linux. Windows is not supported and is not tested
+Disk          about 3.2 GB free, roughly 1.5 GB of it the reference data
+              fetched by ``layup bootstrap``
+============  ==================================================================
+
+.. warning::
+
+   Do **not** install Layup with ``pip install layup``. The ``layup`` name on
+   PyPI currently holds an unrelated placeholder package, so that command
+   succeeds and installs nothing, with no error. Install from source as below
+   until the first release is published.
+
+It is a good idea to create a virtual environment first:
 
 .. code-block:: console
 
    >> python -m venv venv
    >> source venv/bin/activate
 
-Once you have created a new environment, you can install this project for local
-development using the following commands:
+Then clone and install:
 
 .. code-block:: console
 
-   >> pip install -e .'[dev]'
-   >> pre-commit install
-   >> conda install pandoc
+   >> git clone https://github.com/Smithsonian/layup.git
+   >> cd layup
+   >> pip install .
+
+If that fails with *"File setup.py or setup.cfg not found"*, your pip predates
+PEP 660 — run ``pip install --upgrade pip`` first. The ``python3`` shipped with
+macOS is too old; install a newer Python before creating the environment.
 
 
-Notes:
+Quickstart
+----------
 
-1) The single quotes around ``'[dev]'`` may not be required for your operating system.
-2) ``pre-commit install`` will initialize pre-commit for this local repository, so
-   that a set of tests will be run prior to completing a local commit. For more
-   information, see the Python Project Template documentation on
-   `pre-commit <https://lincc-ppt.readthedocs.io/en/latest/practices/precommit.html>`_.
-3) Installing ``pandoc`` allows you to verify that automatic rendering of Jupyter notebooks
-   into documentation for ReadTheDocs works as expected. For more information, see
-   the Python Project Template documentation on
-   `Sphinx and Python Notebooks <https://lincc-ppt.readthedocs.io/en/latest/practices/sphinx.html#python-notebooks>`_.
+Layup needs SPICE planetary kernels, the small-body kernel, MPC observatory
+codes, and the astrometry debiasing tables. Download them once with:
 
+.. code-block:: console
+
+   >> layup bootstrap
+
+This fetches roughly 1 GB, which expands to about 1.5 GB on disk.
+
+Fit an orbit
+^^^^^^^^^^^^
+
+Layup bundles a demo dataset. Copy it into your working directory and print the
+matching example command:
+
+.. code-block:: console
+
+   >> layup demo prepare orbitfit
+   >> layup demo howto orbitfit
+
+``prepare`` writes ``holman_data_working.csv`` — 4135 astrometric observations
+of asteroid (3666) Holman, in ADES CSV form — to the current directory, and
+``howto`` prints the ready-to-run command. Fit it with:
+
+.. code-block:: console
+
+   >> layup orbitfit holman_data_working.csv ADES_csv -o demo_orbitfit_output
+
+This writes the best-fit barycentric Cartesian orbit and its covariance to
+``demo_orbitfit_output.csv``. Supported input formats are ``MPC80col``,
+``ADES_csv``, ``ADES_psv``, ``ADES_xml``, and ``ADES_hdf5``.
+
+Convert and predict
+^^^^^^^^^^^^^^^^^^^
+
+Convert the result to another orbit representation (Cometary, Keplerian, …):
+
+.. code-block:: console
+
+   >> layup convert demo_orbitfit_output.csv KEP -o demo_orbit_kep
+
+Predict future on-sky positions, with uncertainties, for an observatory:
+
+.. code-block:: console
+
+   >> layup predict demo_orbitfit_output.csv --days 30 --station X05 -o my_predictions
+
+Every verb takes ``--help`` for its full set of options — engine choice, IOD
+method, non-gravitational parameters, parallel workers, and so on:
+
+.. code-block:: console
+
+   >> layup orbitfit --help
+
+
+Where to go next
+----------------
+
+* The same load → fit → convert → predict workflow is available from Python.
+  The :doc:`orbit fitting API notebook <notebooks/orbit_fitting_api>` works
+  through it end to end.
+* :doc:`Controlling parallelism <parallelism>` — how Layup sizes its worker
+  pool, and how to stop it oversubscribing a shared machine.
+* `API Reference <autoapi/index.html>`_ — every public module, class and
+  function.
+* :doc:`Developer guide <dev_guide>` — setting up a development environment and
+  running the tests.
+
+.. note::
+
+   A plain install does not include Jupyter; it lives in the ``dev`` extra. To
+   run the notebooks locally, install with ``pip install -e ".[dev]"``.
+
+
+Citing Layup
+------------
+
+If Layup contributes to work you publish, please cite it. Citation details will
+be listed here with the first release.
+
+
+Getting help
+------------
+
+Please open an issue at
+`github.com/Smithsonian/layup/issues <https://github.com/Smithsonian/layup/issues>`_
+for bug reports, questions, and feature requests.
+
+.. Once Smithsonian/layup#466 merges, link CONTRIBUTING.md, CODE_OF_CONDUCT.md
+   and SUPPORT.md from this section -- they do not exist on main yet, so they
+   are deliberately not linked.
 
 .. toctree::
    :hidden:
 
    Home page <self>
    Controlling parallelism <parallelism>
-   API Reference <autoapi/index>
    Notebooks <notebooks>
+   API Reference <autoapi/index>
+   Developer guide <dev_guide>
