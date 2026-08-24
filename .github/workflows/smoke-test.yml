@@ -23,6 +23,11 @@ jobs:
         python-version: ['3.11', '3.12']
 
     runs-on: ${{ matrix.os }}
+    # Cap the job so a hung network fetch cannot burn hours (issue #388). Run
+    # 32624442399 on 2026-08-23 ran 2h21m before failing on a ConnectTimeout to
+    # ssd.jpl.nasa.gov; testing-and-coverage.yml already had this cap, this
+    # workflow did not.
+    timeout-minutes: 40
     steps:
     - uses: actions/checkout@v7
     - name: Set up - ${{ matrix.os }} - Python ${{ matrix.python-version }}
@@ -51,5 +56,7 @@ jobs:
         pip list
     - name: Run unit tests with pytest
       run: |
-        # -rs surfaces skipped tests + reasons in the CI log (issue #359).
-        python -m pytest -n auto -rs
+        # -rsfE surfaces skipped tests + reasons (issue #359) while KEEPING pytest's
+        # default failure/error listing. Plain -rs replaces -rfE rather than adding
+        # to it, so failures never appeared in the log.
+        python -m pytest -n auto -rsfE
