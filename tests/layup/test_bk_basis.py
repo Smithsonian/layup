@@ -140,7 +140,9 @@ def test_velocity_is_time_derivative_of_position(case):
             alpha + alpha_rate * t,
             beta + beta_rate * t,
             gamma + gamma_rate * t,
-            adot, bdot, gdot,
+            adot,
+            bdot,
+            gdot,
         )
         return np.asarray(bk_to_cartesian(state, fid)).flatten()[:3]
 
