@@ -21,7 +21,7 @@ dependencies = [
     "astropy",
     "pooch",
     "tqdm",
-    "sorcha @ git+https://github.com/dirac-institute/sorcha.git",
+    "sorcha>=1.2.0",
     "assist",
     "rebound",
     "pybind11",
@@ -31,7 +31,6 @@ dependencies = [
     "dash",
     "dash-daq",
     "dash-ag-grid",
-    "pytest"
 ]
 
 [project.scripts]
