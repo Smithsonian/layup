@@ -45,6 +45,12 @@ requires_ephem = pytest.mark.skipif(
 # 98 ASSIST-integrated cases in one JSON file keyed by case stem. Each case
 # carries only the fields the BK suites read: sigma_arcsec, epoch_jd_tdb,
 # truth_state_at_epoch, and per-observation {ra, dec, jd_tdb, observer_state_AU}.
+#
+# The file really does hold all 98. It briefly held only 10, which was not
+# visible from here -- this comment still said 98 -- and any test naming a case
+# outside that subset failed with a bare KeyError rather than a skip. Regenerate
+# it from the diagnostic scan with the trimming above if it is ever rebuilt, and
+# check that every previously-shipped case round-trips unchanged.
 DIAGNOSTIC_SCAN = Path(__file__).resolve().parents[1] / "data" / "bk_scan_truth.json"
 DIAGNOSTIC_AVAILABLE = DIAGNOSTIC_SCAN.is_file()
 
