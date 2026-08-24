@@ -11,6 +11,9 @@ class LayupLogger:
     3) layup-<datetime>.err depending on the log level. See the `_prepare_logger`
     method for details about which levels are sent to which handlers.
 
+    The .err file is created lazily: it appears only if something is actually
+    logged at ERROR or above, so a clean run does not leave an empty one.
+
     LayupLogger is intended to be used in one of two ways in general. Either
     instantiated within the `execute()` function in one of the layup_cmdline verbs
     or as a context manager when calling the API directly.
@@ -118,8 +121,10 @@ class LayupLogger:
         file_handler_info.setFormatter(formatter)
         file_handler_info.setLevel(logging.DEBUG)
 
-        # File handler that will record all messaged >= ERROR
-        file_handler_error = logging.FileHandler(log_file_error)
+        # File handler that will record all messaged >= ERROR.
+        # delay=True defers creating the file until a record is actually emitted,
+        # so a run that logs nothing at ERROR leaves no empty .err behind (#481).
+        file_handler_error = logging.FileHandler(log_file_error, delay=True)
         file_handler_error.setFormatter(formatter)
         file_handler_error.setLevel(logging.ERROR)
 
