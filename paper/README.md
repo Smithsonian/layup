@@ -3,6 +3,23 @@
 `paper.md` and `paper.bib` are the JOSS submission, in the layout JOSS expects
 (a `paper/` directory, with the bibliography named in the frontmatter).
 
+## Building the PDF
+
+Every push or pull request touching `paper/` runs `.github/workflows/draft-paper.yml`,
+which compiles this paper with **Open Journals' own action** — the same pipeline JOSS
+uses — and uploads the result as a build artifact named `paper`. Download it from the
+run's summary page to read the typeset version.
+
+It can also be run on demand from the Actions tab (`workflow_dispatch`), to produce a
+PDF for circulation without editing anything.
+
+A failure there is a failure JOSS would hit too: the paper not building, the
+frontmatter not parsing, or a citation that does not resolve against `paper.bib`. It
+does not check scientific content.
+
+The PDF is deliberately **not** committed — it is derived, and a binary that changes
+on every edit makes for poor diffs.
+
 ## ⚠️ The bibliography exists in more than one place
 
 `paper.bib` here is the same bibliography used by the companion AJ/PSJ paper,
