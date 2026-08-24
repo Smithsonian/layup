@@ -23,22 +23,27 @@ author ("Bhrigu" rather than "Bharat"). The DOI always resolved, so every
 automated check passed and nothing looked wrong. It was corrected in both copies
 on 2026-08-24, verified against Crossref.
 
-## ⚠️ Author-name discrepancy with the AJ paper
+## Author names — resolved 2026-08-24
 
-The two papers carry the same 18 authors in the same order, but two names differ:
+The JOSS paper carried "Thomas Ruch" and "Carrie Holt" while the AJ paper had
+"Thomas R. Ruch" and "Carrie E. Holt". Both now use the initialled forms, so the
+two papers agree exactly: same 18 authors, same order.
 
-| | JOSS (`paper.md`) | AJ (`aj_paper.tex`) | ORCID record |
-|---|---|---|---|
-| 17 | Thomas Ruch | Thomas R. Ruch | Thomas Ruch |
-| 18 | Carrie Holt | Carrie E. Holt | Carrie Holt |
+The evidence, from Crossref:
 
-The JOSS form matches the ORCID records; the AJ form was entered later and adds
-middle initials. Every other author uses a middle initial where they have one, so
-the JOSS entries also look inconsistent beside their co-authors.
+- **Carrie E. Holt** — clear. Six of nine recent works use the initialled form,
+  including **all four that carry her ORCID** (RNAAS 2026, PSJ 2026, ApJL 2026,
+  ApJL 2025, PSJ 2025). The variants are all ORCID-less journal-style differences
+  ("C. Holt" in Icarus, "Carrie E Holt" in MNRAS).
+- **Thomas R. Ruch** — thinner. Only two publications, one each way: PSJ 2026
+  (*heliostack*) as "Thomas R. Ruch", ApJL 2025 as "Thomas Ruch". Chosen on two
+  weak tiebreakers — it is the more recent, and it is the same collaboration that
+  brings him onto this paper. ⚠️ **Worth confirming with him**; the default is
+  defensible but rests on two data points.
 
-**Deliberately not resolved here** — how someone's name appears in print is theirs
-to choose. Ask both authors which form they want and make the two papers agree
-before either is submitted.
+Note that both ORCID *records* give the shorter forms. That is the name each typed
+into a profile, not the name they publish under, so it is not the authority for
+how a byline should read.
 
 ## Before submission
 

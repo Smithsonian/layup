@@ -54,10 +54,10 @@ authors:
   - name: Colin Orion Chandler
     orcid: 0000-0001-7335-1715
     affiliation: "3,7"
-  - name: Thomas Ruch
+  - name: Thomas R. Ruch
     orcid: 0000-0003-0403-0891
     affiliation: "14"
-  - name: Carrie Holt
+  - name: Carrie E. Holt
     orcid: 0000-0002-4043-6445
     affiliation: "15"
 affiliations:
