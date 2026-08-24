@@ -111,7 +111,7 @@ The Vera C. Rubin Observatory's Legacy Survey of Space and Time (LSST) is under 
 
 # Statement of Need
 
-The LSST [@ivezic2019] is expected to discover ~5 million new small bodies, an order of magnitude more objects than are known today in nearly all of the solar system's small body reservoirs. Fitting orbits for this enormous data set is essential to LSST solar system science. Discovery and orbital classification are the top priorities in the LSST Solar System Science Collaboration's (SSSC's) Roadmap [@schwamb2019], but there is no orbit fitting package that can support the needs of the planetary community in the Rubin era. Three widely used open-source packages exist --- Find_orb [@findorb], OpenOrb [@granvik2009], and OrbFit [@orbfit] --- but each has limitations.  None is written for Python-based, LSST-scale pipelines.  Neither OrbFit nor OpenOrb matched JPL Horizons in detailed comparisons [@giorgini1996; @chernyavskaya2021], and none handles the bound-to-unbound transition, i.e., interstellar objects [@chernyavskaya2021].  A more recent open-source package, GRSS [@makadia2025], provides small-body propagation and orbit determination in Python with a C++ core, but is oriented toward planetary defense --- high-fidelity trajectories and impact monitoring for individual objects --- rather than the LSST-scale survey processing that `Layup` targets.
+The LSST [@ivezic2019] is expected to discover ~5 million new small bodies, an order of magnitude more objects than are known today in nearly all of the solar system's small body reservoirs. Fitting orbits for this enormous data set is essential to LSST solar system science. Discovery and orbital classification are the top priorities in the LSST Solar System Science Collaboration's (SSSC's) Roadmap [@schwamb2019], but there is no orbit fitting package that can support the needs of the planetary community in the Rubin era. Three widely used open-source packages exist --- Find_orb [@findorb], OpenOrb [@granvik2009], and OrbFit [@orbfit] --- but each has limitations.  None is designed as a Python-native library for LSST-scale batch processing.  Neither OrbFit nor OpenOrb matched JPL Horizons [@giorgini1996] in detailed comparisons [@chernyavskaya2021], and none handles the bound-to-unbound transition, i.e., interstellar objects [@chernyavskaya2021].  A more recent open-source package, GRSS [@makadia2025], provides small-body propagation and orbit determination in Python with a C++ core, but is oriented toward planetary defense --- high-fidelity trajectories and impact monitoring for individual objects --- rather than the LSST-scale survey processing that `Layup` targets.
 
 Some of the most exciting science from Rubin involves the results from shifting and stacking numerous exposures with KBMOD [@whidden2019; @smotherman2021] or heliostack [@napier2026]. The source detections from shift-and-stack routines are the combination of a position (RA/Dec) and corresponding rates. However, no orbit fitting routines use that combination as their primary input. As a result, people resort to synthesizing tracklets from the shift-and-stack sources. This not only necessitates an additional processing step but can introduce correlated astrometric errors.
 
@@ -122,19 +122,52 @@ The `Layup` orbit fitting package fills this need.
 
 # Functionality
 
-The `Layup` orbit fitting package is built on the ASSIST small body integration package [@holman2023], which itself uses REBOUND's framework [@rein2012] and its IAS15 integrator [@rein2015]. ASSIST includes all the terms in the equations of motion, and its results match JPL Horizons predictions to high precision.
-Orbit fitting is essentially the process of minimizing the chi-square or log-likelihood function between the set of observed sky-plane positions and those predicted by an ephemeris model. ASSIST provides the partial derivatives of the observables with respect to the orbit parameters, to support the minimization process.
+The `Layup` orbit fitting package is built on the ASSIST small body integration package [@holman2023], which itself uses REBOUND's framework [@rein2012] and its IAS15 integrator [@rein2015]. ASSIST includes the terms needed for ephemeris-quality accuracy --- planetary and major-asteroid perturbations, general-relativistic corrections, and solar oblateness --- and its results match JPL Horizons predictions to high precision.
+Orbit fitting is essentially the process of minimizing the chi-square (equivalently, maximizing the log-likelihood) between the set of observed sky-plane positions and those predicted by an ephemeris model. ASSIST provides the partial derivatives of the observables with respect to the orbit parameters, to support the minimization process.
 
 `Layup` can ingest and fit optical astrometry, shift-and-stack observations, radar range and Doppler (two-leg light time) measurements, and observations from space-based platforms.
 
 Fitting begins with initial orbit determination (IOD), which produces a preliminary orbit from a short arc of observations as a starting point for the full fit. `Layup` includes two IOD methods: Gauss's method and a Bernstein-Khushalani linear fit for distant objects, with automatic selection.  Additional IOD methods can be easily incorporated.
 
-Starting from this initial estimate, `Layup` differentially corrects the orbit with a full least-squares fit to all of the observations, using either of two parameterizations: a 6-parameter barycentric, equatorial, Cartesian state, or a Bernstein-Khushalani basis that also supports energy-constrained 5-parameter fits. Both share the same internal numerical-integration and observation-modeling framework, written in C++. In addition, `Layup` supports incremental (sequential) orbit determination, which incorporates new observations into existing orbital solutions, reproducing the accuracy of full fits in an order of magnitude less time.  This is crucial for LSST, which delivers new astrometry nightly for millions of objects.
+Starting from this initial estimate, `Layup` differentially corrects the orbit with a full least-squares fit to all of the observations, in either of two parameterizations: a barycentric, equatorial, Cartesian state, or a Bernstein-Khushalani basis. Both have six parameters and share the same internal numerical-integration and observation-modeling framework, written in C++. In addition, `Layup` supports incremental (sequential) orbit determination, which incorporates new observations into existing orbital solutions, reproducing the accuracy of full fits in an order of magnitude less time.  This is crucial for LSST, which delivers new astrometry nightly for millions of objects.
 
 The fits can include terms for non-gravitational accelerations, via the Marsden A1/A2/A3 model [@marsden1973].  The radial dependence can be configured to span both asteroidal and cometary laws.  The amplitudes can also be fit per apparition.
 
 Every fit returns a full 6×6 covariance, propagated consistently through ephemeris predictions, using variational particles in REBOUND/ASSIST.  We use JAX-based automatic differentiation for the Jacobians of the orbital-element and frame conversions.  This enables rigorous uncertainty ellipses, which in turn support attribution and linking.
 
+
+<!-- EDITORIAL, STILL OPEN (2026-08-24) -- these need prose, not corrections, so they
+are recorded rather than done.
+
+1. LENGTH. The body runs ~1700 words against JOSS's 250-1000 guidance. Longer papers
+   are accepted, but it is the first thing an editor remarks on. The trim is the
+   Summary/Functionality overlap: both list the ingest formats, both list the two
+   parameterizations, both introduce IOD (defining the acronym twice), and both state
+   that every fit returns a full covariance. Cutting the duplication fixes the count
+   and reads better.
+
+2. STATE OF THE FIELD. adam_core / THOR (Asteroid Institute) is the closest competitor
+   to the niche claimed here -- open-source Python orbit determination at survey scale
+   -- and is not mentioned. Two of its principals (Moeyens, Juric) are co-authors,
+   which makes the omission more conspicuous, not less. One sentence placing Layup
+   relative to it would close the checklist item cleanly.
+
+3. UNSUBSTANTIATED QUANTITATIVE CLAIMS. Two, and a reviewer can check neither:
+   - Validation: re-fitting the MPC catalog "reproducing the reference orbits ... to
+     about one part in 10^8". Nothing in the repository demonstrates this. Note also
+     that test_real_data_validation.py documents ~4e-7 relative agreement in position
+     against Horizons -- a different metric, but the paper should say which, or it
+     reads as a 40x overstatement.
+   - Functionality: incremental OD "in an order of magnitude less time". No benchmark
+     exists; benchmarks/README.md lists the matching one as planned.
+   Either point them at the AJ companion paper / a deposited artifact, or soften them
+   to what the repository can demonstrate.
+
+4. BIBLIOGRAPHY. veres2017 and the two Anthropic entries are cited by neither paper.
+   JOSS prefers a tight list. If the Anthropic entries were meant to satisfy the AAS
+   "acknowledge AND cite" requirement, they do not currently -- the disclosure names
+   the tools in prose without citing them.
+-->
 
 <!-- CAPABILITIES SPEC (2026-07-23, verified vs ~/layup-419; stripped by the build).
 Meg's review: a few sentences on capabilities beyond orbit fitting.  Facts only.
