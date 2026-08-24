@@ -806,8 +806,10 @@ def _pick_best_root(candidates, min_r_au):
     """Pick the best converged candidate from a list of LM results.
 
     "Best" means smallest χ² among candidates that
-      (1) report flag == 0 (LM converged), and
-      (2) have heliocentric distance > min_r_au (physical orbit).
+
+    1. report ``flag == 0`` (LM converged), and
+    2. have heliocentric distance > ``min_r_au`` (physical orbit).
+
     Returns None if no candidate satisfies (1); in that case the caller
     typically retries at a larger LM budget. If (1) is met but (2)
     isn't, the smallest-χ² convergent root is still returned (better
