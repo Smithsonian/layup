@@ -152,7 +152,7 @@ Meg's review: a few sentences on capabilities beyond orbit fitting.  Facts only.
    write "barycentric" pending layup#447.
 Deferred, unrelated: the 5-parameter/energy-prior BK line -> layup#445.
 -->
-Ephemeris predictions with `Layup` are highly efficient, using ASSIST's ability to integrate once and interpolate to many epochs and observatory locations. `Layup` also includes utilities for orbital element conversions, as well as known-object attribution. Finally, `Layup` includes an extensive command-line interface and a Python API.
+Ephemeris predictions with `Layup` are highly efficient, using ASSIST's ability to integrate once and interpolate to many epochs and observatory locations. `Layup` also includes utilities for orbital element conversions. Finally, `Layup` includes an extensive command-line interface and a Python API.
 
 
 # Validation
