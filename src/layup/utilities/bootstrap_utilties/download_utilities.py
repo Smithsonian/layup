@@ -159,6 +159,15 @@ def _decompress(fname: str, action: str, pup: pooch.Pooch) -> None:  # pragma: n
     if os.path.splitext(fname)[-1] in tar_extentions:
         print(f"Trying to decompress tar file: {fname}")
         pooch.Untar(extract_dir=".").__call__(fname, action, pup)
+        # Remove the archive once its contents are extracted (issue #436).  The
+        # debiasing tarball is ~156 MB and pooch keeps it alongside the extracted
+        # data, so leaving it roughly doubles that part of the cache for no benefit
+        # -- nothing reads the archive again.  Failure to remove it is not worth
+        # aborting a bootstrap over, so this is best-effort.
+        try:
+            os.remove(fname)
+        except OSError as exc:  # pragma: no cover - filesystem-dependent
+            print(f"Could not remove the extracted archive {fname}: {exc}")
 
 
 def _remove_files(aux_config: AuxiliaryConfigs, retriever: pooch.Pooch) -> None:
