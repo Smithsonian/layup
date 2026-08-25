@@ -41,7 +41,6 @@ def main():
         "   comet          determine original orbits for comets\n"
         "   unpack         unpack a covariance matrix into uncertainties\n"
         "   demo           run demonstrations of the other verbs\n"
-        "   log            configure logging\n"
         "\n"
         "To get more information, run the verb with --help. For example:\n\n"
         "   layup orbitfit --help\n"
