@@ -18,7 +18,7 @@ authors:
     affiliation: "1"
   - name: Pedro H. Bernardinelli
     orcid:  0000-0003-0743-9422
-    affiliation: "3,4
+    affiliation: "3,4"
   - name: Ryan R. Lyttle
     orcid:  0009-0007-8602-2954
     affiliation: "2"
