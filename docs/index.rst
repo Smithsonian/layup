@@ -7,24 +7,33 @@
 
 ========================================================================================
 
-**Layup** is an open-source package for orbit determination at the scale of the
-Vera C. Rubin Observatory's Legacy Survey of Space and Time (LSST). It is a
-companion to the `Sorcha <https://sorcha.readthedocs.io>`_ survey simulator.
+.. This paragraph is M.J.H.'s, taken from the Layup paper's Summary. Keep the two
+   in step: if the paper's summary changes, change this with it. The only edits
+   made here were dropping the paper's citation keys and setting Layup in RST
+   literal markup.
 
-Layup is built on REBOUND/ASSIST for ephemeris-quality numerical integrations,
-with a C++ engine behind a Python command-line interface and API. It can ingest
+The Vera C. Rubin Observatory's Legacy Survey of Space and Time (LSST) is under
+way. The LSST is expected to raise the number of known solar system objects in
+the Minor Planet Center's catalogs to roughly 127,000 near-Earth objects (NEOs),
+5.1 million main-belt asteroids (MBAs), 1200–2000 Centaurs, and 37,000
+trans-Neptunian objects (TNOs) — a four- to nine-fold increase over the currently
+known populations. The solar system community needs efficient tools to maximize
+the scientific yield of the survey.
 
-* optical astrometry in obs80 and ADES formats,
-* radar range and Doppler measurements,
-* streak (position + rate) measurements from shift-and-stack surveys, and
-* observations from space-based platforms,
-
-and it fits all of them with the same machinery. Layup offers two orbit
-parameterizations — a six-parameter Cartesian state and a Bernstein-Khushalani
-basis of distance-scaled parameters in a local tangent-plane frame — and can fit
-both gravitational and non-gravitational accelerations. Every fit reports a full
-state covariance, which Layup propagates through element and frame conversions
-and through ephemeris predictions, to support attribution and linking.
+``Layup`` is an open-source package for orbit determination at LSST scale that
+serves as a companion to the `Sorcha <https://sorcha.readthedocs.io>`_ survey
+simulator. ``Layup`` is built on REBOUND/ASSIST for ephemeris-quality numerical
+integrations, with a C++ engine and a Python command-line interface and API. It
+can ingest astrometry in obs80 and ADES formats, as well as radar range and
+Doppler observations, streak (position + rate) measurements from shift-and-stack
+surveys, and space-based observations. ``Layup`` provides two orbit
+parameterizations — a 6-parameter Cartesian state and a Bernstein-Khushalani
+basis (distance-scaled parameters in a local tangent-plane reference frame) — and
+can fit both gravitational and non-gravitational accelerations. Gauss and
+Bernstein-Khushalani initial orbit determination (IOD) are included, and
+additional IOD methods can be added easily. Every ``Layup`` fit reports a full
+state covariance, which it propagates through element and frame conversions and
+through ephemeris predictions to support attribution and linking.
 
 
 Installation
