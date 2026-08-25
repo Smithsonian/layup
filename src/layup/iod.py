@@ -118,7 +118,7 @@ register_iod("gauss", gauss_iod)
 def _passes_physical_bounds(candidate, min_r_au: float = _MIN_R_AU, max_r_au: float = _MAX_R_AU) -> bool:
     """Cheap algebraic feasibility check on an IOD candidate state.
 
-    Rejects candidates with non-positive r² or |r| outside [min, max]
+    Rejects candidates with non-positive r² or ``|r|`` outside [min, max]
     AU. Deliberately does *not* reject hyperbolic-looking velocities:
     Gauss's velocity can be wildly wrong even for the correct
     geometric root, and LM walks those to convergence routinely.
@@ -155,7 +155,7 @@ def _predict_rho_hat(ephem, state, state_epoch, obs):
 
 
 def _inertial_min_geocentric_AU(state, state_epoch, observations) -> float:
-    """Smallest |candidate - observer| over the observation arc, treating
+    """Smallest ``|candidate - observer|`` over the observation arc, treating
     candidate motion as inertial (position + velocity·Δt).
 
     Used to detect candidates whose trajectory passes close to Earth (or

@@ -27,7 +27,8 @@ from layup.utilities.layup_configs import AuxiliaryConfigs
 
 
 def _split_kernel_path_str(abspath: str, split=77):
-    """If abspath string is longer than 77 chars, split it up in the meta kernel by inserting "+',\n'".
+    r"""If abspath string is longer than 77 chars, split it up in the meta kernel by inserting "+',\n'".
+
     77 is the default because the character limit in SPICE is 80 before the string needs split.
 
     Parameters
@@ -36,10 +37,11 @@ def _split_kernel_path_str(abspath: str, split=77):
         The filepath string that needs split.
     Split : int
         The maximum size each part of the filepath can be before it needs split.
+
     Returns
-    ---------
+    -------
     abspath : str
-    The filepath string split into chunks of required size.
+        The filepath string split into chunks of required size.
     """
 
     n_iter = int(len(str(abspath)) / split)  # Number of splits required

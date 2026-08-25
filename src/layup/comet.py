@@ -318,24 +318,24 @@ def comet_cli(
     """
     Determines original orbit for comets with support for parallel processing.
 
-     Note that the output file will be written in the caller's current working directory.
+    Note that the output file will be written in the caller's current working directory.
 
-     Parameters
-     ----------
-     input : str
-         The path to the input file.
-     output_file_stem : str
-         The stem of the output file.
-     file_format : str, optional (default="csv")
-         The format of the output file. Must be one of: "csv", "hdf5"
-     chunk_size : int, optional (default=10_000)
-         The number of rows to read in at a time.
-     num_workers : int, optional (default=-1)
-         The number of workers to use for parallel processing of the individual
-         chunk. If -1, the number of workers will be set to the number of CPUs on
-         the system.
-     cli_args : argparse, optional (default=None)
-         The argparse object that was created when running from the CLI.
+    Parameters
+    ----------
+    input : str
+        The path to the input file.
+    output_file_stem : str
+        The stem of the output file.
+    file_format : str, optional (default="csv")
+        The format of the output file. Must be one of: "csv", "hdf5"
+    chunk_size : int, optional (default=10_000)
+        The number of rows to read in at a time.
+    num_workers : int, optional (default=-1)
+        The number of workers to use for parallel processing of the individual
+        chunk. If -1, the number of workers will be set to the number of CPUs on
+        the system.
+    cli_args : argparse, optional (default=None)
+        The argparse object that was created when running from the CLI.
     """
 
     input_file = Path(input)

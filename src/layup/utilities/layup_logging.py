@@ -17,31 +17,33 @@ class LayupLogger:
 
     Example 1 - LayupLogger in a command line verb
     (See layup_cmdline/log.py for a working example)
-    ```
-    def execute():
-        from layup.utilities.layup_logging import LayupLogger
 
-        layup_logger = LayupLogger()
+    .. code-block:: python
 
-        # Create a child logger. NOTE - that the name starts with "layup.<blah>"
-        # Failure to specify a name with that form could result in lost logs.
-        logger = layup_logger.get_logger("layup.log_cmdline")
+        def execute():
+            from layup.utilities.layup_logging import LayupLogger
 
-        logger.info("Sending a log message.")  # Use the logger
-    ```
+            layup_logger = LayupLogger()
+
+            # Create a child logger. NOTE - that the name starts with "layup.<blah>"
+            # Failure to specify a name with that form could result in lost logs.
+            logger = layup_logger.get_logger("layup.log_cmdline")
+
+            logger.info("Sending a log message.")  # Use the logger
 
     Example 2 - LayupLogger in a context manager
     This would likely be the usage within a Jupyter notebook
-    ```
-    from layup.utilities.layup_logging import LayupLogger
 
-    with LayupLogger() as layup_logger:
-        # Create a child logger. NOTE - that the name starts with "layup.<blah>"
-        # Failure to specify a name with that form could result in lost logs.
-        logger = layup_logger.get_logger("layup.interactive")
+    .. code-block:: python
 
-        logger.info("Sending a log message from a notebook.")
-    ```
+        from layup.utilities.layup_logging import LayupLogger
+
+        with LayupLogger() as layup_logger:
+            # Create a child logger. NOTE - that the name starts with "layup.<blah>"
+            # Failure to specify a name with that form could result in lost logs.
+            logger = layup_logger.get_logger("layup.interactive")
+
+            logger.info("Sending a log message from a notebook.")
     """
 
     def __init__(self, log_directory="."):
