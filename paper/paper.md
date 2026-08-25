@@ -18,42 +18,42 @@ authors:
     affiliation: "1"
   - name: Pedro H. Bernardinelli
     orcid:  0000-0003-0743-9422
-    affiliation: "3,13"
+    affiliation: "3,4
   - name: Ryan R. Lyttle
     orcid:  0009-0007-8602-2954
     affiliation: "2"
   - name: Joseph Murtagh
     orcid: 0000-0001-9505-1131
-    affiliation: "2"
+    affiliation: "3"
   - name: Adam Wilson
     affiliation: "2"
   - name: Hanno Rein
     orcid: 0000-0003-1927-731X
-    affiliation: "9,10,11,12"
+    affiliation: "5,6,7,8"
   - name: Drew Oldag
     orcid:  0000-0001-6984-8411
-    affiliation: "3,7"
+    affiliation: "3,9"
   - name: Maxine West
     orcid: 0009-0003-3171-3118
-    affiliation: "3,7"
+    affiliation: "3,9"
   - name: Wilson Beebe
     orcid: 0009-0003-1791-8707
-    affiliation: "3"
+    affiliation: "3,9"
   - name: Mario Jurić
     orcid:  0000-0003-1996-9252
     affiliation: "3"
   - name: Siegfried Eggl
     orcid:  0000-0002-1398-6302
-    affiliation: "4,5,6"
+    affiliation: "10,11,12"
   - name: Rahil Makadia
     orcid: 0000-0001-9265-2230
-    affiliation: "4"
+    affiliation: "10"
   - name: Joachim Moeyens
     orcid: 0000-0001-5820-3925
-    affiliation: "8,3"
+    affiliation: "8,13"
   - name: Colin Orion Chandler
     orcid: 0000-0001-7335-1715
-    affiliation: "3,7"
+    affiliation: "3,9"
   - name: Thomas R. Ruch
     orcid: 0000-0003-0403-0891
     affiliation: "14"
@@ -67,25 +67,25 @@ affiliations:
    index: 2
  - name: DiRAC Institute and the Department of Astronomy, University of Washington, 3910 15th Ave NE, Seattle, WA 98195, USA
    index: 3
- - name: Department of Aerospace Engineering, Grainger College of Engineering, University of Illinois at Urbana-Champaign,Urbana, IL 61801, USA
-   index: 4
- - name: Department of Astronomy, University of Illinois at Urbana-Champaign, Urbana, IL 61801, USA
-   index: 5
- - name: National Center for Supercomputing Applications, University of Illinois at Urbana-Champaign, Urbana, IL 61801, USA
-   index: 6
- - name: LSST Interdisciplinary Network for Collaboration and Computing Frameworks, 933 N. Cherry Avenue, Tucson, AZ 8572, USA
-   index: 7
- - name: Asteroid Institute, 20 Sunnyside Ave., Suite 427, Mill Valley, CA 94941, USA
-   index: 8
- - name: Department of Physical and Environmental Sciences, University of Toronto at Scarborough, Toronto, Ontario, M1C 1A4, Canada
-   index: 9
- - name: Department of Astronomy and Astrophysics, University of Toronto, Toronto, Ontario, M5S 3H4, Canada
-   index: 10
- - name: Department of Computer Science, University of Toronto, 40 St. George Street, Toronto, Ontario, M5S 2E4, Canada
-   index: 11
- - name: Department of Physics, University of Toronto, Toronto, Ontario, M5S 3H4, Canada
-   index: 12
  - name: Departamento de Astronomia, Instituto de Astronomia, Geofísica e Ciências Atmosféricas, Universidade de São Paulo, 05508-090, São Paulo, SP, Brazil
+   index: 4
+ - name: Department of Physical and Environmental Sciences, University of Toronto at Scarborough, Toronto, Ontario, M1C 1A4, Canada
+   index: 5
+ - name: Department of Astronomy and Astrophysics, University of Toronto, Toronto, Ontario, M5S 3H4, Canada
+   index: 6
+ - name: Department of Computer Science, University of Toronto, 40 St. George Street, Toronto, Ontario, M5S 2E4, Canada
+   index: 7
+ - name: Department of Physics, University of Toronto, Toronto, Ontario, M5S 3H4, Canada
+   index: 8
+ - name: LSST Interdisciplinary Network for Collaboration and Computing Frameworks, 933 N. Cherry Avenue, Tucson, AZ 8572, USA
+   index: 9
+ - name: Department of Aerospace Engineering, Grainger College of Engineering, University of Illinois at Urbana-Champaign,Urbana, IL 61801, USA
+   index: 10
+ - name: Department of Astronomy, University of Illinois at Urbana-Champaign, Urbana, IL 61801, USA
+   index: 11
+ - name: National Center for Supercomputing Applications, University of Illinois at Urbana-Champaign, Urbana, IL 61801, USA
+   index: 12
+ - name: Asteroid Institute, 20 Sunnyside Ave., Suite 427, Mill Valley, CA 94941, USA
    index: 13
  - name: University of Michigan, Ann Arbor, MI 48109, USA
    index: 14
@@ -195,15 +195,13 @@ We cross-validate `Layup`'s results against those from JPL Horizons across a wid
 
 # Acknowledgements
 
-M.J.H. and M.E.S. acknowledge support from the LSST Discovery Alliance (LSST-DA) through LINCC Frameworks Incubator grants 2025-SFF-LFI-10-Holman and 2025-SFF-LFI-11-Schwamb. LINCC Frameworks is supported by Schmidt Sciences, a philanthropic initiative founded by Eric and Wendy Schmidt, as part of the Virtual Institute of Astrophysics (VIA). M.E.S. acknowledges support in part from UK Science and Technology Facilities Council (STFC) grants ST/V000691/1 and ST/X001253/1. M.J. and P.H.B. acknowledge the support from the University of Washington College of Arts and Sciences, Department of Astronomy, and the DiRAC (Data-intensive Research in Astrophysics and Cosmology) Institute. The DiRAC Institute is supported through generous gifts from the Charles and Lisa Simonyi Fund for Arts and Sciences and the Washington Research Foundation. H. R. acknowledges support by the Natural Sciences and Engineering Research Council (NSERC) Discovery Grant RGPIN-2020-04513. M.J. wishes to acknowledge the support of the Washington Research Foundation Data Science Term Chair fund, and the University of Washington Provost's Initiative in Data-Intensive Discovery. J. Murtagh acknowledges support from the Department for the Economy (DfE) Northern Ireland postgraduate studentship scheme and travel support from the STFC for UK participation in LSST through grant ST/S006206/1. S.E. acknowledges support from the National Science Foundation through the following awards: Collaborative Research: SWIFT-SAT: Minimizing Science Impact on LSST and Observatories Worldwide through Accurate Predictions of Satellite Position and Optical Brightness NSF Award Number: 2332736 and Collaborative Research: Rubin Rocks: Enabling near-Earth asteroid science with LSST NSF Award Number: 2307570. R.R.L. was supported by the UK STFC grant ST/V506990/1. A. Wilson's studentship is funded under STFC grant UKRI177. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect the views of the National Science Foundation.
+M.J.H. and M.E.S. acknowledge support from the LSST Discovery Alliance (LSST-DA) through LINCC Frameworks Incubator grants 2025-SFF-LFI-10-Holman, 2025-SFF-LFI-11-Schwamb, and 2023-SFF-LFI-01-Schwamb. LINCC Frameworks is supported by Schmidt Sciences, a philanthropic initiative founded by Eric and Wendy Schmidt, as part of the Virtual Institute of Astrophysics (VIA). M.E.S. acknowledges support in part from UK Science and Technology Facilities Council (STFC) grants ST/V000691/1 and ST/X001253/1. M.E.S. also acknowledges travel support provided by STFC for UK participation in LSST through grant ST/X001334/1. M.J., P.H.B., and  J. Murtagh  acknowledge the support from the University of Washington College of Arts and Sciences, Department of Astronomy, and the DiRAC (Data-intensive Research in Astrophysics and Cosmology) Institute. The DiRAC Institute is supported through generous gifts from the Charles and Lisa Simonyi Fund for Arts and Sciences and the Washington Research Foundation. H. R. acknowledges support by the Natural Sciences and Engineering Research Council (NSERC) Discovery Grant RGPIN-2020-04513. M.J. wishes to acknowledge the support of the Washington Research Foundation Data Science Term Chair fund, and the University of Washington Provost's Initiative in Data-Intensive Discovery. S.E. acknowledges support from the National Science Foundation through the following awards: Collaborative Research: SWIFT-SAT: Minimizing Science Impact on LSST and Observatories Worldwide through Accurate Predictions of Satellite Position and Optical Brightness NSF Award Number: 2332736 and Collaborative Research: Rubin Rocks: Enabling near-Earth asteroid science with LSST NSF Award Number: 2307570. R.R.L. was supported by the UK STFC grant ST/V506990/1. A. Wilson's studentship is funded under STFC grant UKRI177. C.E.H. acknowledges support by the LSST-DA Catalyst Fellowship, made possible through the support of Grant 62192 from the John Templeton Foundation to LSST-DA. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect the views of the National Science Foundation.
 
-This work was also supported via the Preparing for Astrophysics with LSST Program, funded by the Heising Simons Foundation through grant 2021-2975, and administered by Las Cumbres Observatory.
+This work was supported in part by the LSST Discovery Alliance Enabling Science grants program, the B612 Foundation, the University of Washington's DiRAC Institute, the Planetary Society, Karman+, and Breakthroughh List through generous support of the LSST Solar System Readiness and LSST Solar System First Data Sprints. Breakthrough Listen is managed by the Breakthrough Initiatives, sponsored by the Breakthrough Prize Foundation. 
 
-This work was supported in part by the LSST Discovery Alliance Enabling Science grants program, the B612 Foundation, the University of Washington's DiRAC Institute, the Planetary Society, Karman+, and Adler Planetarium through generous support of the LSST Solar System Readiness Sprints.
+This research has made use of NASA’s Astrophysics Data System Bibliographic Services. This research has made use of the Science Explorer, funded by NASA under Cooperative Agreement 80NSSC21M00561. This research has made use of data and/or services provided by the International Astronomical Union's Minor Planet Center (MPC). Data from the MPC's database is made freely available to the public. Funding for this data and the MPC's operations comes from a NASA PDCO grant (80NSSC22M0024), administered via a University of Maryland - SAO subaward (106075-Z6415201). The MPC's computing equipment is funded in part by the above award, and in part by funding from the Tamkin Foundation. We acknowledge the B612 Foundation's Asteroid Institute for providing accessible catalogs of the MPC records for Rubin Observatory small body submissions [@koumjian_2025_17047589]. The SPICE Resource files used in this work are described in [@acton1996; @acton2018]. This work made use of Astropy (http://www.astropy.org), a community-developed core Python package and an ecosystem of tools and resources for astronomy [@astropy2013; @astropy2018; @astropy2022].
 
-This research has made use of NASA’s Astrophysics Data System Bibliographic Services. This research has made use of data and/or services provided by the International Astronomical Union's Minor Planet Center. The SPICE Resource files used in this work are described in [@acton1996; @acton2018]. This work made use of Astropy (http://www.astropy.org), a community-developed core Python package and an ecosystem of tools and resources for astronomy [@astropy2013; @astropy2018; @astropy2022].
-
-This material or work is supported in part by the National Science Foundation through Cooperative Agreement AST-1258333 and Cooperative Support Agreement AST1836783 managed by the Association of Universities for Research in Astronomy (AURA), and the Department of Energy under Contract No. DE-AC02-76SF00515 with the SLAC National Accelerator Laboratory managed by Stanford University.
+This material or work is supported in part by the National Science Foundation through Cooperative Agreement AST-1258333 and Cooperative Support Agreement AST1836783 managed by the Association of Universities for Research in Astronomy (AURA), and the Department of Energy under Contract No. DE-AC02-76SF00515 with the SLAC National Accelerator Laboratory managed by Stanford University. This research uses services or data provided by the Rubin Science Platform at NSF-DOE Vera C. Rubin Observatory, which is jointly funded by the U.S. National Science Foundation and the U.S. Department of Energy, Office of Science. This publication made use of proprietary Rubin Observatory Legacy Survey of Space and Time (LSST) data, and was prepared in accordance with the Rubin Observatory data rights and access policies. All authors of this publication meet the requirements for co-authorship of proprietary LSST data.
 
 # AI Usage Disclosure
 
