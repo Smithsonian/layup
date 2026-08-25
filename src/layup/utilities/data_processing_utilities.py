@@ -23,6 +23,7 @@ from layup.utilities.special_observatories import (
     et_to_jd_tdb,
     query_horizons_geocentric,
 )
+from layup.utilities.cache_location import default_cache_dir
 
 """ A module for utilities useful for processing data in structured numpy arrays """
 
@@ -518,7 +519,7 @@ class LayupObservatory(SorchaObservatory):
         (see :meth:`__init__`). ``cache_dir`` defaults to pooch's per-user cache,
         exactly as the retriever does.
         """
-        cache_path = cache_dir if cache_dir else pooch.os_cache("layup")
+        cache_path = cache_dir if cache_dir else default_cache_dir()
         return os.path.isfile(os.path.join(str(cache_path), auxconfigs.observatory_codes))
 
     def convert_to_geocentric(self, obs_location: dict) -> tuple:
