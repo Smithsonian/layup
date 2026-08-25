@@ -131,7 +131,7 @@ Starting from this initial estimate, `Layup` differentially corrects the orbit w
 
 The fits can include terms for non-gravitational accelerations, via the Marsden A1/A2/A3 model [@marsden1973].  The radial dependence can be configured to span both asteroidal and cometary laws.  The amplitudes can also be fit per apparition.Every fit returns a full 6×6 covariance, propagated consistently through ephemeris predictions, using variational particles in REBOUND/ASSIST.  We use JAX-based automatic differentiation for the Jacobians of the orbital-element and frame conversions.  This enables rigorous uncertainty ellipses, which in turn support attribution and linking.
 
-Although the primary goal of `Layup` is orbit fitting. The package contains a Swiss army knife set of routines (orbit conversion, ephemeris prediction, and estimation of the inverse of the original semimajor axis for long period comets ) to support astronomers using these best-fit orbits to carry out science with an easy to use user interface.
+Although the primary goal of `Layup` is orbit fitting. The package contains a Swiss army knife set of utilities (orbit conversion, ephemeris prediction,orbit visualization, and estimation of the inverse of the original semimajor axis for long period comets) with an easy to use user interface to support astronomers using these best-fit orbits to carry out science.
 
 <!-- EDITORIAL, STILL OPEN (2026-08-24) -- these need prose, not corrections, so they
 are recorded rather than done.
