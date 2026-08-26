@@ -51,7 +51,7 @@ authors:
     affiliation: "10"
   - name: Joachim Moeyens
     orcid: 0000-0001-5820-3925
-    affiliation: "13,8"
+    affiliation: "13,3"
   - name: Colin Orion Chandler
     orcid: 0000-0001-7335-1715
     affiliation: "3,9"
