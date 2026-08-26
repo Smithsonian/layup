@@ -21,7 +21,7 @@ dependencies = [
     "astropy",
     "pooch",
     "tqdm",
-    "sorcha @ git+https://github.com/dirac-institute/sorcha.git",
+    "sorcha>=1.2.0",
     "assist",
     "rebound",
     "pybind11",
@@ -31,7 +31,6 @@ dependencies = [
     "dash",
     "dash-daq",
     "dash-ag-grid",
-    "pytest"
 ]
 
 [project.scripts]
@@ -45,7 +44,6 @@ layup-convert = "layup_cmdline.convert:main"
 layup-comet = "layup_cmdline.comet:main"
 layup-demo = "layup_cmdline.demo:main"
 layup-unpack = "layup_cmdline.unpack:main"
-layup-log = "layup_cmdline.log:main"
 
 [project.urls]
 "Source Code" = "https://github.com/Smithsonian/layup"
