@@ -827,7 +827,7 @@ def do_fit(
     observations,
     seq,
     cache_dir,
-    iod="gauss",
+    iod="auto",
     engine="cartesian",
     screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
     full_iter_max: int = _PICKER_FULL_ITER_MAX,
@@ -839,7 +839,7 @@ def do_fit(
 
     Pipeline:
       1. IOD: produce one or more candidate seed orbits via the
-         registered method named by `iod` (default: "gauss"). The
+         registered method named by `iod` (default: "auto"). The
          registry lives in `layup.iod`; register new methods with
          `iod.register_iod(name, callable)`.
       2. Multi-root picker: run LM from every IOD candidate on the
@@ -858,8 +858,8 @@ def do_fit(
     cache_dir : str
         Directory holding the ASSIST kernels.
     iod : str
-        Name of the registered IOD method (default "gauss"), or "auto" to run
-        Gauss and fall back to the BK 5-parameter linear IOD (run_bk_iod) on the
+        Name of the registered IOD method "auto" (default) or "gauss". "auto" runs
+        Gauss and falls back to the BK 5-parameter linear IOD (run_bk_iod) on the
         primary segment when every Gauss root fails to seed a converged fit.
     engine : str
         Which LM fitter to dispatch to.  Supported:
@@ -1047,7 +1047,7 @@ def _orbitfit(
     bias_dict: dict = None,
     sort_array: bool = True,
     weight_data=False,  # bool (Veres 2017) or "supplied" (rmsRA/rmsDec columns)
-    iod: str = "gauss",
+    iod: str = "auto",
     engine: str = "cartesian",
     fit_nongrav: bool = False,
     nongrav_auto_thresholds=None,
@@ -1085,8 +1085,8 @@ def _orbitfit(
         falls back to the default).
     iod : str
         The IOD used to generate an initial guess orbit. Supports 'gauss'
-        (default) and 'auto' (Gauss with BK-IOD fallback).
-        Default is 'gauss'.
+        and 'auto'  (Gauss with BK-IOD fallback).
+        Default is 'auto'.
     """
     # Fitting non-gravitational params (issue #351) uses the joint state+nongrav
     # LM, which only the Cartesian engine supports; the BK-native engine assumes a
@@ -1405,7 +1405,7 @@ def orbitfit(
     primary_id_column_name="provID",
     debias=False,
     weight_data=False,
-    iod="gauss",
+    iod="auto",
     engine="cartesian",
     fit_nongrav=False,
     nongrav_auto_thresholds=None,
@@ -1439,8 +1439,8 @@ def orbitfit(
         falls back to the default).
     iod : str
         The IOD used to generate an initial guess orbit. Supports 'gauss'
-        (default) and 'auto' (Gauss with BK-IOD fallback).
-        Default is 'gauss'.
+        and 'auto' (Gauss with BK-IOD fallback).
+        Default is 'auto'.
     fit_nongrav : bool | str | iterable of str
         Which non-gravitational Marsden parameters to fit after the 6-parameter
         orbit converges. ``False`` (default) fits none; ``True`` fits A2 (the
@@ -1779,7 +1779,7 @@ def incremental_orbitfit(
     weight_data=False,
     debias=False,
     max_update_sigma=4.0,
-    iod="gauss",
+    iod="auto",
     engine="cartesian",
     num_workers=1,
 ):
@@ -1941,7 +1941,7 @@ def orbitfit_cli(
         guess_file = None
         weight_data = False
         output_orbit_format = "COM"  # Default output orbit format.
-        iod = "gauss"
+        iod = "auto"
         engine = "cartesian"
 
     _primary_id_column_name = cli_args.primary_id_column_name
