@@ -75,9 +75,9 @@ def main():
     optional.add_argument(
         "-i",
         "--iod",
-        help="IOD choice: 'gauss' (default) or 'auto' (Gauss with BK 5-parameter linear IOD fallback)",
+        help="IOD choice: 'auto' or 'gauss'. Auto runs Gauss with BK 5-parameter linear IOD as a fallback for any failed orbitfits",
         dest="iod",
-        default="gauss",
+        default="auto",
         required=False,
     )
     optional.add_argument(
