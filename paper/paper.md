@@ -90,7 +90,7 @@ affiliations:
    index: 13
  - name: University of Michigan, Ann Arbor, MI 48109, USA
    index: 14
-- name: LSST-DA Catalyst Postdoctoral Fellow
+ - name: LSST-DA Catalyst Postdoctoral Fellow
    index: 15
  - name: Las Cumbres Observatory, 6740 Cortona Drive, Suite 102, Goleta, CA 93117, USA
    index: 16
