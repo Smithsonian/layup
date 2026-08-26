@@ -130,7 +130,8 @@ Starting from this initial estimate, `Layup` differentially corrects the orbit w
 
 The fits can include terms for non-gravitational accelerations, via the Marsden A1/A2/A3 model [@marsden1973].  The radial dependence can be configured to span both asteroidal and cometary laws.  The amplitudes can also be fit per apparition.Every fit returns a full 6×6 covariance, propagated consistently through ephemeris predictions, using variational particles in REBOUND/ASSIST.  We use JAX-based automatic differentiation [@jax2018github] for the Jacobians of the orbital-element and frame conversions.  This enables rigorous uncertainty ellipses, which in turn support attribution and linking.
 
-Although the primary goal of `Layup` is orbit fitting. The package contains a Swiss army knife set of tools (orbit conversion, ephemeris prediction, orbit visualization, and estimation of the inverse of the original semimajor axis for long period comets) with an easy-to-use user interface to support astronomers using these best-fit orbits to carry out science. `Layup` provides these tools as they are important for follow-up of new discoveries with observations not yet sent to the MPC and handling the scale of the LSST discovery rate where current tools are not optimized for the LSST-era. Existing tools are capable of calculations on the scale of a handful of objects not thousands to hundreds of thousands (such as JPL Horizons web API which handles one object at a time when predicting ephemeris). All  `Layup` utilities, including orbit fitting, have multiprocessing built in for the user, designed explicitly for use on a laptop or on a high-performance computing (HPC) cluster.         
+Although the primary goal of `Layup` is orbit fitting, the package also contains a Swiss army knife set of tools (orbital element conversion, ephemeris prediction, orbit visualization, and estimation of the inverse of the original semimajor axis for long period comets) with an easy-to-use user interface to support astronomers using these best-fit orbits to carry out science. `Layup` provides these tools as they are important for follow-up of new discoveries with observations not yet sent to the MPC and handling the scale of the LSST discovery rate where current tools are not optimized for the LSST-era. Existing tools are capable of calculations on the scale of a handful of objects not thousands to hundreds of thousands (such as JPL Horizons web API which handles one object at a time when predicting ephemeris). Ephemeris predictions with `Layup` are highly efficient, using ASSIST's ability to integrate once and interpolate to many epochs and observatory locations. `Layup` includes an extensive command-line interface and a Python API, and all of `Layup` utilities, including orbit fitting, have multiprocessing built in for the user, designed explicitly for use on a laptop or on a high-performance computing (HPC) cluster. 
+         
 
 
 <!-- EDITORIAL, STILL OPEN (2026-08-24) -- these need prose, not corrections, so they
@@ -182,7 +183,6 @@ Meg's review: a few sentences on capabilities beyond orbit fitting.  Facts only.
    write "barycentric" pending layup#447.
 Deferred, unrelated: the 5-parameter/energy-prior BK line -> layup#445.
 -->
-Ephemeris predictions with `Layup` are highly efficient, using ASSIST's ability to integrate once and interpolate to many epochs and observatory locations. `Layup` also includes utilities for orbital element conversions. Finally, `Layup` includes an extensive command-line interface and a Python API.
 
 
 # Validation
