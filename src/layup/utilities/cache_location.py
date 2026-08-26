@@ -1,20 +1,21 @@
 """Where layup keeps its downloaded ephemeris and reference data.
 
-layup writes roughly 1.6 GB of SPICE kernels, observatory codes and debiasing
-tables to a cache directory. The default comes from ``pooch.os_cache("layup")``,
-which is under the user's home directory. On a cluster the home directory is
-often a different, smaller partition than the one layup itself is installed on,
-so that default is the wrong place (issue #448, raised in #443).
+layup downloads roughly 1.6 GB of SPICE kernels, observatory codes and debiasing
+tables. By default these go to the platform cache directory under the user's
+home. On a cluster the home directory is often a smaller partition than the one
+layup runs from, so the default can be the wrong place.
 
-Individual entry points already accept a ``cache_dir`` argument, but that has to
-be threaded through every call. This module makes the *default* settable once,
-through the ``LAYUP_CACHE_DIR`` environment variable::
+Set ``LAYUP_CACHE_DIR`` to move it::
 
     export LAYUP_CACHE_DIR=/data/shared/layup-cache
 
-Every place in layup that needs the default calls :func:`default_cache_dir`, so
-setting the variable moves all of it. An explicit ``cache_dir`` argument still
-wins over the environment variable, which in turn wins over the OS cache.
+Precedence: an explicit ``cache_dir`` argument, then ``LAYUP_CACHE_DIR``, then
+the platform cache.
+
+The variable is read on each call rather than at import, so it can be changed
+within a running process. Note that it is a *process* setting: two jobs started
+from the same shell share whatever that shell exports, so to give them separate
+caches, set it per job rather than exporting it once.
 """
 
 import os
@@ -40,8 +41,7 @@ def default_cache_dir() -> Path:
     Notes
     -----
     The directory is not created here and is not required to exist. Callers
-    hand it to ``pooch``, which creates it on download; returning a path for a
-    directory that does not exist yet is the same behaviour as before.
+    hand it to ``pooch``, which creates it on download.
     """
     override = os.environ.get(LAYUP_CACHE_ENV_VAR)
     if override and override.strip():
