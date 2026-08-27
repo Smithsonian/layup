@@ -237,6 +237,29 @@ FitResult run_bk_iod(
         }
     }
 
+    // ----- Undo the s-scaling of the design matrix (issue #445) -----
+    // Under the 1/gamma-scaled convention the exact gnomonic relation carries a
+    // factor s = sqrt(1 + alpha^2 + beta^2) on three of the five columns:
+    //     x_obs = alpha + s*adot*t - gamma*s*(X - x_obs*ze) - s*gdot*(x_obs*t)
+    // The system built above is that relation with s set to 1, so its design
+    // matrix is A_true * D with D = diag(1, 1, s, s, s).  Scaling a column and
+    // dividing the matching parameter by the same factor is an exact identity
+    // for least squares -- the fit, its residuals and its chi-square are
+    // untouched -- so alpha and beta come out already correct, and with them s.
+    // No iteration is needed: one division finishes the job.
+    //
+    // This also leaves the refinement pass above correct as written.  It needs
+    // d_i = 1 - gamma*s*ze_i, and p(2) at that point IS gamma*s.
+    const double s_fac = std::sqrt(1.0 + p(0) * p(0) + p(1) * p(1));
+    Eigen::Matrix<double, 5, 1> d_inv;
+    d_inv << 1.0, 1.0, 1.0 / s_fac, 1.0 / s_fac, 1.0 / s_fac;
+    p = d_inv.asDiagonal() * p;
+    // Covariance transforms as D^-1 C D^-1; equivalently H -> D H D, which is
+    // what gets inverted below.
+    Eigen::Matrix<double, 5, 1> d_diag;
+    d_diag << 1.0, 1.0, s_fac, s_fac, s_fac;
+    H = d_diag.asDiagonal() * H * d_diag.asDiagonal();
+
     // Pack into a BKState (gdot pinned to 0).
     BKState bk;
     bk.alpha = p(0);

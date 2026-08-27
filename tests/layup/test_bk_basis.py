@@ -106,24 +106,44 @@ def test_round_trip_cart_to_bk_to_cart(case):
 def test_velocity_is_time_derivative_of_position(case):
     """The Cartesian velocity from bk_to_cartesian is dr/dt along the BK motion.
 
-    Along the instantaneous BK trajectory the angular coordinates advance at
-    their rates: alpha(t) = alpha + adot*t, beta(t) = beta + bdot*t,
-    gamma(t) = gamma + gdot*t. Central-differencing the *position* part of
-    bk_to_cartesian along that motion must reproduce the *velocity* part, since
-    v is by construction d/dt of r = rho_hat(alpha, beta) / gamma.
+    Under the 1/gamma-scaled convention (issue #445) the dots are NOT the time
+    derivatives of the coordinates -- they are the velocity components in the
+    orthonormal fiducial basis, scaled by gamma. Differentiating
+    alpha = (r.a)/(r.n0), beta = (r.b)/(r.n0), gamma = 1/|r| gives the rates at
+    which the coordinates actually advance:
+
+        d(alpha)/dt = s * (adot - alpha * gdot)
+        d(beta)/dt  = s * (bdot - beta  * gdot)
+        d(gamma)/dt = -(gamma/s) * (alpha*adot + beta*bdot + gdot)
+
+    with s = sqrt(1 + alpha^2 + beta^2). Central-differencing the *position*
+    part of bk_to_cartesian along THOSE rates must reproduce the *velocity*
+    part, since v is by construction d/dt of r = rho_hat(alpha, beta) / gamma.
 
     This pins down that v is a genuine velocity (AU/day) and not a quantity
-    with anomalous units -- independent of the round-trip and Jacobian tests.
-    The unusual-looking magnitudes of the intermediate rho_hat_alpha/beta terms
-    are expected: those tangent vectors are deliberately not unit length.
+    with anomalous units -- independent of the round-trip and Jacobian tests --
+    and it independently confirms the scaling relation, since the rates above
+    are derived from the convention rather than read out of the implementation.
     """
     rng = np.random.default_rng(seed=2024)
     fid = _make_fiducial(rng)
     alpha, beta, gamma, adot, bdot, gdot = case
     v_analytic = np.asarray(bk_to_cartesian(_bk_from_tuple(case), fid)).flatten()[3:]
 
+    s = np.sqrt(1.0 + alpha * alpha + beta * beta)
+    alpha_rate = s * (adot - alpha * gdot)
+    beta_rate = s * (bdot - beta * gdot)
+    gamma_rate = -(gamma / s) * (alpha * adot + beta * bdot + gdot)
+
     def position(t):
-        state = BKState(alpha + adot * t, beta + bdot * t, gamma + gdot * t, adot, bdot, gdot)
+        state = BKState(
+            alpha + alpha_rate * t,
+            beta + beta_rate * t,
+            gamma + gamma_rate * t,
+            adot,
+            bdot,
+            gdot,
+        )
         return np.asarray(bk_to_cartesian(state, fid)).flatten()[:3]
 
     dt = 1e-4
@@ -168,9 +188,18 @@ def test_dcart_dbk_matches_finite_difference(case):
         cart_minus = np.asarray(bk_to_cartesian(_bk_perturb(bk, i, -eps[i]), fid)).flatten()
         J_fd[:, i] = (cart_plus - cart_minus) / (2.0 * eps[i])
 
-    # Relative tolerance covering the dynamic range of J entries.
+    # Relative tolerance covering the dynamic range of J entries.  The floor is
+    # an ABSOLUTE one, not just a guard against exact zero: entries that are
+    # numerically negligible (a fiducial basis vector with a ~1e-16 component,
+    # say) carry no information, and dividing by them turns pure round-off into
+    # a relative error of 1.  The floor is set at the central-difference noise
+    # level -- ~1e-9 of the largest entry, since differencing an O(|r|) position
+    # over a 1e-6 step loses about seven digits -- which still leaves six orders
+    # of margin below the smallest entry that carries real information (the
+    # d v / d gamma column, ~1e-2 of max here).
+    floor = 1e-9 * np.max(np.abs(J_analytic))
     scale = np.maximum(np.abs(J_analytic), np.abs(J_fd))
-    scale = np.where(scale > 0, scale, 1.0)
+    scale = np.maximum(scale, floor)
     np.testing.assert_array_less(
         np.abs(J_analytic - J_fd) / scale,
         1e-5,
@@ -272,8 +301,15 @@ def test_jacobian_at_fiducial():
     np.testing.assert_allclose(J[:3, 1], expected_col_beta, rtol=1e-13, atol=1e-15)
     np.testing.assert_allclose(J[:3, 2], expected_col_gamma, rtol=1e-13, atol=1e-15)
 
-    # Bottom-right block should equal the top-left block (same shape).
-    np.testing.assert_allclose(J[3:, 3:], J[:3, :3], rtol=1e-13, atol=1e-15)
+    # Bottom-right block d v / d(adot, bdot, gdot) is (1/gamma) times the
+    # orthonormal fiducial basis.  Under the unscaled convention this block
+    # happened to equal the top-left one; under the scaled convention (issue
+    # #445) the third column is +n0/gamma rather than -n0/gamma^2, which is
+    # exactly what removes the second-derivative terms from the Jacobian.
+    inv_g = 1.0 / gamma
+    np.testing.assert_allclose(J[3:, 3], inv_g * np.asarray(fid.a), rtol=1e-13, atol=1e-15)
+    np.testing.assert_allclose(J[3:, 4], inv_g * np.asarray(fid.b), rtol=1e-13, atol=1e-15)
+    np.testing.assert_allclose(J[3:, 5], inv_g * np.asarray(fid.n0), rtol=1e-13, atol=1e-15)
 
     # Bottom-left block should be zero when adot = bdot = gdot = 0.
     np.testing.assert_allclose(J[3:, :3], np.zeros((3, 3)), atol=1e-15)
@@ -287,10 +323,16 @@ def test_jacobian_at_fiducial():
 def test_sigma_gdot_sq_consistent_with_energy_bound():
     """sigma_gdot_sq matches the Cartesian-side bound on |gdot|^2 for a bound orbit.
 
-    Derivation: the bound-orbit energy constraint 0.5 |v|^2 <= mu / |r|
-    rearranges, in BK at fixed (alpha, beta, gamma, adot, bdot), to
-    gdot^2 <= gamma^2 * (2 * mu * gamma^3 - adot^2 - bdot^2),
-    which is exactly the formula sigma_gdot_sq returns.
+    Derivation: under the 1/gamma-scaled convention (issue #445) the fiducial
+    basis is orthonormal and the dots are gamma times the velocity components
+    in it, so gamma^2 |v|^2 = adot^2 + bdot^2 + gdot^2 exactly.  The bound-orbit
+    energy constraint 0.5 |v|^2 <= mu / |r| then rearranges, at fixed
+    (alpha, beta, gamma, adot, bdot), to
+        gdot^2 <= 2 * mu * gamma^3 - adot^2 - bdot^2,
+    which is exactly the formula sigma_gdot_sq returns -- with no residual
+    dependence on (alpha, beta).  This test is convention-agnostic: it drives
+    gdot to the stated boundary and checks the CARTESIAN two-body energy is
+    zero, so it constrains the transform and the bound together.
     """
     rng = np.random.default_rng(seed=66666)
     fid = _make_fiducial(rng)

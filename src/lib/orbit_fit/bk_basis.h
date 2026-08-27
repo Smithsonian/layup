@@ -9,8 +9,20 @@ namespace orbit_fit
     // Bernstein-Khushalani parameters at epoch.  Origin: barycenter.
     // (alpha, beta) are gnomonic tangent-plane coordinates of the
     // line-of-sight direction rho_hat at a fiducial direction n0,
-    // gamma = 1/|r_helio|, and (adot, bdot, gdot) are their time
-    // derivatives at the epoch.
+    // gamma = 1/|r| with r measured from the SAME origin as the struct --
+    // the barycenter (issue #444; the comment here previously said
+    // r_helio, which contradicted the line above and the implementation).
+    //
+    // (adot, bdot, gdot) are NOT the plain time derivatives of
+    // (alpha, beta, gamma).  They are the velocity components in the
+    // orthonormal fiducial basis, scaled by gamma (issue #445):
+    //
+    //     adot = gamma (v . a),  bdot = gamma (v . b),  gdot = gamma (v . n0)
+    //
+    // This is the scaling that makes all three carry the same units and the
+    // same 1/gamma weighting as the position, so the 6x6 Jacobian below has
+    // no second-derivative terms and the energy prior collapses to its
+    // familiar form.  See the derivation note accompanying issue #445.
     struct BKState
     {
         double alpha = 0.0;
@@ -40,8 +52,9 @@ namespace orbit_fit
 
     // Forward transform: BK -> barycentric Cartesian (position + velocity).
     //   r_vec = (1/gamma) * rho_hat(alpha, beta)
-    //   v_vec = (1/gamma) [adot * rho_hat_alpha + bdot * rho_hat_beta]
-    //           - (gdot/gamma^2) * rho_hat(alpha, beta)
+    //   v_vec = (1/gamma) [adot * a + bdot * b + gdot * n0]
+    // The velocity is diagonal in the fiducial basis: under the scaled
+    // convention the dots ARE its components there (issue #445).
     Eigen::Matrix<double, 6, 1> bk_to_cartesian(
         const BKState &bk, const BKFiducial &fid);
 
@@ -55,22 +68,24 @@ namespace orbit_fit
     // Block structure (each block is 3x3):
     //   [ d r / d (alpha,beta,gamma)     0                              ]
     //   [ d v / d (alpha,beta,gamma)     d v / d (adot,bdot,gdot)       ]
-    // Top-left and bottom-right blocks are identical (both arise from the
-    // (1/gamma) * tangent-vector structure).
+    // Under the scaled convention (issue #445) v depends on alpha and beta
+    // only through nothing at all -- the first two columns of the lower-left
+    // block are exactly zero, and the lower-right block is (1/gamma) times
+    // the orthonormal fiducial basis.  The second-derivative terms that the
+    // unscaled convention required are gone.
     Eigen::Matrix<double, 6, 6> dcart_dbk(
         const BKState &bk, const BKFiducial &fid);
 
     // Variance of the bound-orbit gdot prior:
-    //   sigma_gdot^2 = gamma^2 * (2 mu gamma^3 - |adot rho_hat_alpha + bdot rho_hat_beta|^2)
+    //   sigma_gdot^2 = 2 mu gamma^3 - adot^2 - bdot^2
     //
-    // The tangential-velocity term in the energy bound depends on the gnomonic
-    // tangent-vector norms at (alpha, beta), so the exact form expands to
-    //   sigma_gdot^2 = gamma^2 * (2 mu gamma^3 -
-    //                            [adot^2 (1+beta^2)
-    //                             - 2 adot bdot alpha beta
-    //                             + bdot^2 (1+alpha^2)] / s^4)
-    // where s^2 = 1 + alpha^2 + beta^2.  At the fiducial direction (alpha = beta = 0)
-    // this reduces to the familiar gamma^2 (2 mu gamma^3 - adot^2 - bdot^2).
+    // The bound-orbit condition is |v|^2 < 2 mu gamma, and under the scaled
+    // convention gamma^2 |v|^2 = adot^2 + bdot^2 + gdot^2 exactly, because
+    // (a, b, n0) is orthonormal.  So the bound becomes
+    //   gdot^2 < 2 mu gamma^3 - adot^2 - bdot^2
+    // with no dependence on (alpha, beta) at all.  The (alpha, beta)-dependent
+    // tangent-vector norms that the unscaled convention carried were an
+    // artifact of that convention, not physics (issue #445).
     //
     // Returns +infinity when the tangential rates already exceed escape (the
     // right-hand side would be non-positive), signalling "no prior."  The
