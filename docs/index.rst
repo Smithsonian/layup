@@ -179,6 +179,7 @@ for bug reports, questions, and feature requests.
 
    Home page <self>
    Controlling parallelism <parallelism>
+   Orbit fit status flags <fit_flags>
    Notebooks <notebooks>
    API Reference <autoapi/index>
    Developer guide <dev_guide>
