@@ -91,8 +91,10 @@ codes, and the astrometry debiasing tables. Download them once with:
 
 This fetches roughly 1 GB, which expands to about 1.5 GB on disk.
 
-By default it goes to the platform cache directory under your home. On a cluster
-that is often a smaller partition than the one you run from, so you can move it:
+By default it goes to a per-user cache directory: ``~/Library/Caches/layup`` on
+macOS, ``~/.cache/layup`` on Linux (or ``$XDG_CACHE_HOME/layup`` if that is
+set), and ``%LOCALAPPDATA%\layup\layup\Cache`` on Windows. On a cluster that is
+often a smaller partition than the one you run from, so you can move it:
 
 .. code-block:: console
 
