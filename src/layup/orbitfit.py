@@ -34,6 +34,56 @@ except ImportError:  # extension not rebuilt yet
 # _MU_SUN (= heliocentric GM = k^2) is used by the BK-native fit for the
 # bound-orbit energy prior on gdot; SPEED_OF_LIGHT (au/day) by the radar ingest.
 from layup.constants import MU_SUN as _MU_SUN, SPEED_OF_LIGHT
+
+# Flag for a fit that converged but describes an orbit no real object could
+# occupy (issue #493). It sits with flag 2 (chi-square too large) and flag 6
+# (degenerate covariance) as a fit that converged and was then rejected by a
+# gate, rather than with the flags for fits that never converged.
+FLAG_IMPLAUSIBLE_ORBIT = 9
+
+# Hyperbolic excess speed, in km/s, above which a converged fit is reported as
+# physically impossible.
+#
+# A short arc can converge with an excellent reduced chi-square onto a state no
+# real object could occupy, because the arc does not constrain the velocity. The
+# chi-square gate cannot catch this: it is anti-correlated with the failure,
+# since the less the object moves across the arc the better the fit (issue #485).
+#
+# Excess speed is the one statement available without assuming the object is
+# bound. Layup is expected to fit genuine interstellar objects, and those are
+# unbound and fast -- 3I/ATLAS arrives at about 59 km/s -- so boundedness itself
+# is never grounds for rejection and only a speed far above any plausible arrival
+# speed is evidence of a bad fit rather than an unusual object. The default is
+# about 3.4x the fastest interstellar object yet observed. Measured against
+# long-arc truth orbits it rejected no correct fit, and every fit it rejected was
+# wrong. Set to 0 to disable the check.
+MAX_EXCESS_SPEED_KM_S = 200.0
+
+_KM_S_IN_AU_PER_DAY = 86400.0 / 149597870.7
+
+
+def _implausible_excess_speed(state) -> bool:
+    """True when a converged state's hyperbolic excess speed is impossibly large.
+
+    ``state`` is the barycentric equatorial state (au, au/day). Barycentric rather
+    than heliocentric, and the Sun's mass rather than the whole solar system's,
+    are both far below the threshold that matters here.
+    """
+    if not MAX_EXCESS_SPEED_KM_S > 0:
+        return False
+    pos = np.asarray(state[:3], dtype=float)
+    vel = np.asarray(state[3:6], dtype=float)
+    if not (np.all(np.isfinite(pos)) and np.all(np.isfinite(vel))):
+        return False  # a NaN state is already reported by the convergence flag
+    r = float(np.linalg.norm(pos))
+    if not r > 0:
+        return False
+    energy = 0.5 * float(np.dot(vel, vel)) - _MU_SUN / r
+    if not energy > 0:
+        return False  # bound, or exactly parabolic
+    return np.sqrt(2.0 * energy) > MAX_EXCESS_SPEED_KM_S * _KM_S_IN_AU_PER_DAY
+
+
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
@@ -1331,6 +1381,14 @@ def _orbitfit(
                 res = res_ng
             else:
                 logger.debug("Non-grav refinement did not converge; reporting non-grav params as NaN.")
+
+        # Physical-plausibility gate (issue #493). Applied here, to the result the
+        # caller is about to receive, rather than inside the C++ fit: the driver
+        # above runs one fit per IOD candidate and reads a non-zero flag as "this
+        # candidate failed", so a verdict set per-candidate is retried away and
+        # reported as flag 3 or 4.
+        if res.flag == 0 and _implausible_excess_speed(res.state):
+            res.flag = FLAG_IMPLAUSIBLE_ORBIT
 
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
