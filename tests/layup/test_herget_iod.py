@@ -46,81 +46,27 @@ def test_find_new_vel_with_universal_kepler():
     pos = np.array([50, 0, 0])
     vel = np.array([-1e-5, -1e-5, -1e-5])
     target = np.array(
-        [55, 5, 5]
+        [55, 5, 5, 0, 0, 0]
     )  # Function should attempt to add a positive velocity in any cartesian direction to get to this position
 
     t1 = 0
     tn = 300
 
     [vx1, vy1, vz1], [*pos_new, vxn, vyn, vzn] = herget.find_new_vel_with_universal_kepler(
-        t1, tn, *pos, *vel, *target
+        t1, tn, [*pos, *vel], target
     )
 
     assert ([vx1, vy1, vz1] > vel).all()
     assert (
-        np.sqrt(sum((target - pos_new) ** 2)) < np.sqrt(sum((target - pos) ** 2))
+        np.sqrt(sum((target[:3] - pos_new) ** 2)) < np.sqrt(sum((target[:3] - pos) ** 2))
     ).all()  # Check the new end-position is closer to the target
 
     # Run again to check it continues to converge
     [vx1, vy1, vz1], [*pos_new_rerun, vxn, vyn, vzn] = herget.find_new_vel_with_universal_kepler(
-        t1, tn, *pos, vx1, vy1, vz1, *target
+        t1, tn, [*pos, vx1, vy1, vz1], target
     )
 
-    assert (np.sqrt(sum((target - pos_new_rerun) ** 2)) < np.sqrt(sum((target - pos_new) ** 2))).all()
-
-
-def test_find_new_vel():
-    """Same as above but for using assist variational particles"""
-
-    class FakeCliArgs:
-        def __init__(self, g=None):
-            self.primary_id_column_name = "ObjID"
-            self.n = 1
-            self.chunk = 10000
-            self.ar_data_file_path = None
-            self.force = True
-            self.code_format = True
-
-    args = FakeCliArgs()
-    aux = LayupConfigs().auxiliary
-    ephem, _, _ = create_assist_ephemeris(args, aux)
-
-    pos = np.array([50, 0, 0])
-    vel = np.array([-1e-5, -1e-5, -1e-5])
-    target = np.array(
-        [55, 5, 5]
-    )  # Function should attempt to add a positive velocity in any cartesian direction to get to this position
-
-    t1 = 2406000
-    tn = 2406300
-
-    vx1, vy1, vz1, vxn, vyn, vzn, pos_new = herget.find_new_vel(
-        ephem, t1, tn, *pos, *vel, *target, change="x"
-    )
-    vx1, vy1, vz1, vxn, vyn, vzn, pos_new = herget.find_new_vel(
-        ephem, t1, tn, *pos, vx1, vy1, vz1, *target, change="y"
-    )
-    vx1, vy1, vz1, vxn, vyn, vzn, pos_new = herget.find_new_vel(
-        ephem, t1, tn, *pos, vx1, vy1, vz1, *target, change="z"
-    )
-
-    assert ([vx1, vy1, vz1] > vel).all()
-    assert (
-        np.sqrt(sum((target - pos_new) ** 2)) < np.sqrt(sum((target - pos) ** 2))
-    ).all()  # Check the new end-position is closer to the target
-
-    # Run again to check it continues to converge
-    vx1, vy1, vz1, vxn, vyn, vzn, pos_new_rerun = herget.find_new_vel(
-        ephem, t1, tn, *pos, vx1, vy1, vz1, *target, change="x"
-    )
-    vx1, vy1, vz1, vxn, vyn, vzn, pos_new_rerun = herget.find_new_vel(
-        ephem, t1, tn, *pos, vx1, vy1, vz1, *target, change="y"
-    )
-    vx1, vy1, vz1, vxn, vyn, vzn, pos_new_rerun = herget.find_new_vel(
-        ephem, t1, tn, *pos, vx1, vy1, vz1, *target, change="z"
-    )
-
-    assert (np.sqrt(sum((target - pos_new_rerun) ** 2)) < np.sqrt(sum((target - pos_new) ** 2))).all()
+    assert (np.sqrt(sum((target[:3] - pos_new_rerun) ** 2)) < np.sqrt(sum((target[:3] - pos_new) ** 2))).all()
 
 
 def test_find_drho(tmpdir):
@@ -173,7 +119,7 @@ def test_find_drho(tmpdir):
     rho_hat_1 = np.array(obs_1.rho_hat)
     rho_1 = 40  # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
     t_1 = obs_1.epoch
-    r_1 = r_e_1 + rho_1 * rho_hat_1
+    state_1 = [*r_e_1 + rho_1 * rho_hat_1, 0, 0, 0]
 
     obs_n = observations[-1]
     r_e_n = obs_n.observer_position
@@ -190,14 +136,14 @@ def test_find_drho(tmpdir):
     for i, observation in enumerate(observations):
         observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT_AU_DAY)
 
-    vx1, vy1, vz1, _, _, _ = herget.find_velocity(t_1, t_n, r_1, r_n, 0.001, args, aux)
+    state_1[3:], _ = herget.find_velocity(t_1, t_n, state_1[:3], r_n, 0.001)
 
     ephem, _, _ = create_assist_ephemeris(args, aux)
     sim = rebound.Simulation()
     ex = assist.Extras(sim, ephem)
     sim.t = t_1 - ephem.jd_ref
 
-    sim.add(x=r_1[0], y=r_1[1], z=r_1[2], vx=vx1, vy=vy1, vz=vz1)
+    sim.add(x=state_1[0], y=state_1[1], z=state_1[2], vx=state_1[3], vy=state_1[4], vz=state_1[5])
 
     residuals = []
 
@@ -219,8 +165,8 @@ def test_find_drho(tmpdir):
 
     # call find_drho, check if it reduces the sum of the residuals
 
-    delta_rho1, delta_rhon, x_1, y_1, z_1, vx1, vy1, vz1 = herget.find_drho(
-        observations, t_1, t_n, r_1, r_n, 0.001, args, aux, rho_hat_1, rho_hat_n
+    delta_rho1, delta_rhon, state_1 = herget.find_drho(
+        observations, t_1, t_n, state_1[:3], r_n, 0.001, args, aux, rho_hat_1, rho_hat_n
     )
 
     # Update rho values
@@ -232,14 +178,14 @@ def test_find_drho(tmpdir):
     for i, observation in enumerate(observations):
         observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT_AU_DAY)
 
-    vx1, vy1, vz1, _, _, _ = herget.find_velocity(t_1, t_n, r_1, r_n, 0.001, args, aux)
+    state_1[3:], _ = herget.find_velocity(t_1, t_n, state_1[:3], r_n, 0.001)
 
     ephem, _, _ = create_assist_ephemeris(args, aux)
     sim = rebound.Simulation()
     ex = assist.Extras(sim, ephem)
     sim.t = t_1 - ephem.jd_ref
 
-    sim.add(x=r_1[0], y=r_1[1], z=r_1[2], vx=vx1, vy=vy1, vz=vz1)
+    sim.add(x=state_1[0], y=state_1[1], z=state_1[2], vx=state_1[3], vy=state_1[4], vz=state_1[5])
 
     residuals = []
 

@@ -2,20 +2,32 @@
 # Herget method as a way of creating a first guess for the inital orbit (IOD)
 # import modules
 import numpy as np
-from scipy.integrate import RK45
-import spiceypy as spice
-import matplotlib.pyplot as plt
-from sorcha.ephemeris.simulation_setup import furnish_spiceypy, create_assist_ephemeris
+from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 import assist
 import rebound
 from _layup_cpp._core import FitResult
-from layup.utilities.universal_kepler import universal_step, KeplerConvergenceError
-import copy
+from layup.utilities.universal_kepler import universal_step
 
 SPEED_OF_LIGHT_AU_DAY = 173.145
 
 
 def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=100):
+    """Runs the Herget method on a set of observations.
+
+    Parameters
+    ----------
+    observations : list
+        List of all the observations of the object
+    seq : list[list]
+        list of lists containing the indices of observations that are closely spaced in time
+    tolerance : float
+        the maximum delta_rho residuals allowed; will continue to converge until the residuals are below this value
+    args : argparse.Namespace
+        The argparse object that was created when running from the CLI. Needed to instantiate assist simulations
+    aux : LayupConfigs.auxiliary object
+        Auxiliary Layup configs; needed to instantiate assist simulations
+    max_iterations : int (optional, default: 100)
+        the maximum number of iterations before the fitting stops"""
     seq_lengths = [len(i) for i in seq]
     longest_i = np.argmax(seq_lengths)  # finds the sequence index with the most observations contained in it
     obs = np.array(observations)[seq[longest_i]]
@@ -26,15 +38,15 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     r_e_1 = obs_1.observer_position
     rho_hat_1 = np.array(obs_1.rho_hat)
     rho_1 = 40  # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
-    t_1 = obs_1.epoch
-    r_1 = r_e_1 + rho_1 * rho_hat_1
+    t1 = obs_1.epoch
+    r1 = r_e_1 + rho_1 * rho_hat_1
 
     obs_n = obs[-1]
     r_e_n = obs_n.observer_position
     rho_hat_n = np.array(obs_n.rho_hat)
     rho_n = 40  # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
-    t_n = obs_n.epoch
-    r_n = r_e_n + rho_n * rho_hat_n
+    tn = obs_n.epoch
+    rn = r_e_n + rho_n * rho_hat_n
 
     iteration = 0
     delta_rho1 = tolerance + 1
@@ -53,21 +65,21 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
             observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT_AU_DAY)
             # print(observation.epoch)
 
-        delta_rho1, delta_rhon, x_1, y_1, z_1, vx1, vy1, vz1 = find_drho(
-            obs, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n
+        delta_rho1, delta_rhon, state_1 = find_drho(
+            obs, t1, tn, r1, rn, tolerance, args, aux, rho_hat_1, rho_hat_n
         )
 
         # Update rho values
         rho_1 -= delta_rho1
-        r_1 = r_e_1 + rho_1 * np.array(rho_hat_1)
+        r1 = r_e_1 + rho_1 * np.array(rho_hat_1)
         rho_n -= delta_rhon
-        r_n = r_e_n + rho_n * np.array(rho_hat_n)
+        rn = r_e_n + rho_n * np.array(rho_hat_n)
         print(delta_rho1, delta_rhon)
         # print(rho_1, rho_n)
 
         iteration += 1
 
-    state = [x_1, y_1, z_1, vx1, vy1, vz1]
+    state = state_1
     solution = FitResult()
     solution.state = state
     solution.epoch = epochs[0]
@@ -81,23 +93,57 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     return [solution]
 
 
-def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n):
+def find_drho(observations, t1, tn, r1, rn, tolerance, args, aux, rho_hat_1, rho_hat_n):
+    """Find the adjustment to make to rho_1 and rho_n to make in order to reduce the residuals of the observations
+
+    Parameters
+    ----------
+    observations : list
+        list of observation objects
+    t1 : float
+        light-time corrected time for position r1, in TDB MJD
+    tn : float
+        light-time corrected time for position rn, in TDB MJD
+    r1 : numpy array
+        position vector at time t1
+    rn : numpy array
+        position vector at time tn
+    tolerance : float
+        the average value of delta_rho1 and delta_rhon at which the orbit is considered to have converged at
+    args : argparse.Namespace
+        The argparse object that was created when running from the CLI. Needed to instantiate assist simulations
+    aux : LayupConfigs.auxiliary object
+        Auxiliary Layup configs; needed to instantiate assist simulations
+    rho_hat_1 : numpy array
+        unit vector of rho at time t1
+    rho_hat_n : numpy array
+        unit vector of rho at time tn
+
+    Returns
+    -------
+    delta_rho1 : float
+        the amount to adjust rho_1 by to return a more accurate orbit
+    delta_rhon : float
+        the amount to adjust rho_n by to return a more accurate orbit
+    state_1[x, y, z, vx, vy, vz]
+        the new guess for the state vector at t1
+    """
 
     # Find velocities at rho_1 and rho_n
-    vx1, vy1, vz1, vxn, vyn, vzn = find_velocity(t_1, t_n, r_1, r_n, tolerance, args, aux)
-    var_vx1, var_vy1, var_vz1, _, _, _ = find_velocity(t_1, t_n, r_1 + rho_hat_1, r_n, tolerance, args, aux)
+    [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance)
+    [var_vx1, var_vy1, var_vz1], _ = find_velocity(t1, tn, r1 + rho_hat_1, rn, tolerance)
 
     # Simulation setup
     ephem, _, _ = create_assist_ephemeris(args, aux)
     sim = rebound.Simulation()
 
-    sim.add(x=r_1[0], y=r_1[1], z=r_1[2], vx=vx1, vy=vy1, vz=vz1)
+    sim.add(x=r1[0], y=r1[1], z=r1[2], vx=vx1, vy=vy1, vz=vz1)
     var = sim.add_variation(testparticle=0)
     var.particles[0].xyz = rho_hat_1
     var.particles[0].vxyz = np.array([var_vx1 - vx1, var_vy1 - vy1, var_vz1 - vz1])
 
     ex = assist.Extras(sim, ephem)
-    sim.t = t_1 - ephem.jd_ref
+    sim.t = t1 - ephem.jd_ref
     a1, a2, b = np.zeros((3, 2 * len(observations)))
 
     # For each observation, integrate to that time and find the residuals
@@ -121,18 +167,18 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
         a1[2 * i] = b[2 * i] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), A)
         a1[2 * i + 1] = b[2 * i + 1] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), D)
 
-    _, _, _, var_vxn, var_vyn, var_vzn = find_velocity(t_1, t_n, r_1, r_n + rho_hat_n, tolerance, args, aux)
+    _, [var_vxn, var_vyn, var_vzn] = find_velocity(t1, tn, r1, rn + rho_hat_n, tolerance)
 
     # Do the same for rho_n, set up simulation again
     vxn, vyn, vzn = sim.particles[0].vxyz
     sim = rebound.Simulation()
-    sim.add(x=r_n[0], y=r_n[1], z=r_n[2], vx=vxn, vy=vyn, vz=vzn)
+    sim.add(x=rn[0], y=rn[1], z=rn[2], vx=vxn, vy=vyn, vz=vzn)
     var = sim.add_variation(testparticle=0)
     var.particles[0].xyz = rho_hat_n
     var.particles[0].vxyz = np.array([var_vxn - vxn, var_vyn - vyn, var_vzn - vzn])
 
     ex = assist.Extras(sim, ephem)
-    sim.t = t_n - ephem.jd_ref
+    sim.t = tn - ephem.jd_ref
 
     # Find residuals for each observation
     for i, observation in enumerate(observations):
@@ -167,97 +213,48 @@ def find_drho(observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1,
     # print(sigma_a2b + delta_rho1*sigma_a1a2 + delta_rhon*sigma_a2squared)
     # print(sum(a1*(b + delta_rho1*a1 + delta_rhon*a2)))
 
-    return delta_rho1, delta_rhon, r_1[0], r_1[1], r_1[2], vx1, vy1, vz1
+    return delta_rho1, delta_rhon, [*r1, vx1, vy1, vz1]
 
 
-def find_velocity(t1, tn, r_1, r_n, tolerance, args, aux):
+def find_velocity(t1, tn, r1, rn, tolerance):
+    """Converge on a velocity which takes position r1 at time t1 to position rn at time tn.
+    Uses the universal kepler stepper to integrate over time.
 
-    # Initialising data so I can work with it
+    Parameters
+    ----------
+    t1 : float
+        Light-time corrected time of first state, in TDB MJD
+    tn : float
+        Light-time corrected time of nth state, in TDB MJD
+    r1 : numpy array
+        Position vector at time t1
+    rn : numpy array
+        Position vector at time tn
+    tolerance : float
+        how closely the calculated rn value must lie within the correct value
+
+    Returns
+    -------
+    state_1[vx, vy, vz]
+        The velocity components of state vector at t1
+    state_n[vx, vy, vz]
+        The velocity components of state vector at tn
+    """
+
+    # Initialising data
     delta_t = tn - t1
-    x1 = r_1[0]
-    y1 = r_1[1]
-    z1 = r_1[2]
-    xn = r_n[0]
-    yn = r_n[1]
-    zn = r_n[2]
-    vx1 = (xn - x1) / delta_t
-    vy1 = (yn - y1) / delta_t
-    vz1 = (zn - z1) / delta_t
+    state_1 = np.array([*r1, 0, 0, 0])
 
-    pos = r_n + abs(tolerance) + 100
+    for i in range(3):
+        state_1[i + 3] = (rn[i] - r1[i]) / delta_t
+
+    state_n = [*rn + abs(tolerance) + 1, 0, 0, 0]
 
     # Find new values for vx, vy and vz in turn
-    while np.linalg.norm(pos - r_n) > tolerance:
-        [vx1, vy1, vz1], [*pos, vxn, vyn, vzn] = find_new_vel_with_universal_kepler(
-            t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn
-        )
-        pos = np.array(pos)
+    while np.linalg.norm(state_n[:3] - rn) > tolerance:
+        state_1[3:], state_n = find_new_vel_with_universal_kepler(t1, tn, state_1, rn)
 
-        # vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'x')
-        # vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'y')
-        # vx1, vy1, vz1, vxn, vyn, vzn, pos = find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change = 'z')
-
-        # print(pos, r_n)
-    # print(vx1, vy1, vz1)
-    return (
-        vx1,
-        vy1,
-        vz1,
-        vxn,
-        vyn,
-        vzn,
-    )
-
-
-def find_new_vel(ephem, t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn, change):
-
-    # Starting a new simulation
-    sim = rebound.Simulation()
-
-    sim.add(x=x1, y=y1, z=z1, vx=vx1, vy=vy1, vz=vz1)
-    var = sim.add_variation(testparticle=0)
-
-    # Depending on the direction of the variational particle,
-    # see how the final position will change by varying in that direction
-
-    # Vary the velocity in that direction by a factor that will get it as close to
-    # the desired position as possible
-
-    if change == "x":
-        var.particles[0].vx = 1
-        ex = assist.Extras(sim, ephem)
-        sim.t = t1 - ephem.jd_ref
-        sim.integrate(tn - ephem.jd_ref)
-        diff = find_mag_to_adjust(
-            np.array([xn, yn, zn]),
-            np.array(sim.particles[0].xyz),
-            np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz),
-        )
-        vx1 += diff
-    elif change == "y":
-        var.particles[0].vy = 1
-        ex = assist.Extras(sim, ephem)
-        sim.t = t1 - ephem.jd_ref
-        sim.integrate(tn - ephem.jd_ref)
-        diff = find_mag_to_adjust(
-            np.array([xn, yn, zn]),
-            np.array(sim.particles[0].xyz),
-            np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz),
-        )
-        vy1 += diff
-    elif change == "z":
-        var.particles[0].vz = 1
-        ex = assist.Extras(sim, ephem)
-        sim.t = t1 - ephem.jd_ref
-        sim.integrate(tn - ephem.jd_ref)
-        diff = find_mag_to_adjust(
-            np.array([xn, yn, zn]),
-            np.array(sim.particles[0].xyz),
-            np.array(sim.particles[0].xyz) + np.array(var.particles[0].xyz),
-        )
-        vz1 += diff
-    [vxn, vyn, vzn] = sim.particles[0].vxyz
-    return vx1, vy1, vz1, vxn, vyn, vzn, np.array(sim.particles[0].xyz)
+    return state_1[3:], state_n[3:]
 
 
 def find_mag_to_adjust(P, Q, R):
@@ -269,35 +266,41 @@ def find_mag_to_adjust(P, Q, R):
     return mag
 
 
-def find_new_vel_with_universal_kepler(t1, tn, x1, y1, z1, vx1, vy1, vz1, xn, yn, zn):
-    # Initialise state
+def find_new_vel_with_universal_kepler(t1, tn, state_1, state_n):
+    """Adjust the velocity components of an input position-velocity state to land closer to a desired position
+
+    Parameters
+    ----------
+    t1 : float
+        Light-time corrected time of first state, in TDB MJD
+    tn : float
+        Light-time corrected time of nth state, in TDB MJD
+    state_1 : numpy array
+        the state vector at time t1; in AU and AU/day
+    state_n : numpy array
+        the state vector at time tn; in AU and AU/day
+
+    Returns
+    -------
+    state_1[vx, vy, vz]
+        Adjusted velocity components of state_1
+    state_n[x, y, z, vx, vy, vz]
+        The new state vector at time tn when using state_1 as the input"""
+
+    # Initialise variables
     dt = tn - t1
-    state = np.array([x1, y1, z1, vx1, vy1, vz1])
     GMtotal = 0.0002963092748799319
-    variation_vx = np.array([0, 0, 0, 1, 0, 0])
-    variation_vy = np.array([0, 0, 0, 0, 1, 0])
-    variation_vz = np.array([0, 0, 0, 0, 0, 1])
 
-    var_vx = universal_step(GMtotal, dt, state, variation=variation_vx)
-    diff = find_mag_to_adjust(
-        np.array([xn, yn, zn]),
-        np.array(var_vx.state[:3]),
-        np.array(var_vx.state[:3]) + np.array(var_vx.variation[:3]),
-    )
-    state[3] += diff
-    var_vy = universal_step(GMtotal, dt, state, variation=variation_vy)
-    diff = find_mag_to_adjust(
-        np.array([xn, yn, zn]),
-        np.array(var_vy.state[:3]),
-        np.array(var_vy.state[:3]) + np.array(var_vy.variation[:3]),
-    )
-    state[4] += diff
-    var_vz = universal_step(GMtotal, dt, state, variation=variation_vz)
-    diff = find_mag_to_adjust(
-        np.array([xn, yn, zn]),
-        np.array(var_vz.state[:3]),
-        np.array(var_vz.state[:3]) + np.array(var_vz.variation[:3]),
-    )
-    state[5] += diff
+    for i in range(3):
+        variation = np.zeros(6)
+        variation[i + 3] = 1  # we are varying vx, vy and vz by 1, once at a time
+        var_results = universal_step(GMtotal, dt, state_1, variation=variation)
 
-    return state[3:], np.array(var_vz.state)
+        diff = find_mag_to_adjust(
+            np.array(state_n[:3]),
+            np.array(var_results.state[:3]),
+            np.array(var_results.state[:3]) + np.array(var_results.variation[:3]),
+        )  # find the velocity in this cartesian direction that will get us closest to the desired position
+        state_1[i + 3] += diff
+
+    return state_1[3:], np.array(var_results.state)
