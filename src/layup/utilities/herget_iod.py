@@ -15,18 +15,21 @@ import copy
 SPEED_OF_LIGHT_AU_DAY = 173.145
 
 
-def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1000):
+def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=100):
+    seq_lengths = [len(i) for i in seq]
+    longest_i = np.argmax(seq_lengths)  # finds the sequence index with the most observations contained in it
+    obs = np.array(observations)[seq[longest_i]]
 
     # Define our values
 
-    obs_1 = observations[0]
+    obs_1 = obs[0]
     r_e_1 = obs_1.observer_position
     rho_hat_1 = np.array(obs_1.rho_hat)
     rho_1 = 40  # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
     t_1 = obs_1.epoch
     r_1 = r_e_1 + rho_1 * rho_hat_1
 
-    obs_n = observations[-1]
+    obs_n = obs[-1]
     r_e_n = obs_n.observer_position
     rho_hat_n = np.array(obs_n.rho_hat)
     rho_n = 40  # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
@@ -38,20 +41,20 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     delta_rhon = tolerance + 1
 
     # Get original epochs so we can light-time correct them each iteration
-    epochs = np.zeros(len(observations))
-    for i, observation in enumerate(observations):
+    epochs = np.zeros(len(obs))
+    for i, observation in enumerate(obs):
         epochs[i] = observation.epoch
 
     while (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance and iteration < max_iterations:
 
         # Light-time correct the observation times
-        for i, observation in enumerate(observations):
+        for i, observation in enumerate(obs):
             # print(observation.epoch)
             observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT_AU_DAY)
             # print(observation.epoch)
 
         delta_rho1, delta_rhon, x_1, y_1, z_1, vx1, vy1, vz1 = find_drho(
-            observations, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n
+            obs, t_1, t_n, r_1, r_n, tolerance, args, aux, rho_hat_1, rho_hat_n
         )
 
         # Update rho values
