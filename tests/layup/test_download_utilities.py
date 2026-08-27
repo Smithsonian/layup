@@ -12,6 +12,9 @@ from layup.utilities.bootstrap_utilties.download_utilities import (
     make_retriever,
     layup_downloader,
     _decompress,
+    _check_for_existing_files,
+    _remove_extracted_archives,
+    _EXTRACTED_ARCHIVE_EXTENSIONS,
     _RETRY_IF_FAILED,
     _CONNECT_TIMEOUT,
     _READ_TIMEOUT,
@@ -92,3 +95,59 @@ def test_decompress_survives_an_unremovable_archive(tmp_path, monkeypatch):
     _decompress(str(archive), "download", None)  # must not raise
 
     assert (tmp_path / "bias.dat").exists(), "extraction must still have happened"
+
+
+def test_extracted_archive_is_not_reported_missing(tmp_path):
+    """A cache with no `.tgz` is complete, not missing a file (issue #482).
+
+    `data_file_list` names the debiasing tarball, and issue #472 deletes that
+    tarball as soon as it is unpacked. Counting it as missing made every
+    subsequent bootstrap re-download ~156 MB from JPL, unpack it, delete it, and
+    do the same again next time.
+    """
+    aux = AuxiliaryConfigs()
+    assert aux.debiasing_data_compressed.endswith(_EXTRACTED_ARCHIVE_EXTENSIONS)
+
+    # A cache as a post-#472 bootstrap leaves it: everything but the archive.
+    for file_name in aux.data_file_list:
+        if file_name != aux.debiasing_data_compressed:
+            (tmp_path / file_name).touch()
+
+    retriever = make_retriever(aux, str(tmp_path))
+    assert _check_for_existing_files(aux, retriever) is True
+
+
+def test_a_genuinely_missing_file_is_still_reported(tmp_path):
+    """The skip is narrow: only extracted archives, not the data they contain."""
+    aux = AuxiliaryConfigs()
+    for file_name in aux.data_file_list:
+        if file_name not in (aux.debiasing_data_compressed, aux.debiasing_data):
+            (tmp_path / file_name).touch()
+
+    retriever = make_retriever(aux, str(tmp_path))
+    # bias.dat, the tarball's extracted payload, is absent and must be noticed.
+    assert _check_for_existing_files(aux, retriever) is False
+
+
+def test_leftover_archive_is_swept_from_an_old_cache(tmp_path, capsys):
+    """Caches populated before #472 keep the tarball; sweep it (issue #482)."""
+    aux = AuxiliaryConfigs()
+    for file_name in aux.data_file_list:
+        (tmp_path / file_name).touch()
+    archive = tmp_path / aux.debiasing_data_compressed
+    archive.write_bytes(b"x" * 2048)
+
+    retriever = make_retriever(aux, str(tmp_path))
+    _remove_extracted_archives(aux, retriever)
+
+    assert not archive.exists()
+    assert "MB reclaimed" in capsys.readouterr().out
+    # The extracted payload it came from must survive.
+    assert (tmp_path / aux.debiasing_data).exists()
+
+
+def test_sweep_is_quiet_when_there_is_nothing_to_remove(tmp_path, capsys):
+    aux = AuxiliaryConfigs()
+    retriever = make_retriever(aux, str(tmp_path))
+    _remove_extracted_archives(aux, retriever)  # must not raise
+    assert capsys.readouterr().out == ""
