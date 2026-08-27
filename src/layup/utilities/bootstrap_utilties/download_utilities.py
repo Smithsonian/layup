@@ -5,6 +5,7 @@ import pooch
 from typing import Optional
 from layup.utilities.layup_configs import AuxiliaryConfigs
 from layup.utilities.bootstrap_utilties.create_meta_kernel import build_meta_kernel_file
+from layup.utilities.cache_location import default_cache_dir
 
 # Fail-fast network policy for all layup data downloads (issue #388).
 # Previously a stalled MPC/JPL connection was retried 25 times with no request
@@ -43,7 +44,7 @@ def make_retriever(aux_config: AuxiliaryConfigs, directory_path: Optional[str] =
     : pooch.Pooch
         The instance of a Pooch object used to track and retrieve files.
     """
-    dir_path = directory_path if directory_path else pooch.os_cache("layup")
+    dir_path = directory_path if directory_path else default_cache_dir()
 
     return pooch.create(
         path=dir_path,
