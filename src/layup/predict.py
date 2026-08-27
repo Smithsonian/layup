@@ -4,7 +4,6 @@ from argparse import Namespace
 from pathlib import Path
 
 import numpy as np
-import pooch
 import spiceypy as spice
 from sorcha.ephemeris.simulation_geometry import vec2ra_dec, integrate_light_time
 from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, furnish_spiceypy, generate_simulations
@@ -33,6 +32,7 @@ from layup.utilities.data_processing_utilities import (
 from layup.utilities.file_io import CSVDataReader
 from layup.utilities.file_io.file_output import write_csv
 from layup.utilities.cli_utilities import warn_or_remove_file
+from layup.utilities.cache_location import default_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     numpy structured array with the flattened results
     """
     if cache_dir is None:
-        kernels_loc = str(pooch.os_cache("layup"))
+        kernels_loc = str(default_cache_dir())
     else:
         kernels_loc = str(cache_dir)
 

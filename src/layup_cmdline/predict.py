@@ -9,6 +9,7 @@ from pathlib import Path
 import astropy.units as u
 
 from layup_cmdline.layupargumentparser import LayupArgumentParser
+from layup.utilities.cache_location import default_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,6 @@ def execute(args):
     import sys
 
     import astropy.units as u
-    import pooch
 
     from layup.predict import predict_cli
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
@@ -273,7 +273,7 @@ def execute(args):
         find_directory_or_exit(args.ar_data_file_path, "-ar, --ar_data_path")
         cache_dir = Path(args.ar_data_file_path)
     else:
-        cache_dir = Path(pooch.os_cache("layup"))
+        cache_dir = default_cache_dir()
 
     start_date = convert_input_to_JD_TDB(args.s, cache_dir)
 

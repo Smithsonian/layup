@@ -1,4 +1,5 @@
 from typing import Union, Iterable
+from layup.utilities.cache_location import default_cache_dir
 
 SEC_PER_DAY = 24 * 60 * 60
 
@@ -25,10 +26,9 @@ def convert_tdb_date_to_julian_date(
     """
     from pathlib import Path
     import spiceypy as spice
-    import pooch
 
     if not spice_kernel_dir:
-        spice_kernel_dir = pooch.os_cache("layup")
+        spice_kernel_dir = default_cache_dir()
 
     # Load SPICE kernels
     kernel_file = Path(spice_kernel_dir) / "naif0012.tls"

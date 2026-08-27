@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import numpy as np
-import pooch
 import spiceypy as spice
 
 from numpy.lib import recfunctions as rfn
@@ -57,6 +56,7 @@ from layup.utilities.file_io import (
     Obs80DataReader,
 )
 from layup.utilities.file_io.file_output import append_hdf5, write_csv, write_hdf5
+from layup.utilities.cache_location import default_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -1280,7 +1280,7 @@ def _orbitfit(
 
         # if cache_dir is not provided, use the default os_cache
         if cache_dir is None:
-            kernels_loc = str(pooch.os_cache("layup"))
+            kernels_loc = str(default_cache_dir())
         else:
             kernels_loc = str(cache_dir)
 
@@ -1554,7 +1554,7 @@ def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None)
     the sequential path; the driver's full-refit fallback covers them.)
     """
     DEG = np.pi / 180.0
-    kernels_loc = str(pooch.os_cache("layup")) if cache_dir is None else str(cache_dir)
+    kernels_loc = str(default_cache_dir()) if cache_dir is None else str(cache_dir)
     observatory = LayupObservatory(cache_dir=cache_dir)
 
     et = np.array([spice.str2et(row["obsTime"]) for row in data], dtype="<f8")
@@ -1683,7 +1683,7 @@ def sequential_update(
         information-filter update, or ``"orbit_fit"`` when the fallback refit ran.
     """
     prior_fit = prior if isinstance(prior, FitResult) else parse_fit_result(prior)
-    kernels_loc = str(pooch.os_cache("layup")) if cache_dir is None else str(cache_dir)
+    kernels_loc = str(default_cache_dir()) if cache_dir is None else str(cache_dir)
     ephem = get_ephem(kernels_loc)
     bias_dict = generate_bias_dict(cache_dir) if debias_data else None
 
