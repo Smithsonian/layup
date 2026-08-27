@@ -31,7 +31,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from universal_kepler import (
+from layup.utilities.universal_kepler import (
     KeplerConvergenceError,
     state_transition_matrix,
     stumpff_c,
