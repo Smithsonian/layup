@@ -11,7 +11,7 @@ from layup.utilities.universal_kepler import universal_step
 SPEED_OF_LIGHT_AU_DAY = 173.145
 
 
-def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=100):
+def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations=100):
     """Runs the Herget method on a set of observations.
 
     Parameters
@@ -66,7 +66,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
             # print(observation.epoch)
 
         delta_rho1, delta_rhon, state_1 = find_drho(
-            obs, t1, tn, r1, rn, tolerance, args, aux, rho_hat_1, rho_hat_n
+            obs, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat_n
         )
 
         # Update rho values
@@ -93,7 +93,7 @@ def herget_with_assist(observations, seq, tolerance, args, aux, max_iterations=1
     return [solution]
 
 
-def find_drho(observations, t1, tn, r1, rn, tolerance, args, aux, rho_hat_1, rho_hat_n):
+def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat_n):
     """Find the adjustment to make to rho_1 and rho_n to make in order to reduce the residuals of the observations
 
     Parameters
@@ -134,7 +134,6 @@ def find_drho(observations, t1, tn, r1, rn, tolerance, args, aux, rho_hat_1, rho
     [var_vx1, var_vy1, var_vz1], _ = find_velocity(t1, tn, r1 + rho_hat_1, rn, tolerance)
 
     # Simulation setup
-    ephem, _, _ = create_assist_ephemeris(args, aux)
     sim = rebound.Simulation()
 
     sim.add(x=r1[0], y=r1[1], z=r1[2], vx=vx1, vy=vy1, vz=vz1)

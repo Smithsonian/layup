@@ -5,18 +5,15 @@ from numpy.testing import assert_allclose, assert_equal
 import layup.utilities.herget_iod as herget
 import spiceypy as spice
 
-from layup.utilities.layup_configs import LayupConfigs
-from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
-from layup.routines import Observation
+from layup.routines import Observation, get_ephem
 from layup.utilities.data_processing_utilities import LayupObservatory
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.orbitfit import _build_sequence
-
-from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 import assist
 import rebound
+from layup.orbit_maths import build_ephem_and_mus
 
 SPEED_OF_LIGHT_AU_DAY = 173.145
 
@@ -102,17 +99,6 @@ def test_find_drho(tmpdir):
     jds = convert_tdb_date_to_julian_date(data["obsTime"])
     sequence = _build_sequence(jds, sep_dt=90.0)
 
-    class FakeCliArgs:
-        def __init__(self, g=None):
-            self.primary_id_column_name = "ObjID"
-            self.n = 1
-            self.chunk = 10000
-            self.ar_data_file_path = None
-            self.force = True
-            self.code_format = True
-
-    args = FakeCliArgs()
-    aux = LayupConfigs().auxiliary
 
     obs_1 = observations[0]
     r_e_1 = obs_1.observer_position
@@ -137,8 +123,9 @@ def test_find_drho(tmpdir):
         observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT_AU_DAY)
 
     state_1[3:], _ = herget.find_velocity(t_1, t_n, state_1[:3], r_n, 0.001)
-
-    ephem, _, _ = create_assist_ephemeris(args, aux)
+    
+    ephem, _, _ = build_ephem_and_mus()
+    print(dir(ephem))
     sim = rebound.Simulation()
     ex = assist.Extras(sim, ephem)
     sim.t = t_1 - ephem.jd_ref
@@ -166,7 +153,7 @@ def test_find_drho(tmpdir):
     # call find_drho, check if it reduces the sum of the residuals
 
     delta_rho1, delta_rhon, state_1 = herget.find_drho(
-        observations, t_1, t_n, state_1[:3], r_n, 0.001, args, aux, rho_hat_1, rho_hat_n
+        observations, t_1, t_n, state_1[:3], r_n, 0.001, ephem, rho_hat_1, rho_hat_n
     )
 
     # Update rho values
@@ -180,7 +167,6 @@ def test_find_drho(tmpdir):
 
     state_1[3:], _ = herget.find_velocity(t_1, t_n, state_1[:3], r_n, 0.001)
 
-    ephem, _, _ = create_assist_ephemeris(args, aux)
     sim = rebound.Simulation()
     ex = assist.Extras(sim, ephem)
     sim.t = t_1 - ephem.jd_ref
