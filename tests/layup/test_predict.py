@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -221,7 +222,17 @@ def test_predict_output(tmpdir):
     temp_out_file = f"test_output_{input_file.stem}"
 
     result = subprocess.run(
-        ["layup", "predict", str(input_file), "-f", "-o", str(temp_out_file), "-s", start]
+        [
+            sys.executable,
+            "-m",
+            "layup_cmdline.predict",
+            str(input_file),
+            "-f",
+            "-o",
+            str(temp_out_file),
+            "-s",
+            start,
+        ]
     )
 
     assert result.returncode == 0
@@ -282,8 +293,9 @@ def test_predict_output(tmpdir):
 
     result = subprocess.run(
         [
-            "layup",
-            "predict",
+            sys.executable,
+            "-m",
+            "layup_cmdline.predict",
             str(input_file),
             "-f",
             "-o",
@@ -421,8 +433,9 @@ def test_get_onsky_data_output(tmpdir):
 
     result = subprocess.run(
         [
-            "layup",
-            "predict",
+            sys.executable,
+            "-m",
+            "layup_cmdline.predict",
             str(input_file),
             "-f",
             "-o",

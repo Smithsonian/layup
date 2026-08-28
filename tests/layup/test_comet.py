@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 import pytest
 import rebound
@@ -214,7 +215,17 @@ def test_comet_output(tmpdir):
     # The demo comet fixture is keyed by ObjID; comet's -pid now defaults to
     # provID (CLI-consistency), so pass -pid ObjID explicitly.
     result = subprocess.run(
-        ["layup", "comet", str(input_file), "-f", "-o", str(temp_out_file), "-pid", "ObjID"]
+        [
+            sys.executable,
+            "-m",
+            "layup_cmdline.comet",
+            str(input_file),
+            "-f",
+            "-o",
+            str(temp_out_file),
+            "-pid",
+            "ObjID",
+        ]
     )
 
     assert result.returncode == 0
