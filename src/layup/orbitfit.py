@@ -1,13 +1,14 @@
+import hashlib
 import logging
 import os
+import re
 from argparse import Namespace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
 import numpy as np
-import pooch
 import spiceypy as spice
-from time import sleep
 
 from numpy.lib import recfunctions as rfn
 
@@ -16,11 +17,27 @@ from layup.routines import (
     Observation,
     gauss,
     get_ephem,
+    run_bk_iod,
+    run_bk_native_fit,
     run_from_vector_with_initial_guess,
+    run_sequential_update,
 )
-from layup.convert import convert
 
-from layup.utilities.astrometric_uncertainty import data_weight_Veres2017
+try:
+    from layup.routines import (
+        get_ias15_adaptive_mode,
+        set_ias15_adaptive_mode,
+    )
+except ImportError:  # extension not rebuilt yet
+    get_ias15_adaptive_mode = lambda: -1
+    set_ias15_adaptive_mode = lambda m: None
+# _MU_SUN (= heliocentric GM = k^2) is used by the BK-native fit for the
+# bound-orbit energy prior on gdot; SPEED_OF_LIGHT (au/day) by the radar ingest.
+from layup.constants import MU_SUN as _MU_SUN, SPEED_OF_LIGHT
+from layup.convert import convert
+from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
+
+from layup.utilities.astrometric_uncertainty import astrometric_uncertainty_Veres2017
 from layup.utilities.data_processing_utilities import (
     LayupObservatory,
     create_chunks,
@@ -28,14 +45,45 @@ from layup.utilities.data_processing_utilities import (
     get_format,
     parse_fit_result,
     process_data_by_id,
+    resolve_num_workers,
 )
 from layup.utilities.datetime_conversions import convert_tdb_date_to_julian_date
 from layup.utilities.debiasing import debias, generate_bias_dict
-from layup.utilities.file_io import CSVDataReader, HDF5DataReader, Obs80DataReader
-from layup.utilities.file_io.file_output import write_csv, write_hdf5
-from layup.utilities.herget_iod import herget_with_assist
+from layup.utilities.file_io import (
+    ADESXMLDataReader,
+    CSVDataReader,
+    HDF5DataReader,
+    Obs80DataReader,
+)
+from layup.utilities.file_io.file_output import append_hdf5, write_csv, write_hdf5
+from layup.utilities.cache_location import default_cache_dir
 
 logger = logging.getLogger(__name__)
+
+# Observed sky-motion rates (ADES `raRate`/`decRate`) arrive in arcsec/hour and
+# follow the great-circle convention: `raRate` is cos(Dec)*dRA/dt, NOT the bare
+# coordinate rate dRA/dt. This matches Sorcha's `RARateCosDec` output (which
+# projects drho_hat/dt onto A = (-sinRA, cosRA, 0)) and layup's own residual,
+# which projects onto the same tangent vector `a_vec` -- so an observed rate is
+# compared directly to omega.a_vec with no extra cos(Dec) factor. Internally the
+# fitter works in radians and AU/day, so omega = d(rho_hat)/dt is in rad/day;
+# convert the observed rates from arcsec/hour to rad/day at ingest.
+ARCSEC_PER_HOUR_TO_RAD_PER_DAY = (np.pi / 180.0 / 3600.0) * 24.0
+
+# Radar (delay/Doppler) observables arrive in JPL units: round-trip delay in
+# microseconds and Doppler shift in Hz at a per-observation transmit frequency
+# `freqTx` (Hz). The fitter models round-trip delay in days and round-trip
+# range-rate in au/day (see RadarObservation in detection.cpp), so convert at
+# ingest, mirroring the streak rate convention above:
+#   delay[days]     = delay[us] * 1e-6 / 86400
+#   doppler[au/day] = -c * doppler[Hz] / freqTx[Hz]
+# The Doppler sign follows F = -(f_tx/c) * d(round-trip range)/dt, so a positive
+# (receding) range-rate produces a negative frequency shift.
+US_TO_DAYS = 1.0e-6 / 86400.0
+# Fallback 1-sigma weights when the JPL uncertainty columns are absent: ~1 us of
+# round-trip delay and ~1 Hz of Doppler (converted per observation via freqTx).
+_DEFAULT_DELAY_UNC_DAYS = US_TO_DAYS
+_DEFAULT_DOPPLER_UNC_HZ = 1.0
 
 # The list of required input column names for the provided observations to be fit.
 # Note: This should not include the primary id column name.
@@ -43,6 +91,8 @@ REQUIRED_INPUT_OBSERVATIONS_COLUMN_NAMES = [
     (
         set(["ra", "dec"]),  # Either `ra` and `dec` must be in the file
         set(["raRate", "decRate"]),  # Or `raRate` and `decRate` must be in the file
+        set(["delay"]),  # Or a radar round-trip delay (us)
+        set(["doppler"]),  # Or a radar Doppler shift (Hz; needs `freqTx`)
     ),
     "obsTime",
     "stn",
@@ -59,17 +109,168 @@ INPUT_FORMAT_READERS = {
     "MPC80col": (Obs80DataReader, None),
     "ADES_csv": (CSVDataReader, "csv"),
     "ADES_psv": (CSVDataReader, "psv"),
-    "ADES_xml": (None, None),
+    "ADES_xml": (ADESXMLDataReader, None),
     "ADES_hdf5": (HDF5DataReader, None),
 }
 
-GMtotal = 0.0002963092748799319
-AU_M = 149597870700
-SPEED_OF_LIGHT = 2.99792458e8 * 86400.0 / AU_M
+
+def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
+    """Dispatch a single LM fit step to the configured engine.
+
+    Centralizing the dispatch here keeps do_fit's IOD-then-fit pipeline
+    parameterization-agnostic and lets us add new engines (e.g., a
+    future distance-dispatched 'auto') with a single edit instead of
+    threading the choice through every call site.
+
+    `iter_max` is the LM iteration budget used by the multi-root picker's
+    two-tier (cheap-screen then full) passes. The Cartesian engine honors
+    it; the BK-native engine uses its own internal cap (it takes `mu` for
+    the bound-orbit energy prior rather than an iteration budget), so
+    `iter_max` is ignored on that path.
+    """
+    if engine == "cartesian":
+        return run_from_vector_with_initial_guess(assist_ephem, initial_guess, observations, iter_max)
+    if engine == "bk_native":
+        return run_bk_native_fit(assist_ephem, initial_guess, observations, _MU_SUN)
+    raise ValueError(f"Unknown engine {engine!r}; expected one of 'cartesian', 'bk_native'.")
 
 
-def _get_result_dtypes(primary_id_column_name: str):
-    """Helper function to create the result dtype with the correct primary ID column name."""
+# Non-gravitational Marsden parameters and their FitResult/C++ bitmask bits.
+_NONGRAV_BITS = {"A1": 1, "A2": 2, "A3": 4}
+
+
+def _parse_nongrav(fit_nongrav):
+    """Normalize the ``fit_nongrav`` argument to ``(mask, names)``.
+
+    Accepts ``False``/``None`` (no non-grav fit), ``True`` (== ``["A2"]``, the
+    common asteroid Yarkovsky case), a string naming params (e.g. ``"A2"``,
+    ``"A1A2A3"``, ``"A1,A3"``), or an iterable of names. Returns the C++ bitmask
+    (bits 1/2/4 for A1/A2/A3) and the selected names ordered A1, A2, A3.
+    """
+    if not fit_nongrav:
+        return 0, []
+    if fit_nongrav is True:
+        sel = {"A2"}
+    elif isinstance(fit_nongrav, str):
+        sel = set(re.findall(r"A[123]", fit_nongrav.upper()))
+    else:
+        sel = {str(s).upper() for s in fit_nongrav}
+    names = [n for n in ("A1", "A2", "A3") if n in sel]
+    if not names:
+        raise ValueError(f"fit_nongrav={fit_nongrav!r}: expected some of 'A1', 'A2', 'A3'.")
+    return sum(_NONGRAV_BITS[n] for n in names), names
+
+
+# fit_nongrav="auto" model ladder (issue #357): non-grav models are tried in
+# increasing complexity, and the first that converges, is well-conditioned
+# (flag 0), and is statistically warranted (see NongravAutoThresholds) is adopted;
+# otherwise the gravity-only fit is kept.
+_AUTO_NONGRAV_LADDER = (("A2",), ("A1", "A2"), ("A1", "A2", "A3"))
+
+
+@dataclass(frozen=True)
+class NongravAutoThresholds:
+    """Decision thresholds for adaptive non-grav selection (``fit_nongrav="auto"``,
+    issue #357). Pass a customized instance to ``orbitfit`` to tune how readily a
+    non-gravitational model is adopted; the defaults reproduce the standard
+    "introduce a non-grav only when gravity is unacceptable and the parameter is
+    statistically warranted" behavior.
+
+    Parameters
+    ----------
+    accept_reduced_chi2 : float
+        A gravity-only fit whose reduced chi-square is at or below this is kept
+        as-is; non-grav models are tried only above it. Default 1.5.
+    delta_chi2_per_param : float
+        Minimum chi-square drop required per added non-grav parameter to adopt a
+        model (9.0 ~ 3-sigma). Default 9.0.
+    nsigma : float
+        Each added non-grav parameter must exceed this many times its 1-sigma
+        uncertainty to be adopted. Default 3.0.
+    """
+
+    accept_reduced_chi2: float = 1.5
+    delta_chi2_per_param: float = 9.0
+    nsigma: float = 3.0
+
+
+_AUTO_DEFAULT_THRESHOLDS = NongravAutoThresholds()
+
+
+def _gravity_fit_acceptable(csq, ndof, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Whether a gravity-only fit is good enough that no non-grav is warranted.
+
+    True when the reduced chi-square is at or below the acceptance threshold (or
+    there are no degrees of freedom to judge it by).
+    """
+    return ndof <= 0 or csq / ndof <= thresholds.accept_reduced_chi2
+
+
+def _nongrav_warranted(csq_gravity, res_ng, names, thresholds=_AUTO_DEFAULT_THRESHOLDS):
+    """Whether adopting the (converged, well-conditioned) non-grav fit ``res_ng``
+    for parameters ``names`` over the gravity-only fit is statistically warranted:
+    a significant chi-square drop AND every added parameter individually significant.
+    """
+    if (csq_gravity - res_ng.csq) <= thresholds.delta_chi2_per_param * len(names):
+        return False  # chi-square improvement not significant for the added parameter(s)
+    return all(
+        abs(getattr(res_ng, n.lower())) > thresholds.nsigma * getattr(res_ng, n.lower() + "_unc")
+        for n in names
+    )
+
+
+def _gofr_arg(nongrav_gr):
+    """Normalize a non-grav g(r) argument to the ``[alpha, nm, nn, nk, r0]`` list the
+    C++ fit expects (empty -> the default inverse-square law)."""
+    if nongrav_gr is None:
+        return []
+    gr = list(nongrav_gr)
+    if len(gr) != 5:
+        raise ValueError("nongrav_gr must be [alpha, nm, nn, nk, r0] (5 values) or None")
+    return [float(v) for v in gr]
+
+
+def _select_nongrav_auto(
+    assist_ephem, res_grav, observations, thresholds=_AUTO_DEFAULT_THRESHOLDS, gofr=None
+):
+    """Adaptive non-grav selection for ``fit_nongrav="auto"`` (issue #357).
+
+    ``res_grav`` is the converged gravity-only fit. Returns the most parsimonious
+    acceptable model: the gravity-only result unless a non-grav model is both
+    well-conditioned (flag 0) and statistically warranted per ``thresholds``.
+    ``gofr`` selects the g(r) sublimation law (see ``orbitfit``'s ``nongrav_gr``).
+    """
+    if _gravity_fit_acceptable(res_grav.csq, res_grav.ndof, thresholds):
+        return res_grav  # gravity-only fit is acceptable; no non-gravs needed
+    gr = _gofr_arg(gofr)
+    for names in _AUTO_NONGRAV_LADDER:
+        mask = sum(_NONGRAV_BITS[n] for n in names)
+        res_ng = run_from_vector_with_initial_guess(
+            assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr
+        )
+        if res_ng.flag == 0 and _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
+            return res_ng  # parsimonious, well-determined non-grav model
+    return res_grav  # no non-grav model is warranted
+
+
+def _get_result_dtypes(primary_id_column_name: str, nongrav_names=(), per_arc=False):
+    """Helper function to create the result dtype with the correct primary ID column name.
+
+    For each fitted non-gravitational parameter in ``nongrav_names`` (a subset of
+    ``A1``/``A2``/``A3``), two columns are appended -- e.g. ``a2`` and ``a2_unc``
+    (the value and its 1-sigma uncertainty, au/day^2). With no non-grav params the
+    default 6-parameter output schema is unchanged.
+
+    When ``per_arc`` is set (the two-apparition comet-linkage fit), the non-grav
+    columns above hold the *earlier* arc's amplitudes and a second block
+    ``a2_arc2``/``a2_arc2_unc`` is appended for the *later* arc. Both are opt-in,
+    so the ordinary fit schema is unaffected.
+    """
+    per_arc_cols = []
+    if per_arc:
+        per_arc_cols = [
+            (col, "f8") for n in nongrav_names for col in (n.lower() + "_arc2", n.lower() + "_arc2_unc")
+        ]
     # Define a structured dtype to match the OrbfitResult fields
     return np.dtype(
         [
@@ -89,6 +290,166 @@ def _get_result_dtypes(primary_id_column_name: str):
             ("FORMAT", "O"),  # Orbit format
         ]
         + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
+        + [  # non-grav params (issue #351), value + 1-sigma per fitted param
+            (col, "f8") for n in nongrav_names for col in (n.lower(), n.lower() + "_unc")
+        ]
+        + per_arc_cols  # later-arc non-grav amplitudes (comet linkage), when per_arc
+        # Observation provenance / incremental fingerprint (issue #419): a
+        # deterministic hash of the observation set this orbit was fit from, plus
+        # the number of fittable observations. Kept last so the positional output
+        # tuples above the conditional non-grav columns are unaffected. Lets a
+        # steady-state pipeline skip re-fitting objects whose observations are
+        # unchanged since the prior catalog (see ``_obs_fingerprint``).
+        + [("obs_hash", "O"), ("nobs_fit", "i4")]
+    )
+
+
+# Observation columns that determine the fit and therefore the fingerprint. Any
+# change to these (new obs, corrected astrometry, changed uncertainties) yields a
+# different hash and forces a re-fit; changes to purely cosmetic columns (e.g. a
+# magnitude) do not. Only the columns actually present in the data are hashed.
+_FINGERPRINT_COLUMNS = (
+    "obsTime",  # epoch
+    "ra",
+    "dec",  # optical astrometry (raw, pre-debias)
+    "stn",  # observatory code
+    "raStar",
+    "decStar",  # occultation astrometry
+    "rmsRA",
+    "rmsDec",  # reported astrometric uncertainties
+    "astCat",  # star catalog (feeds debiasing + weighting)
+    "raRate",
+    "decRate",
+    "rmsRArate",
+    "rmsDecrate",  # streak rates
+    "delay",
+    "doppler",
+    "freqTx",  # radar observables
+)
+
+
+def _fmt_fingerprint_value(v):
+    """Canonical, round-trip-stable string for one observation field value.
+
+    Uses Python's shortest round-trip ``repr`` for floats (deterministic across
+    runs and platforms) and decodes bytes so a numpy ``S``/``O`` string column
+    hashes identically however it was loaded.
+    """
+    if isinstance(v, bytes):
+        return v.decode("utf-8", "replace")
+    if isinstance(v, (np.floating, float)):
+        return repr(float(v))
+    return str(v)
+
+
+def _obs_fingerprint(data, column_names):
+    """Deterministic fingerprint of an object's fittable observation set.
+
+    Returns ``(nobs, hash16)`` where ``nobs`` is the row count and ``hash16`` is a
+    16-hex-character SHA-1 digest over the fit-relevant columns (``_FINGERPRINT_COLUMNS``).
+    The per-row strings are sorted before hashing, so the fingerprint is
+    order-independent: the same physical observations produce the same hash
+    regardless of row order (an LM fit over a set is itself order-independent).
+    Computed on the raw observations before any in-place debiasing so it reflects
+    what was reported, not the current bias model.
+    """
+    cols = [c for c in _FINGERPRINT_COLUMNS if c in column_names]
+    rows = ["\x1f".join(_fmt_fingerprint_value(d[c]) for c in cols) for d in data]
+    rows.sort()
+    payload = "\x1e".join(rows).encode("utf-8")
+    return len(rows), hashlib.sha1(payload).hexdigest()[:16]
+
+
+def _is_radar(d, column_names):
+    """True if a row carries a populated radar observable (delay or Doppler).
+
+    Radar rows have no ra/dec; they are dispatched to ``Observation.from_radar``
+    rather than the astrometry/streak factories.
+    """
+    has_delay = "delay" in column_names and not np.isnan(d["delay"])
+    has_doppler = "doppler" in column_names and not np.isnan(d["doppler"])
+    return has_delay or has_doppler
+
+
+def _radar_observation(objID, d, epoch_jd, column_names):
+    """Build a radar ``Observation`` from a row, converting JPL units to the
+    fitter's internal units.
+
+    delay (us, round-trip) -> days; Doppler (Hz) -> round-trip range-rate
+    (au/day) via the per-observation transmit frequency ``freqTx``. The
+    barycentric observer position/velocity columns (x,y,z,vx,vy,vz) must already
+    be present (added by ``orbitfit``); the observer acceleration columns
+    (ax,ay,az) drive the two-leg light-time model and default to zero when
+    absent. 1-sigma uncertainties come from ``rmsDelay``/``rmsDoppler`` when
+    present, else the module defaults.
+    """
+    has_delay = "delay" in column_names and not np.isnan(d["delay"])
+    has_doppler = "doppler" in column_names and not np.isnan(d["doppler"])
+
+    f_tx = d["freqTx"] if "freqTx" in column_names else np.nan
+    if has_doppler and (np.isnan(f_tx) or f_tx == 0.0):
+        raise ValueError(f"Radar Doppler observation for {objID} requires a nonzero 'freqTx' (Hz).")
+
+    delay_days = (d["delay"] * US_TO_DAYS) if has_delay else 0.0
+    doppler_audy = (-SPEED_OF_LIGHT * d["doppler"] / f_tx) if has_doppler else 0.0
+
+    if "rmsDelay" in column_names and not np.isnan(d["rmsDelay"]):
+        delay_unc = abs(d["rmsDelay"]) * US_TO_DAYS
+    else:
+        delay_unc = _DEFAULT_DELAY_UNC_DAYS
+
+    if has_doppler:
+        rms_hz = (
+            d["rmsDoppler"]
+            if ("rmsDoppler" in column_names and not np.isnan(d["rmsDoppler"]))
+            else _DEFAULT_DOPPLER_UNC_HZ
+        )
+        doppler_unc = abs(SPEED_OF_LIGHT * rms_hz / f_tx)
+    else:
+        doppler_unc = abs(SPEED_OF_LIGHT * _DEFAULT_DOPPLER_UNC_HZ / f_tx) if not np.isnan(f_tx) else 1.0
+
+    if all(c in column_names for c in ("ax", "ay", "az")):
+        observer_acc = [float(d["ax"]), float(d["ay"]), float(d["az"])]
+    else:
+        observer_acc = [0.0, 0.0, 0.0]
+
+    return Observation.from_radar_with_id(
+        str(objID),
+        delay_days,
+        doppler_audy,
+        has_delay,
+        has_doppler,
+        epoch_jd,
+        [d["x"], d["y"], d["z"]],  # Barycentric observer position
+        [d["vx"], d["vy"], d["vz"]],  # Barycentric observer velocity
+        delay_unc,
+        doppler_unc,
+        observer_acc,  # Barycentric observer acceleration (au/day^2)
+    )
+
+
+def _append_observer_acceleration(data, observatory, dt_sec=2.0):
+    """Append barycentric observer acceleration columns (ax, ay, az; au/day^2).
+
+    Finite-differences the barycentric station velocity from
+    ``obscodes_to_barycentric`` at the observation epoch +/- ``dt_sec``. Used only
+    by radar observations, whose two-leg light-time model extrapolates the station
+    state back to the signal transmit time. Requires the ``et`` column (seconds
+    past J2000, TDB) that ``orbitfit`` adds before computing the observer states.
+    """
+
+    def _vel(et_offset_sec):
+        shifted = data.copy()
+        shifted["et"] = data["et"] + et_offset_sec
+        pv = np.atleast_1d(observatory.obscodes_to_barycentric(shifted))
+        return np.stack([pv["vx"], pv["vy"], pv["vz"]], axis=-1)
+
+    # d(velocity[au/day]) / d(time[day]); 2*dt_sec seconds = 2*dt_sec/86400 days.
+    scale = 86400.0 / (2.0 * dt_sec)
+    acc = (_vel(dt_sec) - _vel(-dt_sec)) * scale
+    acc = np.atleast_2d(acc)
+    return rfn.append_fields(
+        data, ["ax", "ay", "az"], [acc[:, 0], acc[:, 1], acc[:, 2]], usemask=False, asrecarray=True
     )
 
 
@@ -321,143 +682,320 @@ def create_empty_result(id, dtypes):
                 "NONE",  # format
             )
             + (np.nan,) * 36  # Flat covariance matrix
+            # non-grav columns (issue #351): NaN per a1/a2/a3 (+ _unc) that is present
+            + tuple(np.nan for n in ("a1", "a2", "a3") if n in dtypes.names for _ in (0, 1))
+            # obs fingerprint (issue #419): empty hash never matches, so a failed
+            # or invalid fit is always retried next cycle rather than skipped.
+            + (("", 0) if "obs_hash" in dtypes.names else ())
         ],
         dtype=dtypes,
     )
 
 
+def _carry_forward_result(prior_row, dtypes):
+    """Copy a prior fit result forward under the current output dtype (issue #419).
+
+    Used by the skip-unchanged path: when an object's observations are unchanged,
+    its stored fit is emitted verbatim rather than recomputed. Fields shared with
+    ``dtypes`` are copied by name (so the carried row is identical to the prior
+    fit); any field present in ``dtypes`` but absent from the prior (e.g. a
+    non-grav column the prior run did not fit) is left at its type default.
+    """
+    prior_row = prior_row[0] if getattr(prior_row, "shape", None) == (1,) else prior_row
+    out = np.zeros(1, dtype=dtypes)
+    for name in dtypes.names:
+        if name in prior_row.dtype.names:
+            out[name][0] = prior_row[name]
+    return out
+
+
+def _partition_unchanged(data, initial_guess, primary_id_column_name, fit_nongrav):
+    """Split raw observations into (to_fit, carried_forward) by obs fingerprint.
+
+    The steady-state pre-filter for ``orbitfit(skip_unchanged=True)`` (issue #419):
+    an object whose fingerprint matches a converged prior fit over the same
+    observation set is carried forward verbatim (cast to the current output
+    dtype); every other object's rows are returned for fitting. Runs before any
+    ephemeris/observatory setup, so a skipped object costs only a fingerprint
+    hash. The fingerprint is computed on the raw (pre-debias) observations, so it
+    matches the one ``_orbitfit`` stores.
+    """
+    _, nongrav_names = _parse_nongrav(fit_nongrav)
+    out_dtype = _get_result_dtypes(primary_id_column_name, nongrav_names)
+    prior = np.atleast_1d(initial_guess)
+    prior_by_id = {row[primary_id_column_name]: row for row in prior}
+    ids = data[primary_id_column_name]
+    keep = np.ones(len(data), dtype=bool)
+    carried = []
+    for oid in np.unique(ids):
+        obj_mask = ids == oid
+        nobs, obs_hash = _obs_fingerprint(data[obj_mask], data.dtype.names)
+        p = prior_by_id.get(oid)
+        if (
+            p is not None
+            and int(p["flag"]) == 0
+            and "nobs_fit" in prior.dtype.names
+            and int(p["nobs_fit"]) == nobs
+            and str(p["obs_hash"]) == obs_hash
+        ):
+            keep[obj_mask] = False
+            carried.append(_carry_forward_result(p, out_dtype))
+    carried_arr = np.concatenate(carried) if carried else np.array([], dtype=out_dtype)
+    return data[keep], carried_arr
+
+
 def do_gauss_iod(observations, seq):
-    """Calculate an initial orbit estimate using Gauss's method.
+    """Backward-compat wrapper for the Gauss IOD.
 
-    Parameters
-    ----------
-    observations : list[Observation]
-        The list of Observations used for the orbit estimate
-    seq : list[list[int]
-        The list of lists of indexes of observations that are closely spaced in time.
-
-    Returns
-    -------
-    list[FitResult]
-        A collection of orbit fit results that can be used to perform a higher
-        quality fit estimate.
+    Prefer ``layup.iod.get_iod("gauss")`` for new code; this shim
+    exists so callers that imported ``do_gauss_iod`` directly continue
+    to work.
     """
-    # Get gauss solution, using the first, middle, and last observation
-    # of the primary sequence
-    idx0, idx1, idx2 = seq[0][0], seq[0][int(len(seq[0]) / 2)], seq[0][-1]
-    logger.debug(f"Sequence indexs passed to gauss: {idx0}, {idx1}, {idx2}")
-    solns = gauss(GMtotal, observations[idx0], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
-
-    return solns
+    return get_iod("gauss")(observations, seq)
 
 
-def do_herget_iod(observations, seq, args, aux):
-    """Calculate an initial orbit estimate using Herget's method.
+# Multi-root picker tuning. Both knobs are exposed to do_fit() callers
+# in case downstream code wants to override them, but the defaults are
+# what worked best on the diagnostic/scan and neo_scan datasets.
+_PICKER_MIN_R_HELIO_AU = 0.3  # reject roots with r < this as unphysical
+_PICKER_SCREEN_ITER_MAX = 80  # cheap LM budget for the first pass
+_PICKER_FULL_ITER_MAX = 100  # full LM budget for the fallback pass
 
-    Parameters
-    ----------
-    observations : list[Observation]
-        The list of Observations used for the orbit estimate
-    seq : list[list[int]
-        The list of lists of indexes of observations that are closely spaced in time.
+_PREFILTER_THRESHOLD_SIGMA = 1000.0  # held-out residual filter cutoff
 
-    Returns
-    -------
-    list[FitResult]
-        A collection of orbit fit results that can be used to perform a higher
-        quality fit estimate.
+# IAS15 adaptive-step controller used during the multi-root picker.
+# With the legacy controller (mode 1), LM grinds for minutes on phantom
+# Gauss roots whose trajectories pass close to Earth (the integrator
+# chases ever-smaller steps to resolve the close encounter — 100-1000×
+# wallclock blowup observed on diagnostic/scan). The newer (Pham, Rein
+# & Spiegel 2024) controller, mode 2, steps through those encounters
+# efficiently: it brings the same pathological cases from >120 s to
+# sub-second with the identical recovered orbit, and unlike a step-size
+# floor it is a better controller rather than a truncation, so it costs
+# no accuracy on genuine close-Earth encounters. Set to -1 to leave
+# ASSIST's default (legacy mode 1).
+_PICKER_IAS15_ADAPTIVE_MODE = 2
+
+
+# Cache of the Python-side assist.Ephem handle. The C-side get_ephem()
+# from layup.routines returns the C struct; the Python residual filter
+# needs the rebound/assist Python wrapper instead, so we cache one per
+# cache_dir.
+_assist_python_ephem_cache: dict = {}
+
+
+def _get_python_ephem(cache_dir):
+    """Lazy-load and cache the Python-side assist.Ephem for the filter."""
+    key = str(cache_dir)
+    if key in _assist_python_ephem_cache:
+        return _assist_python_ephem_cache[key]
+    try:
+        import assist
+    except ImportError:
+        return None
+    try:
+        eph = assist.Ephem(os.path.join(key, "linux_p1550p2650.440"), os.path.join(key, "sb441-n16.bsp"))
+    except Exception as e:
+        logger.warning(f"assist.Ephem load failed for {cache_dir}: {e}")
+        return None
+    _assist_python_ephem_cache[key] = eph
+    return eph
+
+
+def _pick_best_root(candidates, min_r_au):
+    """Pick the best converged candidate from a list of LM results.
+
+    "Best" means smallest χ² among candidates that
+
+    1. report ``flag == 0`` (LM converged), and
+    2. have heliocentric distance > ``min_r_au`` (physical orbit).
+
+    Returns None if no candidate satisfies (1); in that case the caller
+    typically retries at a larger LM budget. If (1) is met but (2)
+    isn't, the smallest-χ² convergent root is still returned (better
+    than nothing).
     """
-    # Get Herget solution, using first and last point
-    # of the primary sequence
-    solns = herget_with_assist(observations, seq, 0.001, args=args, aux=aux)
-    print(solns[0].niter)
-    return solns
+    converged = [c for c in candidates if c.flag == 0]
+    if not converged:
+        return None
+    sane = [c for c in converged if (c.state[0] ** 2 + c.state[1] ** 2 + c.state[2] ** 2) > min_r_au**2]
+    pool = sane if sane else converged
+    return min(pool, key=lambda c: c.csq)
 
 
-def do_fit(observations, seq, cache_dir, iod="gauss", args=None, aux=None):
-    """Carry out an orbit fit to the observations in a
-    series of steps.  A list of lists of observation indices
-    specifies the order in which the fit proceeds.
+def do_fit(
+    observations,
+    seq,
+    cache_dir,
+    iod="auto",
+    engine="cartesian",
+    screen_iter_max: int = _PICKER_SCREEN_ITER_MAX,
+    full_iter_max: int = _PICKER_FULL_ITER_MAX,
+    min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
+    prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
+    picker_ias15_adaptive_mode: int = _PICKER_IAS15_ADAPTIVE_MODE,
+):
+    """Carry out an orbit fit to a list of observations.
 
-    A Gauss preliminary order is fit for the 0-th segment,
-    using the first, middle, and last observations in that
-    segment.
-
-    Then an orbit fit is done on the 0-th segment, using the
-    initial orbit from Gauss.  If that fails, any other preliminary
-    solutions are tried.
-
-    Next, a fit to the full set of observations is attempted, given
-    the fit to the primary segment as an initial guess.  If that
-    succeeds, the solution is returned.
-
-    Otherwise, adjacent segments of observations are added and
-    the fit is updated, iteratively.
+    Pipeline:
+      1. IOD: produce one or more candidate seed orbits via the
+         registered method named by `iod` (default: "auto"). The
+         registry lives in `layup.iod`; register new methods with
+         `iod.register_iod(name, callable)`.
+      2. Multi-root picker: run LM from every IOD candidate on the
+         primary segment (`seq[0]`) at a cheap `screen_iter_max`
+         budget. Pick the smallest-χ² converged candidate with
+         heliocentric distance above `min_r_helio_AU`. If nothing
+         converges at the cheap budget, retry at `full_iter_max`.
+         Then refit on the full observation set.
 
     Parameters
     ----------
     observations : list
-        A time-ordered list of observations
+        Time-ordered list of layup Observations.
     seq : list of lists
-        A list of lists of observation indices.
+        Per-segment index lists; seq[0] is the primary segment.
+    cache_dir : str
+        Directory holding the ASSIST kernels.
     iod : str
-        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
-        Default is 'gauss'.
+        Name of the registered IOD method "auto" (default) or "gauss". "auto" runs
+        Gauss and falls back to the BK 5-parameter linear IOD (run_bk_iod) on the
+        primary segment when every Gauss root fails to seed a converged fit.
+    engine : str
+        Which LM fitter to dispatch to.  Supported:
+          - 'cartesian' (default): the existing 6D Cartesian-state fit.
+          - 'bk_native': the universal Bernstein-Khushalani fit
+            (run_bk_native_fit), with a fixed bound-orbit energy prior
+            on gdot.  Recovers the Cartesian state at the same epoch.
+    screen_iter_max, full_iter_max : int
+        Two-tier LM iteration caps for the multi-root picker.
+    min_r_helio_AU : float
+        Lower bound on heliocentric distance for accepted IOD roots.
 
     Returns
     -------
     FitResult
-        The result of the orbit fit.
+        Best converged fit (flag == 0) when one exists, else a
+        best-effort or sentinel FitResult with a non-zero flag.
     """
 
-    if iod.lower() == "gauss":
-        solns = do_gauss_iod(observations, seq)
-    elif iod.lower() == "herget":
-        solns = do_herget_iod(observations, seq, args, aux)
-    else:
-        raise ValueError(f"The IOD: {iod} is not supported. Please use a supported IOD.")
+    # 'auto' is a strategy, not a registered IOD: seed candidates with Gauss,
+    # then (after the picker, below) fall back to the BK 5-parameter linear IOD
+    # if every Gauss root fails to converge. Any other value is a registry name.
+    is_auto = isinstance(iod, str) and iod.lower() == "auto"
+    try:
+        iod_func = get_iod("gauss") if is_auto else (get_iod(iod) if isinstance(iod, str) else iod)
+    except ValueError as e:
+        raise ValueError(f"{e} Use iod.register_iod to add a new method.")
+    # Normalize to a list: an IOD may legitimately return None (e.g. Gauss
+    # finding no real roots), and the prefilter/picker below index and len() it.
+    solns = list(iod_func(observations, seq) or [])
 
-    # If the selected iod fails, try something else.
-    if not solns:
-        logger.debug(f"The iod {iod} failed")
+    # If the iod produced no candidates, surface a sentinel -- unless we're in
+    # 'auto' mode, where the BK-IOD fallback below still has a shot.
+    if not solns and not is_auto:
+        logger.debug(f"IOD {iod!r} returned no candidates")
         x = FitResult()
         x.flag = 5
         return x
 
+    # Pre-filter the IOD candidates by predicted-vs-observed residual
+    # on every observation. The right Gauss root predicts the full
+    # observation set within a few σ; phantom roots typically miss by
+    # 10⁵+ σ. Throwing those out before any LM iteration runs cuts
+    # the picker loop down to 1-2 LM fits per case in the common
+    # case (vs up to 8 brute-force LMs). Loose threshold (default
+    # 1000σ) so the right root is never rejected.
+    py_ephem = _get_python_ephem(cache_dir)
+    if py_ephem is not None and len(solns) > 1:
+        before = len(solns)
+        solns = filter_candidates_by_residual(
+            solns, observations, py_ephem, threshold_sigma=prefilter_threshold_sigma
+        )
+        if len(solns) < before:
+            logger.debug(
+                f"IOD pre-filter: kept {len(solns)}/{before} " f"candidates at {prefilter_threshold_sigma}σ"
+            )
+
     assist_ephem = get_ephem(cache_dir)
 
-    #! I think this can be a `for/else loop...`
-    # Fit primary interval, starting with gauss solution
-    x = solns[0]
-    obs = [observations[i] for i in seq[0]]
-    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    # Multi-root picker. Fit every IOD candidate on the primary segment
+    # at the cheap screening budget, pick the best converged root, and
+    # only fall back to the full LM budget if nothing converged at the
+    # cheap tier. Gauss's polynomial gives up to 8 real roots; historic
+    # do_fit committed to solns[0] (largest r), which is often a
+    # phantom outer-SS solution for NEO-like targets.
+    #
+    # During this loop we select IAS15 adaptive_mode=2 so phantom roots
+    # whose trajectories pass close to Earth can't tie up the
+    # integrator for minutes (100-1000× wallclock blowup observed on
+    # diagnostic/scan with the legacy controller). The newer controller
+    # steps through close encounters efficiently with no accuracy cost.
+    # The setting is restored on every exit path.
+    #
+    # Each LM call dispatches through _run_fit so the picker honors the
+    # selected engine. The screen/full iteration budgets apply to the
+    # Cartesian engine; the BK-native engine uses its own internal cap.
+    saved_mode = get_ias15_adaptive_mode()
+    if picker_ias15_adaptive_mode >= 0:
+        set_ias15_adaptive_mode(picker_ias15_adaptive_mode)
 
-    if (x.flag != 0) and len(solns) > 1:
-        x = solns[1]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    elif (x.flag != 0) and len(solns) > 2:
-        x = solns[2]
-        obs = [observations[i] for i in seq[0]]
-        x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-    if x.flag != 0:
-        logger.debug(f"Primary interval failed. Total observations: {len(obs)}")
-        x.flag = 3  # caution
+    obs = [observations[i] for i in seq[0]]
+    try:
+        candidates = [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max) for soln in solns]
+        x = _pick_best_root(candidates, min_r_helio_AU)
+        if x is None:
+            candidates = [_run_fit(assist_ephem, soln, obs, engine, full_iter_max) for soln in solns]
+            x = _pick_best_root(candidates, min_r_helio_AU)
+    finally:
+        set_ias15_adaptive_mode(saved_mode)
+
+    if x is None and is_auto and len(obs) >= 3:
+        # Every Gauss root (if any) failed to seed a converged LM. Fall back to
+        # the BK 5-parameter linear IOD on the primary segment. BK-IOD shines on
+        # distant short arcs -- exactly where Gauss's three-point geometry is
+        # ill-conditioned (see bk_iod.cpp's regime-of-validity note); on the
+        # diagnostic scan Gauss+BK covers ~90% of cases vs ~84% for Gauss alone.
+        # Epoch convention matches do_gauss_iod's middle observation.
+        logger.debug(f"All {len(solns)} Gauss roots failed; trying BK-IOD fallback")
+        bk_seed = run_bk_iod(obs, float(obs[len(obs) // 2].epoch), _MU_SUN)
+        if bk_seed.flag == 0:
+            cand = _run_fit(assist_ephem, bk_seed, obs, engine, full_iter_max)
+            candidates.append(cand)
+            if cand.flag == 0:
+                x = cand
+
+    if x is None:
+        # Still no convergence — surface the least-bad attempt so the caller has
+        # *something* to inspect, with a flag they can detect.
+        if not candidates:
+            # 'auto' with zero Gauss roots and no usable BK seed: nothing to
+            # surface, so return an explicit no-solution sentinel.
+            x = FitResult()
+            x.flag = 5
+            return x
+        x = min(candidates, key=lambda c: c.csq)
+        logger.debug(
+            f"Primary interval: no root converged " f"(best csq={x.csq:.3g}, n_roots={len(candidates)})"
+        )
+        x.flag = 3
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
+    primary_x = x
     obs = observations
-    x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
+    x = _run_fit(assist_ephem, x, obs, engine)
 
     # If that failed, build up the solution slowly
     if x.flag != 0:
         obs = []
-        x = solns[0]
+        # Restart from the first IOD seed, or the converged primary fit when
+        # there were no IOD candidates (the iod='auto' BK-IOD fallback path).
+        x = solns[0] if solns else primary_x
         for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
-            print(i, "of", len(seq), obs[0], sq)
-            x = run_from_vector_with_initial_guess(assist_ephem, x, obs)
-            print("flag:", x.flag)
+            logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
+            x = _run_fit(assist_ephem, x, obs, engine)
             if x.flag != 0:
                 x.flag = 4
                 break
@@ -476,6 +1014,31 @@ def do_other_fit(iod: str):
     raise ValueError(f"The IOD, {iod} is not supported. Please use a supported IOD.")
 
 
+# Minimum observational arc (in days) generally needed to constrain an orbit.
+# Below this the fit is essentially unconstrained, so a failure is most likely a
+# too-short baseline rather than anything wrong with the data.
+_MIN_ARC_DAYS = 1.0
+
+
+def _warn_if_short_arc(jds, obj_id):
+    """Emit a helpful warning when a failed fit is likely caused by too short an
+    observational arc (less than ~24 hours / a single night).
+
+    See issue #312: an orbit fit needs a baseline of more than 24 hours, so when
+    a fit fails on a sub-day arc we tell the user the likely cause rather than
+    leaving them with an opaque failure.
+    """
+    if jds is None or len(jds) == 0:
+        return
+    arc_days = float(np.max(jds) - np.min(jds))
+    if arc_days < _MIN_ARC_DAYS:
+        logger.warning(
+            f"Orbit fit failed for {obj_id}: the observations span only "
+            f"{arc_days * 24.0:.1f} hours.  Constraining an orbit generally requires "
+            f"a baseline of more than ~24 hours (more than a single night of observations)."
+        )
+
+
 def _orbitfit(
     data,
     cache_dir: str,
@@ -483,10 +1046,14 @@ def _orbitfit(
     initial_guess=None,
     bias_dict: dict = None,
     sort_array: bool = True,
-    weight_data: bool = False,
-    iod: str = "gauss",
-    args=None,
-    aux=None,
+    weight_data=False,  # bool (Veres 2017) or "supplied" (rmsRA/rmsDec columns)
+    iod: str = "auto",
+    engine: str = "cartesian",
+    fit_nongrav: bool = False,
+    nongrav_auto_thresholds=None,
+    nongrav_gr=None,
+    per_arc: bool = False,
+    skip_unchanged: bool = False,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -508,14 +1075,41 @@ def _orbitfit(
         A dictionary containing bias corrections for different catalogs.
     sort_array : bool
         Whether to sort the observations by obstime before processing. Default is True.
-    weight_data : bool
-        Whether to apply data weighting based on the observation code, date, catalog
-        and program. Default is False.
+    weight_data : bool or str
+        Astrometric weighting. ``False`` (default) leaves the built-in default
+        uncertainty. ``True`` applies the Veres 2017 model (observation code, date,
+        catalog, program). ``"supplied"`` uses the per-observation ``rmsRA`` /
+        ``rmsDec`` columns (arcseconds) directly -- e.g. ADES-reported
+        uncertainties, or an external weighting model such as era-based historical
+        weighting for old comet apparitions (a row with a NaN/nonpositive value
+        falls back to the default).
     iod : str
-        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
-        Default is 'gauss'.
+        The IOD used to generate an initial guess orbit. Supports 'gauss'
+        and 'auto'  (Gauss with BK-IOD fallback).
+        Default is 'auto'.
     """
-    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name)
+    # Fitting non-gravitational params (issue #351) uses the joint state+nongrav
+    # LM, which only the Cartesian engine supports; the BK-native engine assumes a
+    # 6D state. Override with a warning, mirroring the radar path.
+    auto_nongrav = isinstance(fit_nongrav, str) and fit_nongrav.strip().lower() == "auto"
+    if auto_nongrav:
+        # 'auto' selects the non-grav model per object (issue #357); the schema
+        # carries all of A1/A2/A3 and each row reports only the adopted params.
+        nongrav_mask, nongrav_names = 0, ["A1", "A2", "A3"]
+    else:
+        nongrav_mask, nongrav_names = _parse_nongrav(fit_nongrav)
+    if (nongrav_mask or auto_nongrav) and engine != "cartesian":
+        logger.warning("Non-gravitational fitting requires engine='cartesian'; overriding %r.", engine)
+        engine = "cartesian"
+
+    # Per-arc (piecewise-constant) non-grav amplitudes need an explicit non-grav
+    # mask (which params to split per apparition); it is meaningless for a
+    # gravity-only or 'auto'-selected fit. Ignore with a warning otherwise.
+    if per_arc and not nongrav_mask:
+        logger.warning("per_arc=True requires an explicit fit_nongrav mask (e.g. 'A1A2A3'); ignoring.")
+        per_arc = False
+
+    _RESULT_DTYPES = _get_result_dtypes(primary_id_column_name, nongrav_names, per_arc=per_arc)
     if len(data) == 0:
         return np.array([], dtype=_RESULT_DTYPES)
 
@@ -545,20 +1139,47 @@ def _orbitfit(
 
         # Check if certain columns are present in the data
         column_names = data.dtype.names
-        g_column_present = "astCat" in column_names
+        astcat_column_present = "astCat" in column_names
         program_column_present = "program" in column_names
         position_rates_columns_present = all(col in column_names for col in ["raRate", "decRate"])
+        rate_unc_columns_present = all(col in column_names for col in ["rmsRArate", "rmsDecrate"])
+        astrom_unc_columns_present = all(col in column_names for col in ["rmsRA", "rmsDec"])
+        radar_columns_present = any(col in column_names for col in ["delay", "doppler"])
+
+        # Fingerprint the raw observation set (issue #419), before any in-place
+        # debiasing mutates ra/dec, so it reflects what was reported.
+        nobs_fit, obs_hash = _obs_fingerprint(data, column_names)
+
+        # Lever 1 (skip-unchanged): if a prior converged fit for this object was
+        # built from the identical observation set, carry it forward verbatim
+        # instead of re-fitting. ``initial_guess`` has already been filtered to
+        # this object and reset to None when its flag != 0, so a match here is a
+        # successful prior fit over the same obs. Requires the prior catalog to
+        # carry the fingerprint columns; otherwise this never triggers and we fit.
+        if (
+            skip_unchanged
+            and initial_guess is not None
+            and "obs_hash" in initial_guess.dtype.names
+            and "nobs_fit" in initial_guess.dtype.names
+            and int(initial_guess["nobs_fit"][0]) == nobs_fit
+            and str(initial_guess["obs_hash"][0]) == obs_hash
+        ):
+            return _carry_forward_result(initial_guess, _RESULT_DTYPES)
 
         # Accommodate occultation measurements. These measurements are implied when
         # the "ra" and "dec" columns are None. In this case, we will use the "starra"
-        # and "stardec" columns.
+        # and "stardec" columns. Radar rows have no ra/dec and are skipped.
         for d in data:
+            if radar_columns_present and _is_radar(d, column_names):
+                continue
             if _is_occultation(d):
                 d = _use_star_astrometry(d)
 
         # bias_dict will be a dictionary when the debias flag is set to True.
         if bias_dict is not None:
             for d in data:
+                if radar_columns_present and _is_radar(d, column_names):
+                    continue  # debiasing is an astrometric (ra/dec) correction
                 d["ra"], d["dec"] = debias(
                     ra=d["ra"],
                     dec=d["dec"],
@@ -573,16 +1194,38 @@ def _orbitfit(
         # radians.
         observations = []
         for d in data:
+            if radar_columns_present and _is_radar(d, column_names):
+                o = _radar_observation(
+                    d[primary_id_column_name],
+                    d,
+                    convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),  # JD TDB
+                    column_names,
+                )
+                observations.append(o)
+                continue
             if position_rates_columns_present and (not np.isnan(d["raRate"]) and not np.isnan(d["decRate"])):
+                # Rate uncertainties (rmsRArate/rmsDecrate) share raRate's
+                # arcsec/hour units; convert to rad/day. Absent -> C++ default.
+                streak_rate_unc = {}
+                if (
+                    rate_unc_columns_present
+                    and not np.isnan(d["rmsRArate"])
+                    and not np.isnan(d["rmsDecrate"])
+                ):
+                    streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+                    streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
                 o = Observation.from_streak_with_id(
                     str(d[primary_id_column_name]),
                     d["ra"] * np.pi / 180.0,
                     d["dec"] * np.pi / 180.0,
-                    d["raRate"],
-                    d["decRate"],
+                    # arcsec/hour (great-circle) -> rad/day; raRate already
+                    # carries the cos(Dec) factor (see module constant above).
+                    d["raRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                    d["decRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
                     convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),  # Convert obstime to JD TDB
                     [d["x"], d["y"], d["z"]],  # Barycentric position
                     [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
+                    **streak_rate_unc,
                 )
             else:
                 o = Observation.from_astrometry_with_id(
@@ -594,22 +1237,50 @@ def _orbitfit(
                     [d["vx"], d["vy"], d["vz"]],  # Barycentric velocity
                 )
 
-            if weight_data:
-                data_weight = data_weight_Veres2017(
+            # Astrometric weighting. ``weight_data="supplied"`` uses the per-obs
+            # rmsRA/rmsDec columns (arcsec) directly -- e.g. ADES-reported
+            # uncertainties, or an external weighting model such as era-based
+            # historical weighting for old comet apparitions. ``weight_data=True``
+            # uses the Veres 2017 model; ``False`` leaves the C++ default. Supplied
+            # takes precedence; a NaN/nonpositive supplied value on a row falls
+            # back to the C++ default for that row.
+            if isinstance(weight_data, str) and weight_data.lower() == "supplied":
+                if not astrom_unc_columns_present:
+                    raise ValueError('weight_data="supplied" requires rmsRA and rmsDec columns (arcsec).')
+                if np.isfinite(d["rmsRA"]) and d["rmsRA"] > 0:
+                    o.ra_unc = abs(d["rmsRA"]) * np.pi / (180.0 * 3600.0)
+                if np.isfinite(d["rmsDec"]) and d["rmsDec"] > 0:
+                    o.dec_unc = abs(d["rmsDec"]) * np.pi / (180.0 * 3600.0)
+            elif weight_data:
+                # astrometric_uncertainty_Veres2017 returns the astrometric uncertainty in
+                # ARCSECONDS (per its docstring), but Observation.ra_unc /
+                # dec_unc are stored in RADIANS.  Convert at the assignment.
+                sigma_arcsec = astrometric_uncertainty_Veres2017(
                     obsCode=d["stn"],
                     jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], cache_dir),
                     catalog=d["astCat"] if astcat_column_present else None,
                     program=d["program"] if program_column_present else None,
                 )
+                sigma_rad = sigma_arcsec * np.pi / (180.0 * 3600.0)
 
-                o.ra_unc = data_weight
-                o.dec_unc = data_weight
+                o.ra_unc = sigma_rad
+                o.dec_unc = sigma_rad
 
             observations.append(o)
 
+        # Radar delay/Doppler rows use the variable-row packing, which only the
+        # Cartesian engine supports; the BK-native engine assumes 2 rows per
+        # observation and would silently drop them.
+        if radar_columns_present and engine != "cartesian":
+            logger.warning(
+                "Radar (delay/Doppler) observations require engine='cartesian'; overriding %r.",
+                engine,
+            )
+            engine = "cartesian"
+
         # if cache_dir is not provided, use the default os_cache
         if cache_dir is None:
-            kernels_loc = str(pooch.os_cache("layup"))
+            kernels_loc = str(default_cache_dir())
         else:
             kernels_loc = str(cache_dir)
 
@@ -618,23 +1289,88 @@ def _orbitfit(
 
         # Perform the orbit fitting
         if initial_guess is None or initial_guess["flag"] != 0:
-            if iod.lower() in ["gauss", "herget"]:
+            if iod.lower() in ["gauss", "auto", "herget"]:
                 res = do_fit(
                     observations=observations,
                     seq=sequence,
                     cache_dir=kernels_loc,
                     iod=iod.lower(),
-                    args=args,
-                    aux=aux,
+                    engine=engine,
                 )
             else:
                 res = do_other_fit(iod=iod.lower())
         else:
             guess_to_use = parse_fit_result(initial_guess)
             res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
+
+        # Non-gravitational params (issue #351): once the 6-parameter orbit has
+        # converged, refine it jointly with the requested non-grav params, seeded
+        # from that solution. They are weakly constrained on short arcs, so if the
+        # joint fit is degenerate (flag 6) or fails to converge we keep the
+        # 6-parameter result and report the params as NaN (graceful guard).
+        if auto_nongrav and res.flag == 0:
+            # Adopt the most parsimonious statistically-warranted non-grav model,
+            # or keep the gravity-only fit (issue #357).
+            res = _select_nongrav_auto(
+                get_ephem(kernels_loc),
+                res,
+                observations,
+                nongrav_auto_thresholds or _AUTO_DEFAULT_THRESHOLDS,
+                gofr=nongrav_gr,
+            )
+        elif nongrav_mask and res.flag == 0:
+            res_ng = run_from_vector_with_initial_guess(
+                get_ephem(kernels_loc),
+                res,
+                observations,
+                nongrav_mask=nongrav_mask,
+                gofr=_gofr_arg(nongrav_gr),
+                per_arc=per_arc,
+            )
+            if res_ng.flag == 0:
+                res = res_ng
+            else:
+                logger.debug("Non-grav refinement did not converge; reporting non-grav params as NaN.")
+
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
+        if not success:
+            _warn_if_short_arc(jds, data[primary_id_column_name][0])
         cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
+        nongrav_cols = ()
+        if nongrav_names:
+            # Report each parameter only if it was actually adopted (its bit is set
+            # in the fit's nongrav_mask); for 'auto' that is the selected subset.
+            fitted_mask = getattr(res, "nongrav_mask", 0) if success else 0
+            nongrav_cols = tuple(
+                v
+                for n in nongrav_names
+                for v in (
+                    (getattr(res, n.lower()) if (fitted_mask & _NONGRAV_BITS[n]) else np.nan),
+                    (getattr(res, n.lower() + "_unc") if (fitted_mask & _NONGRAV_BITS[n]) else np.nan),
+                )
+            )
+        # Later-arc amplitudes (comet linkage): the C++ result reports them in the
+        # _arc2 fields only when per_arc fitting was on and converged.
+        per_arc_cols = ()
+        if per_arc:
+            per_arc_on = success and getattr(res, "per_arc", False)
+            per_arc_cols = tuple(
+                v
+                for n in nongrav_names
+                for v in (
+                    (
+                        getattr(res, n.lower() + "_arc2")
+                        if (per_arc_on and fitted_mask & _NONGRAV_BITS[n])
+                        else np.nan
+                    ),
+                    (
+                        getattr(res, n.lower() + "_arc2_unc")
+                        if (per_arc_on and fitted_mask & _NONGRAV_BITS[n])
+                        else np.nan
+                    ),
+                )
+            )
         output = np.array(
             [
                 (
@@ -651,6 +1387,9 @@ def _orbitfit(
                     ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
+                + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
+                + per_arc_cols  # later-arc amplitudes (comet linkage), when per_arc
+                + (obs_hash, nobs_fit)  # obs fingerprint (issue #419)
             ],
             dtype=_RESULT_DTYPES,
         )
@@ -666,9 +1405,13 @@ def orbitfit(
     primary_id_column_name="provID",
     debias=False,
     weight_data=False,
-    iod="gauss",
-    args=None,
-    aux=None,
+    iod="auto",
+    engine="cartesian",
+    fit_nongrav=False,
+    nongrav_auto_thresholds=None,
+    nongrav_gr=None,
+    per_arc=False,
+    skip_unchanged=False,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -686,13 +1429,78 @@ def orbitfit(
         The name of the primary identifier column for the objects. Default is "provID".
     debias : bool
         Whether to apply debiasing corrections to the observations. Default is False.
-    weight_data : bool
-        Whether to apply data weighting based on the observation code, date, catalog
-        and program. Default is False.
+    weight_data : bool or str
+        Astrometric weighting. ``False`` (default) leaves the built-in default
+        uncertainty. ``True`` applies the Veres 2017 model (observation code, date,
+        catalog, program). ``"supplied"`` uses the per-observation ``rmsRA`` /
+        ``rmsDec`` columns (arcseconds) directly -- e.g. ADES-reported
+        uncertainties, or an external weighting model such as era-based historical
+        weighting for old comet apparitions (a row with a NaN/nonpositive value
+        falls back to the default).
     iod : str
-        The IOD used to generate an initial guess orbit. Currently supports ['gauss'].
-        Default is 'gauss'.
+        The IOD used to generate an initial guess orbit. Supports 'gauss',
+        'herget' and 'auto' (Gauss with BK-IOD fallback).
+        Default is 'auto'.
+    fit_nongrav : bool | str | iterable of str
+        Which non-gravitational Marsden parameters to fit after the 6-parameter
+        orbit converges. ``False`` (default) fits none; ``True`` fits A2 (the
+        transverse Yarkovsky term, the common asteroid case); a string or iterable
+        naming params -- e.g. ``"A2"``, ``"A1A2A3"``, ``["A1", "A3"]`` -- selects a
+        subset of A1 (radial), A2 (transverse), A3 (normal). ``"auto"`` selects the
+        model adaptively per object (issue #357): the gravity-only fit is kept
+        unless its reduced chi-square is unacceptable, in which case the most
+        parsimonious non-grav model that is well-conditioned and statistically
+        significant is adopted (the A1/A2/A3 columns are all present, with only the
+        adopted params filled and the rest NaN). For each fitted param an ``a{n}``
+        value and ``a{n}_unc`` 1-sigma column (au/day^2) are added to the result.
+        Cartesian engine only; params weakly constrained on short arcs are reported
+        as NaN (issue #351).
+    nongrav_auto_thresholds : NongravAutoThresholds, optional
+        Decision thresholds used when ``fit_nongrav="auto"`` -- how unacceptable the
+        gravity-only fit must be before a non-grav is tried, and how large the
+        chi-square drop and per-parameter significance must be to adopt one. Default
+        (``None``) uses the standard thresholds; pass a customized
+        ``NongravAutoThresholds`` to tune. Ignored unless ``fit_nongrav="auto"``.
+    nongrav_gr : sequence of float, optional
+        The non-gravitational g(r) sublimation law as ``[alpha, nm, nn, nk, r0]`` in
+        ASSIST's parameterization ``g(r) = alpha*(r/r0)^-nm*(1+(r/r0)^nn)^-nk``.
+        Default (``None``) is the asteroidal inverse-square law ``(r/r0)^-2`` used by
+        Yarkovsky A2 fits; pass a cometary law (e.g. Marsden water-ice) to fit a
+        comet's non-gravs. Applies to any non-grav fit (explicit or ``"auto"``).
+    per_arc : bool, optional
+        Fit piecewise-constant *per-apparition* non-grav amplitudes (comet
+        linkage). The state and ``g(r)`` are shared, but observations before the
+        fit epoch (the earlier arc) and after it (the later arc) each get their own
+        ``[A1,A2,A3]``. Requires an explicit ``fit_nongrav`` mask and an
+        ``initial_guess`` whose epoch sits between the two apparitions. The output
+        adds ``a{1,2,3}_arc2`` columns for the later arc; the base ``a{1,2,3}``
+        columns then hold the earlier arc. Default False.
+    skip_unchanged : bool
+        Incremental / steady-state mode (issue #419). When True and ``initial_guess``
+        is a prior result catalog carrying the ``obs_hash`` fingerprint columns, any
+        object whose observation set is byte-for-byte unchanged since that catalog is
+        carried forward verbatim instead of re-fitting. Objects with changed obs are
+        re-fit, warm-started from the prior state when available. Default False (every
+        object is fit). The output always carries the ``obs_hash``/``nobs_fit``
+        columns so it can seed the next cycle.
     """
+
+    # Incremental / steady-state pre-filter (issue #419). Before any per-obs
+    # ephemeris or observatory setup, drop objects whose observation set is
+    # unchanged since the prior catalog and carry their stored fit forward
+    # verbatim. This is where the steady-state throughput win comes from -- a
+    # skipped object costs one fingerprint hash, not a fit. Changed objects fall
+    # through and are re-fit below, warm-started from the prior state via
+    # ``initial_guess`` (which is retained for exactly that purpose).
+    carried_forward = None
+    if (
+        skip_unchanged
+        and initial_guess is not None
+        and "obs_hash" in getattr(initial_guess, "dtype", np.dtype([])).names
+    ):
+        data, carried_forward = _partition_unchanged(data, initial_guess, primary_id_column_name, fit_nongrav)
+        if len(data) == 0:  # everything unchanged -> nothing to fit
+            return carried_forward
 
     layup_observatory = LayupObservatory(cache_dir=cache_dir)
 
@@ -704,11 +1512,17 @@ def orbitfit(
     pos_vel = layup_observatory.obscodes_to_barycentric(data)
     data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
 
+    # Radar (delay/Doppler) observations need the barycentric observer
+    # acceleration for the two-leg light-time model; compute it only when radar
+    # columns are present so optical/streak fits are unaffected.
+    if any(col in data.dtype.names for col in ("delay", "doppler")):
+        data = _append_observer_acceleration(data, layup_observatory)
+
     bias_dict = None
     if debias:
         bias_dict = generate_bias_dict(cache_dir)
 
-    return process_data_by_id(
+    fitted = process_data_by_id(
         data,
         num_workers,
         _orbitfit,
@@ -718,9 +1532,370 @@ def orbitfit(
         bias_dict=bias_dict,
         weight_data=weight_data,
         iod=iod,
-        args=args,
-        aux=aux,
+        engine=engine,
+        fit_nongrav=fit_nongrav,
+        nongrav_auto_thresholds=nongrav_auto_thresholds,
+        nongrav_gr=nongrav_gr,
+        per_arc=per_arc,
+        skip_unchanged=skip_unchanged,
     )
+    # Re-attach objects carried forward unchanged by the #419 pre-filter.
+    if carried_forward is not None and len(carried_forward):
+        return np.concatenate([fitted, carried_forward])
+    return fitted
+
+
+def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None):
+    """Augment one object's observations with the observer barycentric state and
+    build the C++ ``Observation`` list, mirroring ``orbitfit()``'s preprocessing.
+
+    Supports optical astrometry and streak (rate) rows -- the observation kinds a
+    steady-state catalog update sees. (Radar/occultation are not yet handled by
+    the sequential path; the driver's full-refit fallback covers them.)
+    """
+    DEG = np.pi / 180.0
+    kernels_loc = str(default_cache_dir()) if cache_dir is None else str(cache_dir)
+    observatory = LayupObservatory(cache_dir=cache_dir)
+
+    et = np.array([spice.str2et(row["obsTime"]) for row in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et, usemask=False, asrecarray=True)
+    pos_vel = observatory.obscodes_to_barycentric(data)
+    data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
+
+    column_names = data.dtype.names
+    astcat = "astCat" in column_names
+    program = "program" in column_names
+    rates_present = all(c in column_names for c in ("raRate", "decRate"))
+    rate_unc_present = all(c in column_names for c in ("rmsRArate", "rmsDecrate"))
+
+    if bias_dict is not None:
+        for d in data:
+            d["ra"], d["dec"] = debias(
+                ra=d["ra"],
+                dec=d["dec"],
+                epoch_jd_tdb=convert_tdb_date_to_julian_date(d["obsTime"], kernels_loc),
+                catalog=d["astCat"] if astcat else None,
+                bias_dict=bias_dict,
+            )
+
+    observations = []
+    for d in data:
+        jd = convert_tdb_date_to_julian_date(d["obsTime"], kernels_loc)
+        if rates_present and not np.isnan(d["raRate"]) and not np.isnan(d["decRate"]):
+            streak_rate_unc = {}
+            if rate_unc_present and not np.isnan(d["rmsRArate"]) and not np.isnan(d["rmsDecrate"]):
+                streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+                streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
+            o = Observation.from_streak_with_id(
+                str(d["provID"]),
+                d["ra"] * DEG,
+                d["dec"] * DEG,
+                d["raRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                d["decRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
+                jd,
+                [d["x"], d["y"], d["z"]],
+                [d["vx"], d["vy"], d["vz"]],
+                **streak_rate_unc,
+            )
+        else:
+            o = Observation.from_astrometry_with_id(
+                str(d["provID"]),
+                d["ra"] * DEG,
+                d["dec"] * DEG,
+                jd,
+                [d["x"], d["y"], d["z"]],
+                [d["vx"], d["vy"], d["vz"]],
+            )
+        if weight_data:
+            sigma_arcsec = astrometric_uncertainty_Veres2017(
+                obsCode=d["stn"],
+                jd_tdb=jd,
+                catalog=d["astCat"] if astcat else None,
+                program=d["program"] if program else None,
+            )
+            sigma_rad = sigma_arcsec * np.pi / (180.0 * 3600.0)
+            o.ra_unc = sigma_rad
+            o.dec_unc = sigma_rad
+        observations.append(o)
+    return observations
+
+
+def _update_mahalanobis(prior_fit, updated_fit):
+    """Mahalanobis distance of the state update in prior standard deviations:
+    sqrt((x1 - x0)^T P0^-1 (x1 - x0)). This is the dimensionless size of the move
+    the new observations induced, and the natural nonlinearity gate -- a large
+    move means the linearization of the summarized old observations (which is
+    anchored at the prior mean x0) is no longer trustworthy."""
+    dx = np.array(updated_fit.state) - np.array(prior_fit.state)
+    P0 = np.array(list(prior_fit.cov)).reshape(6, 6)
+    try:
+        return float(np.sqrt(dx @ np.linalg.solve(P0, dx)))
+    except np.linalg.LinAlgError:
+        return np.inf
+
+
+def sequential_update(
+    prior,
+    new_data,
+    cache_dir,
+    *,
+    all_data=None,
+    weight_data=False,
+    debias_data=False,
+    max_update_sigma=4.0,
+    iter_max=100,
+):
+    """Sequential / information-filter update of a prior orbit fit (issue #419).
+
+    Refines ``prior`` using ONLY ``new_data`` (the newly reported observations of
+    one object); the previously-fit observations enter through the prior's state
+    and 6x6 covariance, which becomes the information matrix Lambda0 = P0^-1 added
+    to the normal equations. To the extent the prior is locally Gaussian this
+    equals a full batch refit over all observations, at the cost of integrating
+    only the new ones -- the throughput win for steady-state catalog maintenance.
+
+    Parameters
+    ----------
+    prior : FitResult or numpy structured array (one row)
+        The prior fit (state, 6x6 covariance, epoch). A result-catalog row is
+        accepted and parsed via ``parse_fit_result``.
+    new_data : numpy structured array
+        The new observations of this object (optical astrometry and/or streaks).
+    cache_dir : str or None
+        Kernel/ephemeris cache directory (None -> the default layup os_cache).
+    all_data : numpy structured array, optional
+        The full observation set (old + new). Required for the nonlinearity
+        fallback: when the update is too large the driver refits over all_data.
+    weight_data, debias_data : bool
+        Apply Veres (2017) weighting / MPC debiasing to the new observations,
+        matching the corresponding ``orbitfit`` options.
+    max_update_sigma : float
+        Nonlinearity gate. If the update moves the state more than this many prior
+        standard deviations (Mahalanobis), fall back to a full refit over
+        ``all_data`` when provided, else flag the result (flag=8).
+    iter_max : int
+        LM iteration cap.
+
+    Returns
+    -------
+    FitResult
+        The updated fit. ``method`` is ``"sequential_update"`` for an accepted
+        information-filter update, or ``"orbit_fit"`` when the fallback refit ran.
+    """
+    prior_fit = prior if isinstance(prior, FitResult) else parse_fit_result(prior)
+    kernels_loc = str(default_cache_dir()) if cache_dir is None else str(cache_dir)
+    ephem = get_ephem(kernels_loc)
+    bias_dict = generate_bias_dict(cache_dir) if debias_data else None
+
+    new_obs = _observations_for_update(new_data, cache_dir, weight_data, bias_dict)
+    seq = run_sequential_update(ephem, prior_fit, new_obs, iter_max)
+
+    def _full_refit():
+        if all_data is None:
+            return None
+        all_obs = _observations_for_update(all_data, cache_dir, weight_data, bias_dict)
+        return run_from_vector_with_initial_guess(ephem, prior_fit, all_obs, iter_max)
+
+    # The information update did not converge (e.g. a non-positive-definite prior,
+    # flag 7): fall back to a full refit if we can, else surface the failure.
+    if seq.flag != 0:
+        fallback = _full_refit()
+        return fallback if fallback is not None else seq
+
+    # Nonlinearity gate: a large move means the linearization is untrustworthy.
+    if _update_mahalanobis(prior_fit, seq) > max_update_sigma:
+        fallback = _full_refit()
+        if fallback is not None:
+            return fallback
+        seq.flag = 8  # nonlinear update, no full-obs set supplied to refit
+    return seq
+
+
+def _obs_row_keys(data, column_names):
+    """Per-observation identity keys over the fit-relevant columns (issue #419).
+
+    Each key is the same per-row string that ``_obs_fingerprint`` hashes, so a
+    row's key equals its contribution to the object's fingerprint. Used to diff a
+    current observation set against the one a prior fit was built from.
+    """
+    cols = [c for c in _FINGERPRINT_COLUMNS if c in column_names]
+    return ["\x1f".join(_fmt_fingerprint_value(d[c]) for c in cols) for d in data]
+
+
+def _append_only_new_obs(current, prior_obs):
+    """Return the rows of ``current`` absent from ``prior_obs`` if the change is
+    append-only, else ``None``.
+
+    Append-only means every observation the prior was fit from is still present
+    (none removed or modified) -- the case the sequential update handles exactly.
+    If any prior observation is gone, the summarised old-obs information no longer
+    matches the current set, so the object must be fully re-fit and this returns
+    ``None``.
+    """
+    cur_keys = _obs_row_keys(current, current.dtype.names)
+    prior_keys = set(_obs_row_keys(prior_obs, prior_obs.dtype.names))
+    if not prior_keys.issubset(cur_keys):
+        return None  # an old observation was removed or changed -> not append-only
+    mask = np.array([k not in prior_keys for k in cur_keys], dtype=bool)
+    return current[mask]
+
+
+def _group_by_id(data, primary_id_column_name):
+    if data is None:
+        return {}
+    ids = data[primary_id_column_name]
+    return {oid: data[ids == oid] for oid in np.unique(ids)}
+
+
+def _fitresult_to_row(fit, obj_id, obs_hash, nobs_fit, dtypes):
+    """Pack a FitResult (from the sequential update or its refit fallback) into one
+    result-catalog row carrying the current-obs fingerprint, so the row is
+    identical in shape to ``orbitfit`` output and can seed the next cycle."""
+    success = fit.flag == 0
+    cov = tuple(fit.cov[i] for i in range(36)) if success else (np.nan,) * 36
+    row = (
+        (obj_id, (fit.csq if success else np.nan), fit.ndof)
+        + (tuple(fit.state[i] for i in range(6)) if success else (np.nan,) * 6)
+        + (
+            (fit.epoch - 2400000.5) if success else np.nan,
+            fit.niter,
+            fit.method,
+            fit.flag,
+            "BCART_EQ" if success else "NONE",
+        )
+        + cov
+        + (obs_hash, nobs_fit)
+    )
+    return np.array([row], dtype=dtypes)
+
+
+def incremental_orbitfit(
+    data,
+    cache_dir,
+    prior_catalog,
+    *,
+    prior_obs=None,
+    primary_id_column_name="provID",
+    weight_data=False,
+    debias=False,
+    max_update_sigma=4.0,
+    iod="auto",
+    engine="cartesian",
+    num_workers=1,
+):
+    """Steady-state incremental fit over a batch of objects (issue #419 capstone).
+
+    Ties the three levers into one operational maintenance pass. For each object
+    in ``data`` (the current observations), routes:
+
+    * **skip** -- the observation set is unchanged since ``prior_catalog`` (matching
+      fingerprint): carry the prior fit forward verbatim, no fit.
+    * **sequential update** -- observations were only appended (``prior_obs`` given
+      and every prior observation is still present): update the prior with the new
+      observations only, via :func:`sequential_update` (integrating just the new
+      obs). Its nonlinearity gate falls back to a full refit when the update is
+      too large.
+    * **full refit** -- observations were removed or changed, or no per-object
+      ``prior_obs`` is available: refit over all current obs, warm-started from the
+      prior state when there is one, cold (IOD) when the object is new.
+
+    Parameters
+    ----------
+    data : numpy structured array
+        Current observations for all objects (grouped by ``primary_id_column_name``).
+    cache_dir : str or None
+        Kernel/ephemeris cache directory (None -> the default layup os_cache).
+    prior_catalog : numpy structured array or None
+        Prior fit results carrying state/cov/epoch and the ``obs_hash``/``nobs_fit``
+        fingerprint columns (i.e. produced by ``orbitfit``/this driver). None -> every
+        object is cold-fit.
+    prior_obs : numpy structured array, optional
+        The observations the prior catalog was fit from, grouped by id. Enables the
+        sequential route (needs the per-object obs to diff). Without it, changed
+        objects are fully refit.
+    weight_data, debias : bool
+        Veres (2017) weighting / MPC debiasing, as in ``orbitfit``.
+    max_update_sigma : float
+        Nonlinearity gate passed to :func:`sequential_update`.
+
+    Returns
+    -------
+    (numpy structured array, dict)
+        The updated result catalog (one row per object, same schema as
+        ``orbitfit`` output) and a routing tally
+        ``{"skip", "sequential", "sequential_fallback", "full", "cold"}``.
+    """
+    from collections import Counter
+
+    pid = primary_id_column_name
+    out_dtype = _get_result_dtypes(pid)
+    prior_by_id = {row[pid]: row for row in np.atleast_1d(prior_catalog)} if prior_catalog is not None else {}
+    prior_obs_by_id = _group_by_id(prior_obs, pid)
+
+    routing = Counter()
+    carried, seq_rows = [], []
+    warm_ids, cold_ids = [], []
+
+    for oid in np.unique(data[pid]):
+        cur = data[data[pid] == oid]
+        nobs, obs_hash = _obs_fingerprint(cur, cur.dtype.names)
+        p = prior_by_id.get(oid)
+        has_prior = p is not None and int(p["flag"]) == 0 and "obs_hash" in np.atleast_1d(p).dtype.names
+
+        # Route 1: unchanged -> skip (carry the prior row forward).
+        if has_prior and str(p["obs_hash"]) == obs_hash and int(p["nobs_fit"]) == nobs:
+            carried.append(_carry_forward_result(p, out_dtype))
+            routing["skip"] += 1
+            continue
+
+        # Route 2: append-only change with the prior obs available -> sequential update.
+        if has_prior and oid in prior_obs_by_id:
+            new_rows = _append_only_new_obs(cur, prior_obs_by_id[oid])
+            if new_rows is not None and len(new_rows) > 0:
+                seq = sequential_update(
+                    p,
+                    new_rows,
+                    cache_dir,
+                    all_data=cur,
+                    weight_data=weight_data,
+                    debias_data=debias,
+                    max_update_sigma=max_update_sigma,
+                )
+                routing["sequential" if seq.method == "sequential_update" else "sequential_fallback"] += 1
+                seq_rows.append(_fitresult_to_row(seq, oid, obs_hash, nobs, out_dtype))
+                continue
+
+        # Route 3: full refit (warm if a prior exists, else cold IOD).
+        (warm_ids if has_prior else cold_ids).append(oid)
+        routing["full" if has_prior else "cold"] += 1
+
+    # Full/cold refits go through orbitfit (warm objects filtered to their priors;
+    # cold objects with no initial guess). Two calls keep _orbitfit's per-object
+    # initial-guess lookup happy (it errors on a guess with no row for the object).
+    fit_parts = []
+    common = dict(
+        cache_dir=cache_dir,
+        primary_id_column_name=pid,
+        weight_data=weight_data,
+        debias=debias,
+        iod=iod,
+        engine=engine,
+        num_workers=num_workers,
+    )
+    if warm_ids:
+        sub = data[np.isin(data[pid], warm_ids)]
+        fit_parts.append(orbitfit(sub, initial_guess=prior_catalog, **common))
+    if cold_ids:
+        sub = data[np.isin(data[pid], cold_ids)]
+        fit_parts.append(orbitfit(sub, initial_guess=None, **common))
+
+    parts = (
+        ([np.concatenate(carried)] if carried else [])
+        + ([np.concatenate(seq_rows)] if seq_rows else [])
+        + [p for p in fit_parts if len(p)]
+    )
+    result = np.concatenate(parts) if parts else np.array([], dtype=out_dtype)
+    return result, dict(routing)
 
 
 def orbitfit_cli(
@@ -731,7 +1906,6 @@ def orbitfit_cli(
     chunk_size: int = 10_000,
     num_workers: int = -1,
     cli_args: Optional[Namespace] = None,
-    aux: any = None,
 ):
     """This is the function that is called from the command line
 
@@ -760,13 +1934,15 @@ def orbitfit_cli(
         weight_data = cli_args.weight_data
         output_orbit_format = cli_args.output_orbit_format
         iod = cli_args.iod
+        engine = getattr(cli_args, "engine", "cartesian")
     else:
         cache_dir = None
         debias = False
         guess_file = None
         weight_data = False
         output_orbit_format = "COM"  # Default output orbit format.
-        iod = "gauss"
+        iod = "auto"
+        engine = "cartesian"
 
     _primary_id_column_name = cli_args.primary_id_column_name
 
@@ -801,8 +1977,7 @@ def orbitfit_cli(
                 else Path(f"{output_file_stem_flagged}.h5")
             )
 
-    if num_workers < 0:
-        num_workers = os.cpu_count()
+    num_workers = resolve_num_workers(num_workers)
 
     # Check that input file exists
     if not input_file.exists():
@@ -850,6 +2025,22 @@ def orbitfit_cli(
 
     chunks = create_chunks(reader, chunk_size)
 
+    # Output is written one chunk at a time. The first write to each file
+    # overwrites any stale file left by a previous run (so re-runs are
+    # idempotent); later chunks append. Without this a re-run, or a re-merge onto
+    # an existing file, would duplicate every row.
+    _written_files = set()
+
+    def _emit(arr, path):
+        first = path not in _written_files
+        _written_files.add(path)
+        if output_file_format == "hdf5":
+            (write_hdf5 if first else append_hdf5)(arr, path, key="data")
+        else:  # csv: write_csv appends when the file already exists
+            if first and os.path.exists(path):
+                os.remove(path)
+            write_csv(arr, path)
+
     for chunk in chunks:
         data = reader.read_objects(chunk)
         initial_guess = None
@@ -877,8 +2068,7 @@ def orbitfit_cli(
             debias=debias,
             weight_data=weight_data,
             iod=iod,
-            args=cli_args,
-            aux=aux,
+            engine=engine,
         )
 
         # Convert the fit_orbits to the preferred output format
@@ -897,30 +2087,14 @@ def orbitfit_cli(
             fit_orbits_success = fit_orbits[success_mask]
             fit_orbits_failed = fit_orbits[~success_mask]
 
-            if output_file_format == "hdf5":
-                if len(fit_orbits_success) > 0:
-                    write_hdf5(fit_orbits_success, output_file, key="data")
+            if len(fit_orbits_success) > 0:
+                _emit(fit_orbits_success, output_file)
 
-                if len(fit_orbits_failed) > 0:
-                    write_hdf5(
-                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]],
-                        output_file_flagged,
-                        key="data",
-                    )
-            else:  # csv output format
-                if len(fit_orbits_success) > 0:
-                    write_csv(fit_orbits_success, output_file)
-
-                if len(fit_orbits_failed) > 0:
-                    write_csv(
-                        fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged
-                    )
+            if len(fit_orbits_failed) > 0:
+                _emit(fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged)
 
         else:  # All results go to a single output file
-            if output_file_format == "hdf5":
-                write_hdf5(fit_orbits, output_file, key="data")
-            else:
-                write_csv(fit_orbits, output_file)
+            _emit(fit_orbits, output_file)
 
     logger.info(f"Data has been written to {output_file}")
 
@@ -939,13 +2113,12 @@ def _is_valid_data(data):
     bool
         True if the data is valid, False otherwise.
     """
+    column_names = data.dtype.names
     valid_conditions = [
         len(data) >= 3,
         np.all(
             data["et"] >= -6279962400.00
         ),  # excludes all datasets before 1801, data["et"] = 0 is j2000, 6279962400.00 is seconds between 1801 and j2000
-        np.all(is_numeric(data["ra"])),
-        np.all(is_numeric(data["dec"])),
         np.all(is_numeric(data["x"])),
         np.all(is_numeric(data["y"])),
         np.all(is_numeric(data["z"])),
@@ -953,6 +2126,23 @@ def _is_valid_data(data):
         np.all(is_numeric(data["vy"])),
         np.all(is_numeric(data["vz"])),
     ]
+
+    # Each row must carry a usable observable: ra/dec for optical (and streak),
+    # or a delay/Doppler for radar. Validate per row so a radar file -- which has
+    # no ra/dec columns -- is not rejected, while optical rows still require
+    # numeric ra/dec.
+    if any(c in column_names for c in ["delay", "doppler"]):
+        have_radec = "ra" in column_names and "dec" in column_names
+        valid_conditions.append(
+            all(
+                _is_radar(d, column_names) or (have_radec and is_numeric(d["ra"]) and is_numeric(d["dec"]))
+                for d in data
+            )
+        )
+    else:
+        valid_conditions.append(np.all(is_numeric(data["ra"])))
+        valid_conditions.append(np.all(is_numeric(data["dec"])))
+
     return all(valid_conditions)
 
 

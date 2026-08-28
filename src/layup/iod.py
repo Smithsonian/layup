@@ -36,7 +36,10 @@ import math
 from typing import Callable, Optional, Sequence
 
 from layup.constants import GMtotal, SPEED_OF_LIGHT
-from layup.routines import FitResult, Observation, gauss
+from layup.routines import FitResult, Observation, gauss, get_ephem
+from layup.utilities.herget_iod import herget_with_assist
+
+from layup.orbit_maths import build_ephem_and_mus
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +111,15 @@ def gauss_iod(observations, seq):
 
 
 register_iod("gauss", gauss_iod)
+
+def herget_iod(observations, seq):
+    ''''''
+    ephem, _, _ = build_ephem_and_mus()
+    solns = herget_with_assist(observations, seq, ephem, tolerance=0.0001, max_iterations=100)
+    return solns
+
+
+register_iod("herget", herget_iod)
 
 
 # ----------------------------------------------------------------------- #
