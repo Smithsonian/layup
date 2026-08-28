@@ -313,10 +313,11 @@ def execute(args):
 
     timestep_day = (value * UNIT_DICT[unit_str]).to(u.day).value  # converting value into day units
 
-    configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.config)
+    else:
+        configs = LayupConfigs()
 
     # check if bootstrap files are missing, and download if necessary
     download_files_if_missing(configs.auxiliary, args)

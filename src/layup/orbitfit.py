@@ -1412,6 +1412,7 @@ def orbitfit(
     nongrav_gr=None,
     per_arc=False,
     skip_unchanged=False,
+    configs=None,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -1502,7 +1503,7 @@ def orbitfit(
         if len(data) == 0:  # everything unchanged -> nothing to fit
             return carried_forward
 
-    layup_observatory = LayupObservatory(cache_dir=cache_dir)
+    layup_observatory = LayupObservatory(cache_dir=cache_dir, configs=configs)
 
     # The units of et are seconds (from J2000). This new column is used by
     # data_processing_utilities.obscodes_to_barycentric.
@@ -1906,6 +1907,7 @@ def orbitfit_cli(
     chunk_size: int = 10_000,
     num_workers: int = -1,
     cli_args: Optional[Namespace] = None,
+    configs=None,
 ):
     """This is the function that is called from the command line
 
@@ -2069,6 +2071,7 @@ def orbitfit_cli(
             weight_data=weight_data,
             iod=iod,
             engine=engine,
+            configs=configs,
         )
 
         # Convert the fit_orbits to the preferred output format

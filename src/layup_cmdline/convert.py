@@ -150,10 +150,11 @@ def execute(args):
     if not isinstance(args.chunk, int) or args.chunk <= 0:
         logger.error("Chunk size must be a positive integer.")
 
-    configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.config)
+    else:
+        configs = LayupConfigs()
 
     # check if bootstrap files are missing, and download if necessary
     download_files_if_missing(configs.auxiliary, args)

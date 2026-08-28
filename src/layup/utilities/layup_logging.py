@@ -103,6 +103,9 @@ class LayupLogger:
         # This logger handles all messages >= DEBUG
         logger.setLevel(logging.DEBUG)
 
+        if logger.handlers:
+            # if already configured return
+            return logger
         # The format of the log messages
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(process)d - %(levelname)s - %(message)s")
 

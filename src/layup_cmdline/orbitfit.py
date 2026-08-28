@@ -211,11 +211,11 @@ def execute(args):
     if args.g is not None:
         find_file_or_exit(args.g, "-g, --guess")
 
-    configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
-        configs = LayupConfigs(args.config)
-
+        configs = LayupConfigs(args.config, logger)
+    else:
+        configs = LayupConfigs(logger=logger)
     # check if bootstrap files are missing, and download if necessary
     download_files_if_missing(configs.auxiliary, args)
 
@@ -227,6 +227,7 @@ def execute(args):
         chunk_size=args.chunksize,
         num_workers=args.n,
         cli_args=args,
+        configs=configs,
     )
 
 
