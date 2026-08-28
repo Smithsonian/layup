@@ -5,7 +5,7 @@ import argparse
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-
+import os
 import astropy.units as u
 
 from layup_cmdline.layupargumentparser import LayupArgumentParser
@@ -131,12 +131,22 @@ def main():
     )
 
     optional.add_argument(
-        "-o",
-        "--output",
-        help="Output file stem. Default path is the current working directory",
-        dest="o",
+        "-t",
+        "--stem",
+        help="output file name stem.",
+        dest="t",
         type=str,
         default="predicted_output",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-o",
+        "--outfile",
+        help="Path to store output and logs.",
+        type=str,
+        dest="o",
+        default="./",
         required=False,
     )
 
@@ -161,10 +171,10 @@ def main():
     )
 
     optional.add_argument(
-        "-t",
+        "--ts",
         "--timestep",
         help="Timestep for predict. Must be string consisting of float followed by the unit (d=day, h=hour, m=minute, s=second) e.g. 1.3h or 30m",
-        dest="t",
+        dest="ts",
         type=str,
         default="1h",  # we would want to parse the float and the unit, and convert into day unit
         required=False,
@@ -256,7 +266,7 @@ def execute(args):
     from layup.utilities.layup_configs import LayupConfigs
     from layup.utilities.layup_logging import LayupLogger
 
-    layup_logger = LayupLogger()
+    layup_logger = LayupLogger(log_directory=args.o, verb="predict")
     logger = layup_logger.get_logger("layup.predict_cmdline")
 
     # check input exists
@@ -265,8 +275,19 @@ def execute(args):
     # Check that output directory exists
     find_directory_or_exit(args.o, "-o, --output")
 
+    # check format of input file
+    if args.i.lower() == "csv":
+        output_file = args.t + ".csv"
+    elif args.i.lower() == "hdf5":
+        output_file = args.t + ".h5"
+    else:
+        logger.error("File format must be 'csv' or 'hdf5'")
+        sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
+
+    output_file = os.path.join(args.o, output_file)
+
     # check for overwriting output file
-    warn_or_remove_file(str(args.o), args.force, logger)
+    warn_or_remove_file(str(output_file), args.force, logger)
 
     # check ar directory exists if specified
     if args.ar_data_file_path:
@@ -279,15 +300,6 @@ def execute(args):
 
     end_date = convert_input_to_JD_TDB(args.e, cache_dir) if args.e else start_date + args.days
 
-    # check format of input file
-    if args.i.lower() == "csv":
-        output_file = args.o + ".csv"
-    elif args.i.lower() == "hdf5":
-        output_file = args.o + ".h5"
-    else:
-        logger.error("File format must be 'csv' or 'hdf5'")
-        sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
-
     # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
 
@@ -297,7 +309,7 @@ def execute(args):
         sys.exit(f"ERROR: Start date {start_date} is after than end date {end_date}")
 
     # converting timestep argument args.t into a float in day units.
-    timestep_str = args.t
+    timestep_str = args.ts
     match = re.match(
         r"(?P<float>\d+(\.\d*)?)(?P<unit>\w+)", timestep_str.strip()
     )  # parses float/int and unit

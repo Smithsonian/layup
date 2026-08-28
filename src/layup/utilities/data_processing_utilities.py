@@ -497,7 +497,7 @@ class LayupObservatory(SorchaObservatory):
             )
             super().__init__(
                 FakeSorchaArgs(cache_dir),
-                config.auxiliary,
+                configs.auxiliary,
                 oc_file=write_fallback_obscodes(),
             )
 

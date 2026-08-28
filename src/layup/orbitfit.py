@@ -1902,7 +1902,7 @@ def incremental_orbitfit(
 def orbitfit_cli(
     input: str,
     input_file_format: Literal["MPC80col", "ADES_csv", "ADES_psv", "ADES_xml", "ADES_hdf5"],
-    output_file_stem: str,
+    output_file: str,
     output_file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
     num_workers: int = -1,
@@ -1949,21 +1949,14 @@ def orbitfit_cli(
     _primary_id_column_name = cli_args.primary_id_column_name
 
     input_file = Path(input)
-    if output_file_format == "csv":
-        output_file = Path(f"{output_file_stem}.{output_file_format.lower()}")
-    else:
-        output_file = (
-            Path(f"{output_file_stem}")
-            if output_file_stem.endswith(".h5")
-            else Path(f"{output_file_stem}.h5")
-        )
-    output_directory = output_file.parent.resolve()
+
+    output_directory = Path(output_file).parent.resolve()
 
     # If splitting the output has been requested, then we'll create a second output
     # file with "_flagged" appended to the stem. i.e. if the user provided "output.h5
     # then the flagged output will be "output_flagged.h5".
     if cli_args.separate_flagged:
-        output_file_stem_flagged = output_file_stem
+        output_file_stem_flagged = output_file
         if output_file_format == "csv":
             output_file_flagged = Path(f"{output_file_stem_flagged}_flagged.{output_file_format.lower()}")
         else:

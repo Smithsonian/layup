@@ -308,7 +308,7 @@ def comet(data, num_workers=1, cache_dir=None, primary_id_column_name="ObjID", a
 
 def comet_cli(
     input: str,
-    output_file_stem: str,
+    output_file: str,
     file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
     num_workers: int = -1,
@@ -339,14 +339,6 @@ def comet_cli(
     """
 
     input_file = Path(input)
-    if file_format == "csv":
-        output_file = Path(f"{output_file_stem}.{file_format.lower()}")
-    else:
-        output_file = (
-            Path(f"{output_file_stem}")
-            if output_file_stem.endswith(".h5")
-            else Path(f"{output_file_stem}.h5")
-        )
 
     primary_id_column_name = cli_args.primary_id_column_name if cli_args else "ObjID"
 

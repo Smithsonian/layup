@@ -4,6 +4,7 @@
 import argparse
 import logging
 import sys
+import os
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
@@ -66,12 +67,22 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "-o",
-        "--output",
-        help="output file stem. default path is current working directory",
-        dest="o",
+        "-t",
+        "--stem",
+        help="output file name stem.",
+        dest="t",
         type=str,
-        default="cometed_output",
+        default="comet_output",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-o",
+        "--outfile",
+        help="Path to store output and logs.",
+        type=str,
+        dest="o",
+        default="./",
         required=False,
     )
     optional.add_argument(
@@ -115,7 +126,7 @@ def execute(args):
     from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
     from layup.utilities.layup_logging import LayupLogger
 
-    layup_logger = LayupLogger()
+    layup_logger = LayupLogger(log_directory=args.o, verb="comet")
     logger = layup_logger.get_logger("layup.comet_cmdline")
 
     # check ar directory exists if specified
@@ -125,16 +136,19 @@ def execute(args):
     # check input exists
     find_file_or_exit(args.input, "input")
 
-    # Check that output directory exists
-    find_directory_or_exit(args.o, "-o, --")
     # check format of input file
     if args.i.lower() == "csv":
-        output_file = args.o + ".csv"
+        output_file = args.t + ".csv"
     elif args.i.lower() == "hdf5":
-        output_file = args.o + ".h5"
+        output_file = args.t + ".h5"
     else:
         logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
+
+    # Check that output directory exists
+    find_directory_or_exit(args.o, "-o, --")
+
+    output_file = os.path.join(args.o, output_file)
 
     # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
@@ -153,7 +167,7 @@ def execute(args):
 
     comet_cli(
         input=args.input,
-        output_file_stem=args.o,
+        output_file=output_file,
         file_format=args.i,
         chunk_size=args.chunk,
         num_workers=args.n,

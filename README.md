@@ -103,7 +103,7 @@ layup demo howto orbitfit
 asteroid (3666) Holman, in ADES CSV form — to the current directory, and `howto`
 prints the ready-to-run command. Fit it with:
 ```
-layup orbitfit holman_data_working.csv ADES_csv -o demo_orbitfit_output
+layup orbitfit holman_data_working.csv ADES_csv -t demo_orbitfit_output
 ```
 This writes the best-fit barycentric Cartesian orbit and its covariance to
 `demo_orbitfit_output.csv`. Supported input formats are `MPC80col`, `ADES_csv`, `ADES_psv`,
@@ -111,12 +111,12 @@ This writes the best-fit barycentric Cartesian orbit and its covariance to
 
 Convert the result to another orbit representation (Cometary, Keplerian, …):
 ```
-layup convert demo_orbitfit_output.csv KEP -o demo_orbit_kep
+layup convert demo_orbitfit_output.csv KEP -t demo_orbit_kep
 ```
 
 Predict future on-sky positions, with uncertainties, for an observatory:
 ```
-layup predict demo_orbitfit_output.csv --days 30 --station X05 -o my_predictions
+layup predict demo_orbitfit_output.csv --days 30 --station X05 -t my_predictions
 ```
 
 Every verb takes `--help` for its full set of options (engine choice, IOD

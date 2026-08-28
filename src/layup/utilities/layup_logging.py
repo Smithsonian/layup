@@ -49,8 +49,8 @@ class LayupLogger:
             logger.info("Sending a log message from a notebook.")
     """
 
-    def __init__(self, log_directory="."):
-        self._prepare_logger(log_directory)
+    def __init__(self, log_directory=".", verb=""):
+        self._prepare_logger(log_directory, verb)
 
     def get_logger(self, name):
         """Convenience function to return a logger under the top level logger.
@@ -84,7 +84,7 @@ class LayupLogger:
         """
         pass
 
-    def _prepare_logger(self, log_directory="."):
+    def _prepare_logger(self, log_directory=".", verb=""):
         """Setup for the primary logger.
 
         Parameters
@@ -103,9 +103,9 @@ class LayupLogger:
         # This logger handles all messages >= DEBUG
         logger.setLevel(logging.DEBUG)
 
-        if logger.handlers:
-            # if already configured return
+        if any(getattr(handler, "_layup_logger", False) for handler in logger.handlers):
             return logger
+
         # The format of the log messages
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(process)d - %(levelname)s - %(message)s")
 
@@ -117,7 +117,7 @@ class LayupLogger:
         # Configure log files
         log_location = Path(log_directory)
         timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        log_file_base_name = f"layup-{timestamp}"
+        log_file_base_name = f"layup-{verb}-{timestamp}"
         log_file_info = log_location / f"{log_file_base_name}.log"
         log_file_error = log_location / f"{log_file_base_name}.err"
 
@@ -137,6 +137,9 @@ class LayupLogger:
         logger.addHandler(file_handler_info)
         logger.addHandler(file_handler_error)
         logger.addHandler(console_handler)
+        file_handler_info._layup_logger = True
+        file_handler_error._layup_logger = True
+        console_handler._layup_logger = True
 
         # Return the top level logger
         return logger
