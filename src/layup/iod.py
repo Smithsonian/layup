@@ -112,8 +112,9 @@ def gauss_iod(observations, seq):
 
 register_iod("gauss", gauss_iod)
 
+
 def herget_iod(observations, seq):
-    ''''''
+    """"""
     ephem, _, _ = build_ephem_and_mus()
     solns = herget_with_assist(observations, seq, ephem, tolerance=0.0001, max_iterations=100)
     return solns

@@ -99,7 +99,6 @@ def test_find_drho(tmpdir):
     jds = convert_tdb_date_to_julian_date(data["obsTime"])
     sequence = _build_sequence(jds, sep_dt=90.0)
 
-
     obs_1 = observations[0]
     r_e_1 = obs_1.observer_position
     rho_hat_1 = np.array(obs_1.rho_hat)
@@ -123,7 +122,7 @@ def test_find_drho(tmpdir):
         observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT_AU_DAY)
 
     state_1[3:], _ = herget.find_velocity(t_1, t_n, state_1[:3], r_n, 0.001)
-    
+
     ephem, _, _ = build_ephem_and_mus()
     print(dir(ephem))
     sim = rebound.Simulation()
