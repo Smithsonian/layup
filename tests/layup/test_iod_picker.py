@@ -253,3 +253,78 @@ def test_screen_iter_max_param_is_honored():
     # Either flag=3 (no convergence) or flag=0 if LM happens to nail
     # it in <=4 iters from a near-perfect seed; both are valid here.
     assert fit.flag in (0, 3, 4)
+
+
+# --- flag preservation (issue #499) ---
+# The driver must not clobber the fitter's post-convergence gate verdicts
+# (2 = chi-square per dof above threshold, 6 = degenerate covariance) with
+# its own "never converged" location markers (3 = no IOD root converged,
+# 4 = incremental build-up failed). Only a plain non-convergence (1) may be
+# replaced by the driver's marker.
+
+
+def _flag_preservation_setup(monkeypatch, fit_flags):
+    """Stub do_fit's fitter/ephemeris so each ``_run_fit`` call returns a
+    controlled flag.
+
+    ``fit_flags`` is consumed one value per ``_run_fit`` invocation in
+    call order (picker screen tier, picker full tier, full-data fit, then
+    one call per incremental segment).
+    """
+    obs = [Observation.from_astrometry(0.0, 0.0, 2450000.5 + j, [0, 0, 0], [0, 0, 0]) for j in range(6)]
+    flags = iter(fit_flags)
+
+    def fake_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
+        res = FitResult()
+        res.flag = next(flags)
+        res.csq = 5.0
+        return res
+
+    def fake_iod(observations, seq):
+        # One seed; its contents are irrelevant since _run_fit is stubbed.
+        return [FitResult()]
+
+    monkeypatch.setattr(orbitfit, "_run_fit", fake_fit)
+    monkeypatch.setattr(orbitfit, "get_ephem", lambda cache_dir: None)
+    monkeypatch.setattr(orbitfit, "_get_python_ephem", lambda cache_dir: None)
+    return obs, fake_iod
+
+
+def test_no_root_converged_preserves_chi2_gate_verdict(monkeypatch):
+    """The least-bad candidate that CONVERGED but was rejected on chi-square
+    per dof (flag 2) keeps flag 2 instead of being reported as 3."""
+    obs, iod = _flag_preservation_setup(monkeypatch, [2, 2])
+    fit = orbitfit.do_fit(obs, [[0, 1, 2]], "/tmp", iod=iod)
+    assert fit.flag == 2
+
+
+def test_no_root_converged_preserves_degenerate_verdict(monkeypatch):
+    """Same for the degenerate-covariance gate (flag 6)."""
+    obs, iod = _flag_preservation_setup(monkeypatch, [6, 6])
+    fit = orbitfit.do_fit(obs, [[0, 1, 2]], "/tmp", iod=iod)
+    assert fit.flag == 6
+
+
+def test_no_root_converged_still_marks_plain_nonconvergence(monkeypatch):
+    """A candidate that simply never converged (flag 1) still becomes 3."""
+    obs, iod = _flag_preservation_setup(monkeypatch, [1, 1])
+    fit = orbitfit.do_fit(obs, [[0, 1, 2]], "/tmp", iod=iod)
+    assert fit.flag == 3
+
+
+def test_incremental_buildup_preserves_chi2_gate_verdict(monkeypatch):
+    """When the full-data fit fails and the incremental build-up stops at a
+    segment whose fit converged but was chi-square-rejected (flag 2), the
+    verdict survives instead of becoming 4."""
+    # call 1: picker screen tier converges; call 2: full-data fit hits the
+    # chi-square gate; call 3: first incremental segment hits it again.
+    obs, iod = _flag_preservation_setup(monkeypatch, [0, 2, 2])
+    fit = orbitfit.do_fit(obs, [[0, 1, 2], [3, 4, 5]], "/tmp", iod=iod)
+    assert fit.flag == 2
+
+
+def test_incremental_buildup_still_marks_plain_nonconvergence(monkeypatch):
+    """A segment whose fit simply did not converge (flag 1) still becomes 4."""
+    obs, iod = _flag_preservation_setup(monkeypatch, [0, 2, 1])
+    fit = orbitfit.do_fit(obs, [[0, 1, 2], [3, 4, 5]], "/tmp", iod=iod)
+    assert fit.flag == 4

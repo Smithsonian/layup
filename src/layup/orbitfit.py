@@ -978,7 +978,14 @@ def do_fit(
         logger.debug(
             f"Primary interval: no root converged " f"(best csq={x.csq:.3g}, n_roots={len(candidates)})"
         )
-        x.flag = 3
+        if x.flag == 1:
+            # Only a plain "did not converge" verdict becomes the driver's
+            # "no root converged" marker (3). A post-convergence gate verdict
+            # from the fitter (2 = chi-square per dof above threshold, 6 =
+            # degenerate covariance) is more informative than 3 and must
+            # survive: the least-bad candidate is exactly where that reason
+            # matters (issue #499).
+            x.flag = 3
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
@@ -997,7 +1004,13 @@ def do_fit(
             logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
             x = _run_fit(assist_ephem, x, obs, engine)
             if x.flag != 0:
-                x.flag = 4
+                if x.flag == 1:
+                    # Only a plain non-convergence becomes the driver's
+                    # "incremental build-up failed" marker (4). A
+                    # post-convergence gate verdict (2 = chi-square per dof
+                    # above threshold, 6 = degenerate covariance) survives so
+                    # the reason the build-up stopped is not lost (issue #499).
+                    x.flag = 4
                 break
             logger.debug(f"Result `state`: {x.state}")
             logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
