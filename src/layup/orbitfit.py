@@ -34,6 +34,14 @@ except ImportError:  # extension not rebuilt yet
 # _MU_SUN (= heliocentric GM = k^2) is used by the BK-native fit for the
 # bound-orbit energy prior on gdot; SPEED_OF_LIGHT (au/day) by the radar ingest.
 from layup.constants import MU_SUN as _MU_SUN, SPEED_OF_LIGHT
+
+# Flag values the driver assigns. The fitter's own verdicts (0 converged,
+# 1 did not converge, 2 chi-square per degree of freedom above threshold,
+# 6 degenerate covariance) come from the C++ side; these are the driver's.
+FLAG_DID_NOT_CONVERGE = 1  # the fitter's, tested here before overwriting
+FLAG_NO_ROOT_CONVERGED = 3  # IOD gave candidates, none converged
+FLAG_BUILDUP_FAILED = 4  # incremental build-up stopped at a segment
+
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
@@ -978,7 +986,13 @@ def do_fit(
         logger.debug(
             f"Primary interval: no root converged " f"(best csq={x.csq:.3g}, n_roots={len(candidates)})"
         )
-        x.flag = 3
+        # Only a plain non-convergence becomes the driver's "no root converged"
+        # marker. A candidate that converged and was then rejected by a
+        # post-convergence gate carries the reason for that rejection, and it is
+        # more informative than 3: overwriting it reported a fit that reached a
+        # solution as one that never did (issue #499).
+        if x.flag == FLAG_DID_NOT_CONVERGE:
+            x.flag = FLAG_NO_ROOT_CONVERGED
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
@@ -997,7 +1011,10 @@ def do_fit(
             logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
             x = _run_fit(assist_ephem, x, obs, engine)
             if x.flag != 0:
-                x.flag = 4
+                # As above: keep a gate verdict, which says why the build-up
+                # stopped, rather than replacing it with where it stopped.
+                if x.flag == FLAG_DID_NOT_CONVERGE:
+                    x.flag = FLAG_BUILDUP_FAILED
                 break
             logger.debug(f"Result `state`: {x.state}")
             logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
