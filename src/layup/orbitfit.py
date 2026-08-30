@@ -35,7 +35,7 @@ except ImportError:  # extension not rebuilt yet
 # bound-orbit energy prior on gdot; SPEED_OF_LIGHT (au/day) by the radar ingest.
 from layup.constants import MU_SUN as _MU_SUN, SPEED_OF_LIGHT
 from layup.convert import convert
-from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
+from layup.iod import filter_candidates_by_residual, get_iod, iod_methods, partition_close_approach
 
 from layup.utilities.astrometric_uncertainty import astrometric_uncertainty_Veres2017
 from layup.utilities.data_processing_utilities import (
@@ -941,9 +941,25 @@ def do_fit(
         set_ias15_adaptive_mode(picker_ias15_adaptive_mode)
 
     obs = [observations[i] for i in seq[0]]
+
+    # Order the candidates by how expensive they are to integrate, not by the
+    # order the polynomial produced them (layup#465). A root whose trajectory
+    # grazes the Earth makes the integrator resolve the encounter and can
+    # consume the entire fit budget on its own; on short main-belt arcs that
+    # root is the degenerate Earth-orbit branch and is spurious. Fit the rest
+    # first and only come back to it if nothing else converged -- deferred,
+    # never discarded, because for a genuine near-Earth object the close root
+    # is the right answer.
+    safe, deferred = partition_close_approach(observations, solns)
+    if deferred:
+        logger.debug(f"Deferring {len(deferred)}/{len(solns)} close-approach candidate(s)")
+
     try:
-        candidates = [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max) for soln in solns]
+        candidates = [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max) for soln in safe]
         x = _pick_best_root(candidates, min_r_helio_AU)
+        if x is None and deferred:
+            candidates += [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max) for soln in deferred]
+            x = _pick_best_root(candidates, min_r_helio_AU)
         if x is None:
             candidates = [_run_fit(assist_ephem, soln, obs, engine, full_iter_max) for soln in solns]
             x = _pick_best_root(candidates, min_r_helio_AU)
