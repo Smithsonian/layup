@@ -1,4 +1,4 @@
-"""Outcome facts are reported side by side, not collapsed into one flag (#499).
+"""Outcome facts are reported side by side, not collapsed into one flag.
 
 `do_fit` marks where a fit gave up -- 3 when no IOD root converged on the primary
 interval, 4 when the incremental build-up stopped. Both assignments overwrite

@@ -311,7 +311,7 @@ def _get_result_dtypes(primary_id_column_name: str, nongrav_names=(), per_arc=Fa
             ("FORMAT", "O"),  # Orbit format
         ]
         + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
-        # Fit outcome as independent facts (issues #493, #495, #499). Grouped with
+        # Fit outcome as independent facts. Grouped with
         # the other unconditional columns, before the optional non-grav ones, so
         # that both existing layout invariants still hold: the fingerprint stays
         # last, and the non-grav columns stay immediately before it.
@@ -705,7 +705,7 @@ class FitOutcome:
     stage: int = STAGE_NOT_ATTEMPTED  # how far the pipeline got
     failed_csq: bool = False  # rejected: chi-square per degree of freedom above threshold
     failed_cov: bool = False  # rejected: covariance degenerate, or a variance non-positive
-    failed_physical: bool = False  # rejected: hyperbolic excess speed implausible (#493)
+    failed_physical: bool = False  # rejected: hyperbolic excess speed implausible
 
     def record(self, fit):
         """Read the fitter's own verdict, before any driver flag overwrites it."""
@@ -1084,7 +1084,7 @@ def do_fit(
         )
         # Record the fitter's own verdict first. Assigning 3 here is what used
         # to lose it: a candidate that converged and was then rejected by a gate
-        # was reported as one that never converged (issue #499).
+        # was reported as one that never converged.
         outcome.stage = STAGE_PRIMARY
         outcome.record(x)
         x.flag = FLAG_NO_ROOT_CONVERGED
@@ -1514,7 +1514,7 @@ def _orbitfit(
                     ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
-                + outcome.as_row()  # independent outcome facts (issue #499)
+                + outcome.as_row()  # the outcome columns
                 + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
                 + per_arc_cols  # later-arc amplitudes (comet linkage), when per_arc
                 + (obs_hash, nobs_fit)  # obs fingerprint (issue #419)
