@@ -50,7 +50,13 @@ class _Fit:
 
 
 def _drive(monkeypatch, flags, n_obs=6):
-    """Run do_fit with _run_fit returning `flags` in turn, and no real IOD."""
+    """Run do_fit with no real IOD, and `_run_fit` returning `flags` in turn.
+
+    do_fit calls `_run_fit` at up to three points, so the list reads as the
+    outcome of each in order: the candidate screen over the primary interval,
+    the refit over all observations, then -- only if that refit did not
+    converge -- the first segment of the incremental build-up.
+    """
     seq = iter(flags)
     monkeypatch.setattr(orbitfit, "_run_fit", lambda *a, **k: _Fit(next(seq)))
     monkeypatch.setattr(orbitfit, "get_iod", lambda name: (lambda obs, s: [_Fit(0)]))
@@ -86,7 +92,7 @@ def test_gate_verdict_survives_the_no_root_marker(monkeypatch, gate_flag, column
 )
 def test_gate_verdict_survives_the_buildup_marker(monkeypatch, gate_flag, column):
     """First fit converges, the full-set refit is gated, build-up then fails."""
-    result, outcome = _drive(monkeypatch, [0, gate_flag, gate_flag])
+    result, outcome = _drive(monkeypatch, [FLAG_CONVERGED, gate_flag, gate_flag])
     assert result.flag == FLAG_BUILDUP_FAILED
     assert getattr(outcome, column) is True
     assert outcome.converged is True
@@ -103,7 +109,9 @@ def test_plain_nonconvergence_reports_no_gate(monkeypatch):
 
 
 def test_clean_fit_is_complete_and_ungated(monkeypatch):
-    result, outcome = _drive(monkeypatch, [0, 0, 0])
+    """The screen and the full-set refit both converge, so no build-up runs and
+    nothing rejects the result: the summary flag and every column agree."""
+    result, outcome = _drive(monkeypatch, [FLAG_CONVERGED] * 3)
     assert result.flag == FLAG_CONVERGED
     assert outcome.converged is True
     assert outcome.stage == STAGE_COMPLETE
