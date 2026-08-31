@@ -4,7 +4,7 @@
 import argparse
 import logging
 import sys
-
+import os
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 logger = logging.getLogger(__name__)
@@ -73,12 +73,21 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "-o",
-        "--output",
-        help="output file stem. default path is current working directory",
-        dest="o",
+        "--stem",
+        help="output file name stem.",
+        dest="stem",
         type=str,
         default="converted_output",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-o",
+        "--outfile",
+        help="Path to store output and logs.",
+        type=str,
+        dest="o",
+        default="./",
         required=False,
     )
 
@@ -117,7 +126,7 @@ def execute(args):
     from layup.utilities.layup_configs import LayupConfigs
     from layup.utilities.layup_logging import LayupLogger
 
-    layup_logger = LayupLogger()
+    layup_logger = LayupLogger(log_directory=args.o, verb="convert")
     logger = layup_logger.get_logger("layup.convert_cmdline")
 
     # check ar directory exists if specified
@@ -131,12 +140,14 @@ def execute(args):
     find_directory_or_exit(args.o, "-o, --")
     # check format of input file
     if args.i.lower() == "csv":
-        output_file = args.o + ".csv"
+        output_file = args.stem + ".csv"
     elif args.i.lower() == "hdf5":
-        output_file = args.o + ".h5"
+        output_file = args.stem + ".h5"
     else:
         logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
+
+    output_file = os.path.join(args.o, output_file)
 
     # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
@@ -150,17 +161,18 @@ def execute(args):
     if not isinstance(args.chunk, int) or args.chunk <= 0:
         logger.error("Chunk size must be a positive integer.")
 
-    configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.config)
+    else:
+        configs = LayupConfigs()
 
     # check if bootstrap files are missing, and download if necessary
     download_files_if_missing(configs.auxiliary, args)
 
     convert_cli(
         input=args.input,
-        output_file_stem=args.o,
+        output_file=output_file,
         convert_to=args.orbit_type,
         file_format=args.i,
         chunk_size=args.chunk,

@@ -100,7 +100,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
     # Convert our BCOM CV file to a BCART CSV file
     convert_cli(
         input_file,
-        output_file_stem_BCART,
+        temp_BCART_out_file,
         "BCART",
         "csv",
         chunk_size=chunk_size,
@@ -122,7 +122,7 @@ def test_convert_round_trip_csv(tmpdir, chunk_size, num_workers):
     temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.csv")
     convert_cli(
         temp_BCART_out_file,
-        output_file_stem_BCOM,
+        temp_BCOM_out_file,
         "BCOM",
         "csv",
         chunk_size=chunk_size,
@@ -187,7 +187,7 @@ def test_convert_BCART_EQ_csv_with_covariance(tmpdir, chunk_size, num_workers, o
     # Convert our BCART_EQ CSV file to a different format CSV file
     convert_cli(
         input_file,
-        output_file_stem,
+        temp_out_file,
         output_format,
         "csv",
         chunk_size=chunk_size,
@@ -209,7 +209,7 @@ def test_convert_BCART_EQ_csv_with_covariance(tmpdir, chunk_size, num_workers, o
     temp_BCART_EQ_out_file = os.path.join(tmpdir, f"{output_file_stem_BCART_EQ}.csv")
     convert_cli(
         temp_out_file,
-        output_file_stem_BCART_EQ,
+        temp_BCART_EQ_out_file,
         "BCART_EQ",
         "csv",
         chunk_size=chunk_size,
@@ -271,7 +271,7 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
     # Convert our BCOM HDF5 file to a BCART HDF5 file
     convert_cli(
         input_file_BCOM,
-        output_file_stem_BCART,
+        temp_out_file_BCART,
         "BCART",
         "hdf5",
         chunk_size=chunk_size,
@@ -290,7 +290,7 @@ def test_convert_round_trip_hdf5(tmpdir, chunk_size, num_workers):
     temp_BCOM_out_file = os.path.join(tmpdir, f"{output_file_stem_BCOM}.h5")
     convert_cli(
         temp_out_file_BCART,
-        output_file_stem_BCOM,
+        temp_BCOM_out_file,
         "BCOM",
         "hdf5",
         chunk_size=chunk_size,
