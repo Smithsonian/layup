@@ -16,20 +16,20 @@ def test_unpack_cli(tmpdir):
     # Since the unpack CLI outputs to the current working directory, we need to change to our temp directory
     os.chdir(tmpdir)
 
-    temp_out_file = "test_output"
-
+    temp_out_stem = "test_output"
+    temp_out_file = os.path.join(tmpdir, f"{temp_out_stem}.csv")
     # Now run the unpack cli with overwrite set to True
     unpack_cli(
         input=get_test_filepath("unpack_test_orbitfit_output.csv"),
         file_format="csv",
-        output_file_stem=temp_out_file,
+        output_file=temp_out_file,
     )
 
     # Verify the unpack produced an output file
-    assert os.path.exists(temp_out_file + ".csv")
+    assert os.path.exists(temp_out_file)
 
     # Create a new CSV reader to read in our output file
-    output_csv_reader = CSVDataReader(temp_out_file + ".csv", "csv", primary_id_column_name="provID")
+    output_csv_reader = CSVDataReader(temp_out_file, "csv", primary_id_column_name="provID")
     output_data = output_csv_reader.read_rows()
 
     # Read the input data and get the provID column

@@ -41,8 +41,8 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     os.chdir(tmpdir)
     guess_file_stem = "test_guess"
     temp_guess_file = os.path.join(tmpdir, f"{guess_file_stem}.csv")
-    temp_out_file = "test_output"
-
+    temp_out_stem = "test_output"
+    temp_out_file = os.path.join(tmpdir, f"{temp_out_stem}.csv")
     test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
 
     class FakeCliArgs:
@@ -61,7 +61,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     orbitfit_cli(
         input=test_input_filepath,
         input_file_format="ADES_csv",
-        output_file_stem=guess_file_stem,  # Our first run will create our initial guess file
+        output_file=temp_guess_file,  # Our first run will create our initial guess file
         output_file_format="csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
@@ -84,7 +84,7 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     orbitfit_cli(
         input=test_input_filepath,
         input_file_format="ADES_csv",
-        output_file_stem=temp_out_file,
+        output_file=temp_out_file,
         output_file_format="csv",
         chunk_size=chunk_size,
         num_workers=num_workers,
@@ -94,9 +94,9 @@ def test_orbit_fit_cli(tmpdir, chunk_size, num_workers, output_orbit_format):
     )
 
     # Verify the orbit fit produced an output file
-    assert os.path.exists(temp_out_file + ".csv")
+    assert os.path.exists(temp_out_file)
     # Create a new CSV reader to read in our output file
-    output_csv_reader = CSVDataReader(temp_out_file + ".csv", "csv", primary_id_column_name="provID")
+    output_csv_reader = CSVDataReader(temp_out_file, "csv", primary_id_column_name="provID")
     output_data = output_csv_reader.read_rows()
 
     # Read the input data and get the provID column
@@ -255,7 +255,7 @@ def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
     # Since the orbit_fit CLI outputs to the current working directory, we need to change to our temp directory
     os.chdir(tmpdir)
     guess_file_stem = "test_guess"
-
+    temp_guess_file = os.path.join(tmpdir, f"{guess_file_stem}.csv")
     test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
 
     class FakeCliArgs:
@@ -276,7 +276,7 @@ def test_orbit_fit_cli_raises_with_unknown_iod(tmpdir):
         orbitfit_cli(
             input=test_input_filepath,
             input_file_format="ADES_csv",
-            output_file_stem=guess_file_stem,  # Our first run will create our initial guess file
+            output_file=temp_guess_file,  # Our first run will create our initial guess file
             output_file_format="csv",
             chunk_size=10_000,
             num_workers=1,
@@ -351,6 +351,7 @@ def test_orbit_fit_cli_raises_with_unknown_engine(tmpdir):
     _run_fit raises ValueError at fit time."""
     os.chdir(tmpdir)
     guess_file_stem = "test_guess"
+    temp_guess_file = os.path.join(tmpdir, f"{guess_file_stem}.csv")
     test_input_filepath = get_test_filepath("4_random_mpc_ADES_provIDs_no_sats.csv")
 
     class FakeCliArgs:
@@ -370,7 +371,7 @@ def test_orbit_fit_cli_raises_with_unknown_engine(tmpdir):
         orbitfit_cli(
             input=test_input_filepath,
             input_file_format="ADES_csv",
-            output_file_stem=guess_file_stem,
+            output_file=temp_guess_file,
             output_file_format="csv",
             chunk_size=10_000,
             num_workers=1,

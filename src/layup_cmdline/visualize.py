@@ -29,6 +29,16 @@ def main():
         default=10000,
         required=False,
     )
+
+    optional.add_argument(
+        "-c",
+        "--conf",
+        "--config",
+        help="Optional configuration file",
+        type=str,
+        dest="config",
+        required=False,
+    )
     optional.add_argument(
         "-n",
         "--num-orbs",
@@ -100,7 +110,12 @@ def execute(args):
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
     from layup.utilities.layup_configs import LayupConfigs
 
-    configs = LayupConfigs()
+    if args.config:
+        find_file_or_exit(args.config, "-c, --config")
+        configs = LayupConfigs(args.config)
+    else:
+        configs = LayupConfigs()
+
     download_files_if_missing(configs.auxiliary, args)
 
     cache_dir = getattr(args, "ar_data_file_path", None)
