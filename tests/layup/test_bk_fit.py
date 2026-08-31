@@ -182,8 +182,22 @@ def test_bk_native_fit_recovers_known_state(name, state, arc_days, nobs):
         atol=1e-9,
         err_msg=f"[{name}] BK fit did not recover the truth state",
     )
-    # 2N residuals, 6 free params, noise-free obs -> chi2 essentially zero.
-    assert result.csq < 1e-12, f"[{name}] BK fit chi-square unexpectedly large: {result.csq}"
+    # 2N residuals, 6 free params, noise-free obs -> the DATA chi-square is
+    # essentially zero.  result.csq also carries the bound-orbit energy prior on
+    # gdot, and under the 1/gamma-scaled convention (issue #445) that term is no
+    # longer zero here: gdot is now gamma*(v.n0), the velocity along the fiducial
+    # line of sight, where it used to be d(gamma)/dt = -gamma^2*(r_hat.v).  These
+    # truth states are circular at the epoch (r.v = 0 exactly), so the old gdot
+    # -- and with it the prior -- vanished identically.  That was an accident of
+    # the truth states, not a property of the fit, and the old 1e-12 threshold
+    # was calibrated on it.
+    #
+    # The floor is therefore gdot^2 / sigma_gdot_sq evaluated at truth: 3.8e-9
+    # for the mainbelt case and 6.2e-12 for the TNO.  Both are far below the
+    # per-observation weight, so they are irrelevant against real astrometry
+    # (chi2 ~ 2N ~ 24 for 1" data), and the state-recovery assertion above --
+    # which is unchanged and tight -- is what actually pins the fit.
+    assert result.csq < 1e-6, f"[{name}] BK fit chi-square unexpectedly large: {result.csq}"
 
 
 @pytest.mark.parametrize(
@@ -274,7 +288,8 @@ def test_run_fit_dispatch_cartesian():
 def test_run_fit_dispatch_bk_native():
     """orbitfit._run_fit(engine='bk_native') matches direct
     run_bk_native_fit with MU_SUN."""
-    from layup.orbitfit import _MU_SUN, _run_fit
+    from layup.constants import MU_SUN
+    from layup.orbitfit import _run_fit
 
     ephem = get_ephem(CACHE)
     state = [3.0, 0.0, 0.0, 0.0, 0.0102, 0.001]
@@ -283,7 +298,7 @@ def test_run_fit_dispatch_bk_native():
     seed = _seed_from_state(state, epoch)
 
     via_dispatch = _run_fit(ephem, seed, obs, "bk_native")
-    direct = run_bk_native_fit(ephem, seed, obs, _MU_SUN)
+    direct = run_bk_native_fit(ephem, seed, obs, MU_SUN)
     np.testing.assert_array_equal(via_dispatch.state, direct.state)
     assert via_dispatch.method == "bk_native"
 

@@ -725,7 +725,7 @@ def convert(
 
 def convert_cli(
     input: str,
-    output_file_stem: str,
+    output_file: str,
     convert_to: Literal["BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"],
     file_format: Literal["csv", "hdf5"] = "csv",
     chunk_size: int = 10_000,
@@ -741,8 +741,8 @@ def convert_cli(
     ----------
     input : str
         The path to the input file.
-    output_file_stem : str
-        The stem of the output file.
+    output_file : str
+        The name and path of the output file.
     convert_to : str
         The format to convert the input file to. Must be one of: "BCART", "BCART_EQ", "BCOM", "BKEP", "CART", "COM", "KEP"
     file_format : str, optional (default="csv")
@@ -757,14 +757,6 @@ def convert_cli(
         The argparse object that was created when running from the CLI.
     """
     input_file = Path(input)
-    if file_format == "csv":
-        output_file = Path(f"{output_file_stem}.{file_format.lower()}")
-    else:
-        output_file = (
-            Path(f"{output_file_stem}")
-            if output_file_stem.endswith(".h5")
-            else Path(f"{output_file_stem}.h5")
-        )
 
     primary_id_column_name = cli_args.primary_id_column_name if cli_args else "ObjID"
 

@@ -97,27 +97,20 @@ namespace orbit_fit
     {
         const RhoFrame f = compute_rho_frame(bk.alpha, bk.beta, fid);
         const double inv_g = 1.0 / bk.gamma;
-        const double inv_g2 = inv_g * inv_g;
 
         const Eigen::Vector3d r = inv_g * f.rho_hat;
 
-        // v is the exact time-derivative of r = rho_hat / gamma.  Using the
-        // chain rule d(rho_hat)/dt = adot*rho_hat_alpha + bdot*rho_hat_beta
-        // and d(1/gamma)/dt = -gdot/gamma^2:
+        // Under the 1/gamma-scaled convention (issue #445) the dots ARE the
+        // velocity components in the orthonormal fiducial basis, scaled by gamma:
+        //   adot = gamma (v . a),  bdot = gamma (v . b),  gdot = gamma (v . n0)
+        // so the inverse is three terms in an orthonormal basis:
+        //   v = (1/gamma) (adot a + bdot b + gdot n0)
         //
-        //   v = (1/gamma) d(rho_hat)/dt + d(1/gamma)/dt * rho_hat
-        //     = (1/gamma)(adot*rho_hat_alpha + bdot*rho_hat_beta)
-        //       - (gdot/gamma^2) rho_hat
-        //
-        // Dimensional check (lengths [L], time [T]): gamma ~ 1/[L], so
-        // 1/gamma ~ [L]; rho_hat_alpha/beta are dimensionless and adot,bdot
-        // ~ 1/[T], so term 1 ~ [L]/[T].  gdot ~ 1/([L][T]) and 1/gamma^2 ~
-        // [L]^2, so term 2 ~ [L]/[T] as well -- both are velocities.  The
-        // magnitudes look unusual only because rho_hat_alpha/beta are
-        // deliberately not unit length (see RhoFrame above), not because the
-        // units are inconsistent.
-        const Eigen::Vector3d v = inv_g * (bk.adot * f.rho_hat_alpha + bk.bdot * f.rho_hat_beta)
-                                  - bk.gdot * inv_g2 * f.rho_hat;
+        // The gnomonic tangent vectors rho_hat_alpha, rho_hat_beta -- which are
+        // deliberately not unit length and were a recurring source of confusion --
+        // drop out of the velocity path entirely.  All three dots now share units
+        // of inverse time.
+        const Eigen::Vector3d v = inv_g * (bk.adot * fid.a + bk.bdot * fid.b + bk.gdot * fid.n0);
 
         Eigen::Matrix<double, 6, 1> cart;
         cart << r, v;
@@ -139,17 +132,12 @@ namespace orbit_fit
         const double alpha = rho_hat.dot(fid.a) / u;
         const double beta = rho_hat.dot(fid.b) / u;
 
-        // gdot = d/dt (1/|r|) = -(r . v) / |r|^3 = -gamma^2 * (rho_hat . v)
-        const double gdot = -gamma * gamma * rho_hat.dot(v);
-
-        // d(rho_hat)/dt = gamma * (v - (v . rho_hat) * rho_hat)  -- v's component perp to rho_hat,
-        // scaled to a sphere tangent vector.  alpha-dot, beta-dot come from
-        // applying the quotient rule to alpha = (rho_hat . a) / (rho_hat . n0)
-        // and similarly for beta.
-        const Eigen::Vector3d rho_dot = gamma * (v - v.dot(rho_hat) * rho_hat);
-        const double rho_dot_n0 = rho_dot.dot(fid.n0);
-        const double adot = (rho_dot.dot(fid.a) - alpha * rho_dot_n0) / u;
-        const double bdot = (rho_dot.dot(fid.b) - beta * rho_dot_n0) / u;
+        // Under the 1/gamma-scaled convention (issue #445) the dots are simply the
+        // velocity components in the orthonormal fiducial basis, scaled by gamma.
+        // No quotient rule, no tangent-vector norms.
+        const double adot = gamma * v.dot(fid.a);
+        const double bdot = gamma * v.dot(fid.b);
+        const double gdot = gamma * v.dot(fid.n0);
 
         BKState bk;
         bk.alpha = alpha;
@@ -174,101 +162,81 @@ namespace orbit_fit
         const RhoFrame f = compute_rho_frame(alpha, beta, fid);
         const double inv_g = 1.0 / gamma;
         const double inv_g2 = inv_g * inv_g;
-        const double inv_g3 = inv_g2 * inv_g;
-        const double inv_s2 = 1.0 / f.s_sq;
-        const double inv_s4 = inv_s2 * inv_s2;
 
         Eigen::Matrix<double, 6, 6> J = Eigen::Matrix<double, 6, 6>::Zero();
 
-        // Top-left and bottom-right 3x3 blocks: d(r)/d(alpha,beta,gamma) and
-        // d(v)/d(adot,bdot,gdot) -- identical shape.
-        const Eigen::Vector3d dr_dalpha = inv_g * f.rho_hat_alpha;
-        const Eigen::Vector3d dr_dbeta = inv_g * f.rho_hat_beta;
-        const Eigen::Vector3d dr_dgamma = -inv_g2 * f.rho_hat;
+        // Position rows are unchanged by the convention change: r = rho_hat / gamma
+        // does not involve the dots.
+        J.block<3, 1>(0, 0) = inv_g * f.rho_hat_alpha;   // d r / d alpha
+        J.block<3, 1>(0, 1) = inv_g * f.rho_hat_beta;    // d r / d beta
+        J.block<3, 1>(0, 2) = -inv_g2 * f.rho_hat;       // d r / d gamma
 
-        J.block<3, 1>(0, 0) = dr_dalpha;
-        J.block<3, 1>(0, 1) = dr_dbeta;
-        J.block<3, 1>(0, 2) = dr_dgamma;
-
-        J.block<3, 1>(3, 3) = dr_dalpha;
-        J.block<3, 1>(3, 4) = dr_dbeta;
-        J.block<3, 1>(3, 5) = dr_dgamma;
-
-        // Bottom-left 3x3 block: d(v)/d(alpha,beta,gamma).  Needs second
-        // derivatives of rho_hat with respect to (alpha, beta):
-        //   d rho_hat_alpha / d alpha = -(1+beta^2)/s^4 * rho_hat
-        //                                - 2 alpha / s^2 * rho_hat_alpha
-        //   d rho_hat_alpha / d beta  = (alpha*beta)/s^4 * rho_hat
-        //                                - alpha/s^2 * rho_hat_beta
-        //                                - beta/s^2 * rho_hat_alpha
-        //   d rho_hat_beta  / d beta  = -(1+alpha^2)/s^4 * rho_hat
-        //                                - 2 beta / s^2 * rho_hat_beta
-        // and d rho_hat_beta / d alpha == d rho_hat_alpha / d beta by mixed-partial symmetry.
-        const Eigen::Vector3d d_rha_dalpha = -(1.0 + beta * beta) * inv_s4 * f.rho_hat
-                                             - 2.0 * alpha * inv_s2 * f.rho_hat_alpha;
-        const Eigen::Vector3d d_rha_dbeta = (alpha * beta) * inv_s4 * f.rho_hat
-                                            - alpha * inv_s2 * f.rho_hat_beta
-                                            - beta * inv_s2 * f.rho_hat_alpha;
-        const Eigen::Vector3d d_rhb_dbeta = -(1.0 + alpha * alpha) * inv_s4 * f.rho_hat
-                                            - 2.0 * beta * inv_s2 * f.rho_hat_beta;
-
-        // d v / d alpha
-        const Eigen::Vector3d dv_dalpha = inv_g * (adot * d_rha_dalpha + bdot * d_rha_dbeta)
-                                          - gdot * inv_g2 * f.rho_hat_alpha;
-        // d v / d beta
-        const Eigen::Vector3d dv_dbeta = inv_g * (adot * d_rha_dbeta + bdot * d_rhb_dbeta)
-                                         - gdot * inv_g2 * f.rho_hat_beta;
-        // d v / d gamma
-        const Eigen::Vector3d dv_dgamma = -inv_g2 * (adot * f.rho_hat_alpha + bdot * f.rho_hat_beta)
-                                          + 2.0 * gdot * inv_g3 * f.rho_hat;
-
-        J.block<3, 1>(3, 0) = dv_dalpha;
-        J.block<3, 1>(3, 1) = dv_dbeta;
-        J.block<3, 1>(3, 2) = dv_dgamma;
+        // Velocity rows.  Under the 1/gamma-scaled convention (issue #445),
+        //   v = (1/gamma) (adot a + bdot b + gdot n0)
+        // so v does NOT depend on alpha or beta at all, and the whole
+        // second-derivative block that used to live here is gone.
+        //
+        //   d v / d alpha = d v / d beta = 0
+        //   d v / d gamma = -(1/gamma^2) (adot a + bdot b + gdot n0) = -v / gamma
+        //   d v / d (adot, bdot, gdot) = (1/gamma) [a b n0]
+        const Eigen::Vector3d v_dir = adot * fid.a + bdot * fid.b + gdot * fid.n0;
+        J.block<3, 1>(3, 2) = -inv_g2 * v_dir;           // d v / d gamma
+        J.block<3, 1>(3, 3) = inv_g * fid.a;             // d v / d adot
+        J.block<3, 1>(3, 4) = inv_g * fid.b;             // d v / d bdot
+        J.block<3, 1>(3, 5) = inv_g * fid.n0;            // d v / d gdot
 
         return J;
     }
 
     double sigma_gdot_sq(const BKState &bk, double mu)
     {
-        // Bound-orbit constraint: 0.5 |v|^2 <= mu / |r| = mu * gamma.
-        // Substituting |v|^2 = gdot^2 / gamma^4 + |adot rho_hat_alpha + bdot rho_hat_beta|^2 / gamma^2
-        // (cross-terms with rho_hat vanish since rho_hat_alpha, rho_hat_beta are tangent to rho_hat),
+        // Bound-orbit constraint: |v|^2 < 2 mu / |r|.
         //
-        //   gdot^2 <= gamma^2 * (2 mu gamma^3 - |adot rho_hat_alpha + bdot rho_hat_beta|^2)
+        // Under the 1/gamma-scaled convention (issue #445) all three dots are
+        // velocity components in an ORTHONORMAL basis, so
+        //   |v|^2 = (adot^2 + bdot^2 + gdot^2) / gamma^2,   |r| = 1 / gamma
+        // and the bound reduces exactly to
+        //   gdot^2 < 2 mu gamma^3 - adot^2 - bdot^2.
         //
-        // The tangential term expands via
-        //   |rho_hat_alpha|^2 = (1+beta^2)/s^4,  |rho_hat_beta|^2 = (1+alpha^2)/s^4,
-        //   rho_hat_alpha . rho_hat_beta       = -alpha*beta/s^4,
-        // so
-        //   |adot rho_hat_alpha + bdot rho_hat_beta|^2 =
-        //       [adot^2 (1+beta^2) - 2 adot bdot alpha beta + bdot^2 (1+alpha^2)] / s^4 .
-        // At alpha = beta = 0 (the fiducial direction) this reduces to adot^2 + bdot^2.
-        const double alpha = bk.alpha;
-        const double beta = bk.beta;
-        const double gamma = bk.gamma;
-        const double adot = bk.adot;
-        const double bdot = bk.bdot;
-        const double s_sq = 1.0 + alpha * alpha + beta * beta;
-        const double s4 = s_sq * s_sq;
-        const double v_tan_sq = (adot * adot * (1.0 + beta * beta)
-                                 - 2.0 * adot * bdot * alpha * beta
-                                 + bdot * bdot * (1.0 + alpha * alpha)) / s4;
-        const double rhs = 2.0 * mu * gamma * gamma * gamma - v_tan_sq;
-        if (rhs <= 0.0)
-        {
-            // Tangential rates already exceed escape velocity for this
-            // gamma; the energy bound provides no constraint on gdot.
+        // This is the form the old header called "the familiar" one and could only
+        // claim at the fiducial direction (alpha = beta = 0).  It is now exact
+        // everywhere: the gamma^2 prefactor, the (1+alpha^2)/(1+beta^2) terms, the
+        // alpha*beta cross term and the s^4 denominator all existed only because
+        // the old gdot had different units from adot/bdot and the gnomonic tangent
+        // vectors are not unit length.
+        //
+        // Returns +infinity when the tangential rates already exceed escape, so the
+        // caller's precision 1/sigma_gdot_sq is 0 and the prior contributes nothing.
+        const double rhs = 2.0 * mu * bk.gamma * bk.gamma * bk.gamma
+                           - bk.adot * bk.adot - bk.bdot * bk.bdot;
+        if (!(rhs > 0.0))
             return std::numeric_limits<double>::infinity();
-        }
-        return gamma * gamma * rhs;
+        return rhs;
     }
 
     static void bk_basis_bindings(pybind11::module &m)
     {
         namespace py = pybind11;
 
-        py::class_<BKState>(m, "BKState")
+        py::class_<BKState>(m, "BKState",
+                            "Bernstein-Khushalani parameters at epoch, barycentric.\n\n"
+                            "(alpha, beta) are gnomonic tangent-plane coordinates of the\n"
+                            "line-of-sight direction at a fiducial direction n0, and\n"
+                            "gamma = 1/|r| with r from the barycenter.\n\n"
+                            "The dots are NOT d(alpha)/dt, d(beta)/dt, d(gamma)/dt.  They are\n"
+                            "the velocity components in the orthonormal fiducial basis,\n"
+                            "scaled by gamma:\n\n"
+                            "    adot = gamma * (v . a)\n"
+                            "    bdot = gamma * (v . b)\n"
+                            "    gdot = gamma * (v . n0)\n\n"
+                            "In particular gdot is the line-of-sight velocity -- the\n"
+                            "parameter angles-only astrometry constrains least, and the one\n"
+                            "the bound-orbit energy prior regularizes.  The coordinate rates,\n"
+                            "if you want them, are\n\n"
+                            "    d(alpha)/dt = s * (adot - alpha * gdot)\n"
+                            "    d(beta)/dt  = s * (bdot - beta  * gdot)\n"
+                            "    d(gamma)/dt = -(gamma/s) * (alpha*adot + beta*bdot + gdot)\n\n"
+                            "with s = sqrt(1 + alpha^2 + beta^2).  See issue #445.")
             .def(py::init<>())
             .def(py::init([](double alpha, double beta, double gamma,
                              double adot, double bdot, double gdot)

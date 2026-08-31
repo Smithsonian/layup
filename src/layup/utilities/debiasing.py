@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import healpy as hp
 import pandas as pd
-import pooch
+from layup.utilities.cache_location import default_cache_dir
 
 # From Siegfried Eggl's code
 MPC_CATALOGS = {
@@ -54,7 +54,7 @@ def generate_bias_dict(cache_dir=None):
         Dictionary representation of bias.dat file indexed by catalog keys.
     """
     if cache_dir is None:
-        cache_dir = pooch.os_cache("layup")
+        cache_dir = default_cache_dir()
 
     bias_file_path = Path(cache_dir) / "bias.dat"
     if not bias_file_path.exists():

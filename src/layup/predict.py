@@ -4,7 +4,6 @@ from argparse import Namespace
 from pathlib import Path
 
 import numpy as np
-import pooch
 import spiceypy as spice
 from sorcha.ephemeris.simulation_geometry import vec2ra_dec, integrate_light_time
 from sorcha.ephemeris.simulation_setup import create_assist_ephemeris, furnish_spiceypy, generate_simulations
@@ -33,6 +32,7 @@ from layup.utilities.data_processing_utilities import (
 from layup.utilities.file_io import CSVDataReader
 from layup.utilities.file_io.file_output import write_csv
 from layup.utilities.cli_utilities import warn_or_remove_file
+from layup.utilities.cache_location import default_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ def _predict(data, obs_pos_vel, times, cache_dir, primary_id_column_name):
     numpy structured array with the flattened results
     """
     if cache_dir is None:
-        kernels_loc = str(pooch.os_cache("layup"))
+        kernels_loc = str(default_cache_dir())
     else:
         kernels_loc = str(cache_dir)
 
@@ -438,7 +438,7 @@ def predict(
     """
     num_workers = resolve_num_workers(num_workers)
 
-    layup_observatory = LayupObservatory(cache_dir=cache_dir)
+    layup_observatory = LayupObservatory(cache_dir=cache_dir, configs=configs)
 
     times_et = np.array([spice.str2et(f"jd {t} tdb") for t in times], dtype="<f8")
 
@@ -562,7 +562,7 @@ def predict_cli(
                 cache_dir=cache_dir,
                 primary_id_column_name=cli_args.primary_id_column_name,
             )
-
+        logger.info(f"Processing {len(data)} object(s) in chunk")
         predictions = predict(
             data,
             obscode=cli_args.station,
@@ -580,3 +580,4 @@ def predict_cli(
                 write_csv(predictions, output_file, move_columns={"ra_str_hms": 3, "dec_str_dms": 4})
             else:
                 write_csv(predictions, output_file)
+        logger.info(f"Data has been written to {output_file}")

@@ -181,6 +181,47 @@ def _inertial_min_geocentric_AU(state, state_epoch, observations) -> float:
     return math.sqrt(min_d2)
 
 
+def partition_close_approach(observations, candidates, close_earth_AU: float = _CLOSE_EARTH_AU):
+    """Split IOD candidates into those safe to integrate and those to defer.
+
+    A Gauss root whose trajectory passes very close to Earth is expensive
+    rather than wrong-looking: the integrator resolves the encounter step by
+    step and a single candidate can consume the whole fit budget. On short
+    main-belt arcs the offender is usually the degenerate branch that
+    collapses onto Earth's own orbit -- near-zero topocentric distance,
+    co-moving with the observer -- which is spurious for the objects that
+    produce it and is rejected at 10^4-10^6 sigma when it is actually
+    evaluated (Smithsonian/layup#465).
+
+    These candidates cannot simply be dropped: for a genuine near-Earth
+    object with a real close approach, the close root is the *correct*
+    orbit. So they are deferred, not discarded. The caller fits the safe
+    candidates first and only falls back to the deferred ones if none of
+    them converged.
+
+    The same ``close_earth_AU`` threshold and the same inertial
+    approximation are used as in :func:`filter_candidates_by_residual`,
+    which passes these candidates through its residual test unfiltered for
+    the same reason.
+
+    Returns
+    -------
+    (safe, deferred) : tuple[list, list]
+        Both preserve the input ordering. ``deferred`` is empty in the
+        common case.
+    """
+    safe, deferred = [], []
+    for c in candidates:
+        try:
+            min_geo = _inertial_min_geocentric_AU(c.state, c.epoch, observations)
+        except Exception:
+            # Unreadable candidate: treat as safe and let the picker judge it.
+            safe.append(c)
+            continue
+        (deferred if min_geo < close_earth_AU else safe).append(c)
+    return safe, deferred
+
+
 def filter_candidates_by_residual(
     candidates,
     observations,

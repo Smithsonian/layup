@@ -91,6 +91,26 @@ codes, and the astrometry debiasing tables. Download them once with:
 
 This fetches roughly 1 GB, which expands to about 1.5 GB on disk.
 
+By default it goes to a per-user cache directory: ``~/Library/Caches/layup`` on
+macOS, ``~/.cache/layup`` on Linux (or ``$XDG_CACHE_HOME/layup`` if that is
+set), and ``%LOCALAPPDATA%\layup\layup\Cache`` on Windows. On a cluster that is
+often a smaller partition than the one you run from, so you can move it:
+
+.. code-block:: console
+
+   >> export LAYUP_CACHE_DIR=/data/shared/layup-cache
+
+Every layup command reads that variable, so setting it moves all of the data.
+Individual calls can still override it with a ``cache_dir`` argument, and
+``layup bootstrap --cache`` takes a directory directly.
+
+.. note::
+
+   ``LAYUP_CACHE_DIR`` is a per-process setting read from the environment, so
+   two jobs launched from the same shell share whatever that shell exports. To
+   give them separate caches -- to try a new one while an old one is still in
+   use, say -- set it per job rather than exporting it once.
+
 Fit an orbit
 ^^^^^^^^^^^^
 

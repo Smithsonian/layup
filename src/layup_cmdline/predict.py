@@ -5,10 +5,11 @@ import argparse
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-
+import os
 import astropy.units as u
 
 from layup_cmdline.layupargumentparser import LayupArgumentParser
+from layup.utilities.cache_location import default_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +131,21 @@ def main():
     )
 
     optional.add_argument(
-        "-o",
-        "--output",
-        help="Output file stem. Default path is the current working directory",
-        dest="o",
+        "--stem",
+        help="output file name stem.",
+        dest="stem",
         type=str,
         default="predicted_output",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-o",
+        "--outfile",
+        help="Path to store output and logs.",
+        type=str,
+        dest="o",
+        default="./",
         required=False,
     )
 
@@ -247,7 +257,6 @@ def execute(args):
     import sys
 
     import astropy.units as u
-    import pooch
 
     from layup.predict import predict_cli
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
@@ -256,7 +265,7 @@ def execute(args):
     from layup.utilities.layup_configs import LayupConfigs
     from layup.utilities.layup_logging import LayupLogger
 
-    layup_logger = LayupLogger()
+    layup_logger = LayupLogger(log_directory=args.o, verb="predict")
     logger = layup_logger.get_logger("layup.predict_cmdline")
 
     # check input exists
@@ -265,28 +274,30 @@ def execute(args):
     # Check that output directory exists
     find_directory_or_exit(args.o, "-o, --output")
 
+    # check format of input file
+    if args.i.lower() == "csv":
+        output_file = args.stem + ".csv"
+    elif args.i.lower() == "hdf5":
+        output_file = args.stem + ".h5"
+    else:
+        logger.error("File format must be 'csv' or 'hdf5'")
+        sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
+
+    output_file = os.path.join(args.o, output_file)
+
     # check for overwriting output file
-    warn_or_remove_file(str(args.o), args.force, logger)
+    warn_or_remove_file(str(output_file), args.force, logger)
 
     # check ar directory exists if specified
     if args.ar_data_file_path:
         find_directory_or_exit(args.ar_data_file_path, "-ar, --ar_data_path")
         cache_dir = Path(args.ar_data_file_path)
     else:
-        cache_dir = Path(pooch.os_cache("layup"))
+        cache_dir = default_cache_dir()
 
     start_date = convert_input_to_JD_TDB(args.s, cache_dir)
 
     end_date = convert_input_to_JD_TDB(args.e, cache_dir) if args.e else start_date + args.days
-
-    # check format of input file
-    if args.i.lower() == "csv":
-        output_file = args.o + ".csv"
-    elif args.i.lower() == "hdf5":
-        output_file = args.o + ".h5"
-    else:
-        logger.error("File format must be 'csv' or 'hdf5'")
-        sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
 
     # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
@@ -313,10 +324,11 @@ def execute(args):
 
     timestep_day = (value * UNIT_DICT[unit_str]).to(u.day).value  # converting value into day units
 
-    configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
         configs = LayupConfigs(args.config)
+    else:
+        configs = LayupConfigs()
 
     # check if bootstrap files are missing, and download if necessary
     download_files_if_missing(configs.auxiliary, args)

@@ -162,7 +162,7 @@ def unpack(res, name, orbit_para, _RESULT_DTYPES, orbit_cols_flag, format):
 def unpack_cli(
     input,
     file_format,
-    output_file_stem,
+    output_file,
     chunk_size: int = 10_000,
     cli_args: dict = None,
 ):
@@ -188,14 +188,6 @@ def unpack_cli(
     primary_id_column_name = cli_args.primary_id_column_name if cli_args else "provID"
 
     input_file = Path(input)
-    if file_format == "csv":
-        output_file = Path(f"{output_file_stem}.{file_format.lower()}")
-    else:
-        output_file = (
-            Path(f"{output_file_stem}")
-            if output_file_stem.endswith(".h5")
-            else Path(f"{output_file_stem}.h5")
-        )
 
     # Open the input file and read the first line
     reader_class = INPUT_READERS.get(file_format)

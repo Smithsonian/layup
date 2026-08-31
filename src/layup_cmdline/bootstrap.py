@@ -2,10 +2,10 @@
 # The `layup bootstrap` subcommand implementation
 #
 import argparse
-import pooch
 from layup_cmdline.layupargumentparser import LayupArgumentParser
 
 from layup.utilities.file_access_utils import find_file_or_exit
+from layup.utilities.cache_location import default_cache_dir
 
 
 def main():
@@ -32,7 +32,7 @@ def main():
         "--ar-data-path",  # aliases: same directory the other verbs read via --ar/--ar-data-path
         dest="cache",
         type=str,
-        default=pooch.os_cache("layup"),
+        default=default_cache_dir(),
         help="Local directory where downloaded files will be stored (also accepted as --ar/--ar-data-path).",
     )
 
