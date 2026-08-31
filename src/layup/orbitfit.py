@@ -31,7 +31,7 @@ try:
 except ImportError:  # extension not rebuilt yet
     get_ias15_adaptive_mode = lambda: -1
     set_ias15_adaptive_mode = lambda m: None
-# _MU_SUN (= heliocentric GM = k^2) is used by the BK-native fit for the
+# MU_SUN (= heliocentric GM = k^2) is used by the BK-native fit for the
 # bound-orbit energy prior on gdot; SPEED_OF_LIGHT (au/day) by the radar ingest.
 from layup.constants import (
     CONVERGED_FLAGS,
@@ -45,7 +45,7 @@ from layup.constants import (
     FLAG_NO_SOLUTION,
     FLAG_NOT_ATTEMPTED,
     FLAG_PRIOR_NOT_POSITIVE_DEFINITE,
-    MU_SUN as _MU_SUN,
+    MU_SUN,
     OUTCOME_COLUMNS,
     SPEED_OF_LIGHT,
     STAGE_BUILDUP,
@@ -152,7 +152,7 @@ def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
     if engine == "cartesian":
         return run_from_vector_with_initial_guess(assist_ephem, initial_guess, observations, iter_max)
     if engine == "bk_native":
-        return run_bk_native_fit(assist_ephem, initial_guess, observations, _MU_SUN)
+        return run_bk_native_fit(assist_ephem, initial_guess, observations, MU_SUN)
     raise ValueError(f"Unknown engine {engine!r}; expected one of 'cartesian', 'bk_native'.")
 
 
@@ -1077,7 +1077,7 @@ def do_fit(
         # diagnostic scan Gauss+BK covers ~90% of cases vs ~84% for Gauss alone.
         # Epoch convention matches do_gauss_iod's middle observation.
         logger.debug(f"All {len(solns)} Gauss roots failed; trying BK-IOD fallback")
-        bk_seed = run_bk_iod(obs, float(obs[len(obs) // 2].epoch), _MU_SUN)
+        bk_seed = run_bk_iod(obs, float(obs[len(obs) // 2].epoch), MU_SUN)
         if bk_seed.flag == 0:
             cand = _run_fit(assist_ephem, bk_seed, obs, engine, full_iter_max)
             candidates.append(cand)
