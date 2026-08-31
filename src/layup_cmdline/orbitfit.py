@@ -97,7 +97,7 @@ def main():
         "-t",
         "--stem",
         help="output file name stem.",
-        dest="t",
+        dest="stem",
         type=str,
         default="orbitfit_output",
         required=False,
@@ -207,9 +207,9 @@ def execute(args):
         logger.error(f"Output orbit format must be one of {supported_orbit_formats}")
     # check format of input file
     if args.output_format.lower() == "csv":
-        output_file = args.t + ".csv"
+        output_file = args.stem + ".csv"
     elif args.output_format.lower() == "hdf5":
-        output_file = args.t + ".h5"
+        output_file = args.stem + ".h5"
     else:
         logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")

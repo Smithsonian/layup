@@ -131,10 +131,9 @@ def main():
     )
 
     optional.add_argument(
-        "-t",
         "--stem",
         help="output file name stem.",
-        dest="t",
+        dest="stem",
         type=str,
         default="predicted_output",
         required=False,
@@ -171,10 +170,10 @@ def main():
     )
 
     optional.add_argument(
-        "--ts",
+        "-t",
         "--timestep",
         help="Timestep for predict. Must be string consisting of float followed by the unit (d=day, h=hour, m=minute, s=second) e.g. 1.3h or 30m",
-        dest="ts",
+        dest="t",
         type=str,
         default="1h",  # we would want to parse the float and the unit, and convert into day unit
         required=False,
@@ -277,9 +276,9 @@ def execute(args):
 
     # check format of input file
     if args.i.lower() == "csv":
-        output_file = args.t + ".csv"
+        output_file = args.stem + ".csv"
     elif args.i.lower() == "hdf5":
-        output_file = args.t + ".h5"
+        output_file = args.stem + ".h5"
     else:
         logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
@@ -309,7 +308,7 @@ def execute(args):
         sys.exit(f"ERROR: Start date {start_date} is after than end date {end_date}")
 
     # converting timestep argument args.t into a float in day units.
-    timestep_str = args.ts
+    timestep_str = args.t
     match = re.match(
         r"(?P<float>\d+(\.\d*)?)(?P<unit>\w+)", timestep_str.strip()
     )  # parses float/int and unit

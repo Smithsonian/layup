@@ -70,7 +70,7 @@ def main():
         "-t",
         "--stem",
         help="output file name stem.",
-        dest="t",
+        dest="stem",
         type=str,
         default="comet_output",
         required=False,
@@ -138,9 +138,9 @@ def execute(args):
 
     # check format of input file
     if args.i.lower() == "csv":
-        output_file = args.t + ".csv"
+        output_file = args.stem + ".csv"
     elif args.i.lower() == "hdf5":
-        output_file = args.t + ".h5"
+        output_file = args.stem + ".h5"
     else:
         logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
