@@ -290,6 +290,11 @@ def _get_result_dtypes(primary_id_column_name: str, nongrav_names=(), per_arc=Fa
             ("FORMAT", "O"),  # Orbit format
         ]
         + [(col_name, "f8") for col_name in get_cov_columns()]  # Flat covariance matrix (36 elements)
+        # Fit outcome as independent facts (issues #493, #495, #499). Grouped with
+        # the other unconditional columns, before the optional non-grav ones, so
+        # that both existing layout invariants still hold: the fingerprint stays
+        # last, and the non-grav columns stay immediately before it.
+        + [(name, "i1") for name in OUTCOME_COLUMNS]
         + [  # non-grav params (issue #351), value + 1-sigma per fitted param
             (col, "f8") for n in nongrav_names for col in (n.lower(), n.lower() + "_unc")
         ]
@@ -651,6 +656,92 @@ def _build_sequence(jds, sep_dt=90.0):
     return seq
 
 
+# ---------------------------------------------------------------------------
+# Fit outcome (issues #493, #495, #499)
+#
+# ``flag`` is one integer carrying three unrelated things: whether the estimator
+# converged, how far along the pipeline it stopped, and which post-convergence
+# gate rejected the result. Those are not mutually exclusive, so one integer
+# cannot hold them -- the driver used to write its stage marker over a gate
+# verdict, reporting a fit that *had* reached a solution as one that never did.
+#
+# The columns below report each fact on its own and leave the combining to the
+# reader. ``flag`` is unchanged and remains the summary: 0 if and only if the
+# fit converged and every gate passed.
+# ---------------------------------------------------------------------------
+
+STAGE_NOT_ATTEMPTED = 0
+STAGE_NO_CANDIDATES = 1  # initial orbit determination produced nothing usable
+STAGE_PRIMARY = 2  # reached the fit over the primary interval
+STAGE_BUILDUP = 3  # reached the incremental build-up to all observations
+STAGE_COMPLETE = 4  # fit the full observation set
+STAGE_INCREMENTAL = 5  # sequential-update bookkeeping rather than a fresh fit
+
+OUTCOME_COLUMNS = ("converged", "stage", "gate_csq", "gate_cov", "gate_physical")
+
+# The fitter's own verdicts, and which gate each one reports. 2 and 6 are both
+# set *after* the Levenberg-Marquardt loop has converged (orbit_fit.cpp: the
+# reduced-chi-square test reads chi2_final, and the conditioning test is guarded
+# by `flag == 0`), so each means "converged, then rejected" -- which is exactly
+# the fact the driver used to discard.
+_CXX_GATE = {2: "gate_csq", 6: "gate_cov"}
+
+
+@dataclass
+class FitOutcome:
+    """What happened to one fit, as independent facts.
+
+    ``FitResult`` is a pybind11 class declared without ``py::dynamic_attr()``, so
+    these cannot be attached to it; they are carried here instead and written to
+    their own output columns.
+    """
+
+    converged: bool = False  # the differential correction reached a solution
+    stage: int = STAGE_NOT_ATTEMPTED  # how far the pipeline got
+    gate_csq: bool = False  # chi-square per degree of freedom above threshold
+    gate_cov: bool = False  # covariance degenerate, or a variance non-positive
+    gate_physical: bool = False  # hyperbolic excess speed implausible (issue #493)
+
+    def record(self, fit):
+        """Read the fitter's own verdict, before any driver flag overwrites it."""
+        self.converged = fit.flag in (0, 2, 6)
+        gate = _CXX_GATE.get(fit.flag)
+        if gate is not None:
+            setattr(self, gate, True)
+
+    def as_row(self):
+        """The output columns, in ``OUTCOME_COLUMNS`` order."""
+        return (
+            int(self.converged),
+            int(self.stage),
+            int(self.gate_csq),
+            int(self.gate_cov),
+            int(self.gate_physical),
+        )
+
+    @classmethod
+    def from_flag(cls, flag):
+        """Reconstruct what the summary flag still permits, for the paths that do
+        not run through ``do_fit`` and so never observed the intermediate state.
+        Lossy by construction -- a gate verdict that was overwritten is gone."""
+        outcome = cls()
+        outcome.converged = flag in (0, 2, 6)
+        gate = _CXX_GATE.get(flag)
+        if gate is not None:
+            setattr(outcome, gate, True)
+        outcome.stage = {
+            0: STAGE_COMPLETE,
+            2: STAGE_COMPLETE,
+            6: STAGE_COMPLETE,
+            3: STAGE_PRIMARY,
+            4: STAGE_BUILDUP,
+            5: STAGE_NO_CANDIDATES,
+            7: STAGE_INCREMENTAL,
+            8: STAGE_INCREMENTAL,
+        }.get(flag, STAGE_NOT_ATTEMPTED)
+        return outcome
+
+
 def create_empty_result(id, dtypes):
     """Create an empty return object
 
@@ -682,6 +773,8 @@ def create_empty_result(id, dtypes):
                 "NONE",  # format
             )
             + (np.nan,) * 36  # Flat covariance matrix
+            # never attempted: not converged, no stage reached, no gate applied
+            + ((0, STAGE_NOT_ATTEMPTED, 0, 0, 0) if "converged" in dtypes.names else ())
             # non-grav columns (issue #351): NaN per a1/a2/a3 (+ _unc) that is present
             + tuple(np.nan for n in ("a1", "a2", "a3") if n in dtypes.names for _ in (0, 1))
             # obs fingerprint (issue #419): empty hash never matches, so a failed
@@ -834,6 +927,7 @@ def do_fit(
     min_r_helio_AU: float = _PICKER_MIN_R_HELIO_AU,
     prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
     picker_ias15_adaptive_mode: int = _PICKER_IAS15_ADAPTIVE_MODE,
+    outcome: "FitOutcome | None" = None,
 ):
     """Carry out an orbit fit to a list of observations.
 
@@ -879,6 +973,9 @@ def do_fit(
         best-effort or sentinel FitResult with a non-zero flag.
     """
 
+    if outcome is None:
+        outcome = FitOutcome()
+
     # 'auto' is a strategy, not a registered IOD: seed candidates with Gauss,
     # then (after the picker, below) fall back to the BK 5-parameter linear IOD
     # if every Gauss root fails to converge. Any other value is a registry name.
@@ -896,6 +993,7 @@ def do_fit(
     if not solns and not is_auto:
         logger.debug(f"IOD {iod!r} returned no candidates")
         x = FitResult()
+        outcome.stage = STAGE_NO_CANDIDATES
         x.flag = 5
         return x
 
@@ -972,12 +1070,18 @@ def do_fit(
             # 'auto' with zero Gauss roots and no usable BK seed: nothing to
             # surface, so return an explicit no-solution sentinel.
             x = FitResult()
+            outcome.stage = STAGE_NO_CANDIDATES
             x.flag = 5
             return x
         x = min(candidates, key=lambda c: c.csq)
         logger.debug(
             f"Primary interval: no root converged " f"(best csq={x.csq:.3g}, n_roots={len(candidates)})"
         )
+        # Record the fitter's own verdict first. Assigning 3 here is what used
+        # to lose it: a candidate that converged and was then rejected by a gate
+        # was reported as one that never converged (issue #499).
+        outcome.stage = STAGE_PRIMARY
+        outcome.record(x)
         x.flag = 3
         return x
 
@@ -997,6 +1101,8 @@ def do_fit(
             logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
             x = _run_fit(assist_ephem, x, obs, engine)
             if x.flag != 0:
+                outcome.stage = STAGE_BUILDUP
+                outcome.record(x)
                 x.flag = 4
                 break
             logger.debug(f"Result `state`: {x.state}")
@@ -1005,6 +1111,13 @@ def do_fit(
         logger.debug(f"Result `state`: {x.state}")
         logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
 
+    # Only the paths that reach here without having already recorded -- a clean
+    # fit, or a build-up that completed every segment. The early-return paths
+    # above recorded the fitter's verdict *before* overwriting `flag`, so
+    # re-reading it here would replace that verdict with the driver's marker.
+    if outcome.stage == STAGE_NOT_ATTEMPTED:
+        outcome.stage = STAGE_COMPLETE
+        outcome.record(x)
     return x
 
 
@@ -1288,6 +1401,7 @@ def _orbitfit(
         sequence = _build_sequence(jds, sep_dt=90.0)
 
         # Perform the orbit fitting
+        outcome = FitOutcome()
         if initial_guess is None or initial_guess["flag"] != 0:
             if iod.lower() in ["gauss", "auto"]:
                 res = do_fit(
@@ -1296,12 +1410,16 @@ def _orbitfit(
                     cache_dir=kernels_loc,
                     iod=iod.lower(),
                     engine=engine,
+                    outcome=outcome,
                 )
             else:
                 res = do_other_fit(iod=iod.lower())
         else:
             guess_to_use = parse_fit_result(initial_guess)
             res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
+            # This path does not run the staged pipeline, so there is no
+            # intermediate state to have observed; report what the flag allows.
+            outcome = FitOutcome.from_flag(res.flag)
 
         # Non-gravitational params (issue #351): once the 6-parameter orbit has
         # converged, refine it jointly with the requested non-grav params, seeded
@@ -1331,6 +1449,10 @@ def _orbitfit(
                 res = res_ng
             else:
                 logger.debug("Non-grav refinement did not converge; reporting non-grav params as NaN.")
+
+        # The non-grav refinement above can replace `res`, so take the gate
+        # verdicts from whatever is actually being returned.
+        outcome.record(res)
 
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
@@ -1387,6 +1509,7 @@ def _orbitfit(
                     ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
+                + outcome.as_row()  # independent outcome facts (issue #499)
                 + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
                 + per_arc_cols  # later-arc amplitudes (comet linkage), when per_arc
                 + (obs_hash, nobs_fit)  # obs fingerprint (issue #419)
@@ -1764,6 +1887,8 @@ def _fitresult_to_row(fit, obj_id, obs_hash, nobs_fit, dtypes):
             "BCART_EQ" if success else "NONE",
         )
         + cov
+        # The sequential update does not run the staged pipeline either.
+        + (FitOutcome.from_flag(fit.flag).as_row() if "converged" in dtypes.names else ())
         + (obs_hash, nobs_fit)
     )
     return np.array([row], dtype=dtypes)
