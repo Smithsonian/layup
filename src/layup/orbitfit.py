@@ -677,14 +677,18 @@ STAGE_BUILDUP = 3  # reached the incremental build-up to all observations
 STAGE_COMPLETE = 4  # fit the full observation set
 STAGE_INCREMENTAL = 5  # sequential-update bookkeeping rather than a fresh fit
 
-OUTCOME_COLUMNS = ("converged", "stage", "gate_csq", "gate_cov", "gate_physical")
+# Named for their polarity: each is 1 when the fit FAILED that check, so a clean
+# fit is zero across all of them, matching `flag == 0`. A "passed_*" convention
+# would make a never-attempted fit (all zero) indistinguishable from one that
+# failed everything.
+OUTCOME_COLUMNS = ("converged", "stage", "failed_csq", "failed_cov", "failed_physical")
 
-# The fitter's own verdicts, and which gate each one reports. 2 and 6 are both
+# The fitter's own verdicts, and which check each one reports as failed. 2 and 6 are both
 # set *after* the Levenberg-Marquardt loop has converged (orbit_fit.cpp: the
 # reduced-chi-square test reads chi2_final, and the conditioning test is guarded
 # by `flag == 0`), so each means "converged, then rejected" -- which is exactly
 # the fact the driver used to discard.
-_CXX_GATE = {2: "gate_csq", 6: "gate_cov"}
+_CXX_GATE = {2: "failed_csq", 6: "failed_cov"}
 
 
 @dataclass
@@ -698,9 +702,9 @@ class FitOutcome:
 
     converged: bool = False  # the differential correction reached a solution
     stage: int = STAGE_NOT_ATTEMPTED  # how far the pipeline got
-    gate_csq: bool = False  # chi-square per degree of freedom above threshold
-    gate_cov: bool = False  # covariance degenerate, or a variance non-positive
-    gate_physical: bool = False  # hyperbolic excess speed implausible (issue #493)
+    failed_csq: bool = False  # rejected: chi-square per degree of freedom above threshold
+    failed_cov: bool = False  # rejected: covariance degenerate, or a variance non-positive
+    failed_physical: bool = False  # rejected: hyperbolic excess speed implausible (#493)
 
     def record(self, fit):
         """Read the fitter's own verdict, before any driver flag overwrites it."""
@@ -714,9 +718,9 @@ class FitOutcome:
         return (
             int(self.converged),
             int(self.stage),
-            int(self.gate_csq),
-            int(self.gate_cov),
-            int(self.gate_physical),
+            int(self.failed_csq),
+            int(self.failed_cov),
+            int(self.failed_physical),
         )
 
     @classmethod

@@ -60,7 +60,7 @@ def _drive(monkeypatch, flags, n_obs=6):
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("gate_flag,column", [(2, "gate_csq"), (6, "gate_cov")])
+@pytest.mark.parametrize("gate_flag,column", [(2, "failed_csq"), (6, "failed_cov")])
 def test_gate_verdict_survives_the_no_root_marker(monkeypatch, gate_flag, column):
     """flag still reports where it stopped; the gate is reported separately."""
     result, outcome = _drive(monkeypatch, [gate_flag] * 3)
@@ -70,7 +70,7 @@ def test_gate_verdict_survives_the_no_root_marker(monkeypatch, gate_flag, column
     assert outcome.stage == STAGE_PRIMARY
 
 
-@pytest.mark.parametrize("gate_flag,column", [(2, "gate_csq"), (6, "gate_cov")])
+@pytest.mark.parametrize("gate_flag,column", [(2, "failed_csq"), (6, "failed_cov")])
 def test_gate_verdict_survives_the_buildup_marker(monkeypatch, gate_flag, column):
     """First fit converges, the full-set refit is gated, build-up then fails."""
     result, outcome = _drive(monkeypatch, [0, gate_flag, gate_flag])
@@ -85,7 +85,7 @@ def test_plain_nonconvergence_reports_no_gate(monkeypatch):
     result, outcome = _drive(monkeypatch, [1] * 3)
     assert result.flag == 3
     assert outcome.converged is False
-    assert outcome.gate_csq is False and outcome.gate_cov is False
+    assert outcome.failed_csq is False and outcome.failed_cov is False
     assert outcome.stage == STAGE_PRIMARY
 
 
@@ -94,7 +94,7 @@ def test_clean_fit_is_complete_and_ungated(monkeypatch):
     assert result.flag == 0
     assert outcome.converged is True
     assert outcome.stage == STAGE_COMPLETE
-    assert not any((outcome.gate_csq, outcome.gate_cov, outcome.gate_physical))
+    assert not any((outcome.failed_csq, outcome.failed_cov, outcome.failed_physical))
 
 
 def test_no_iod_candidates_reports_that_stage(monkeypatch):
@@ -143,7 +143,7 @@ def test_from_flag_reconstructs_what_the_summary_still_permits(flag, converged, 
 
 
 def test_as_row_is_ints_in_column_order():
-    outcome = FitOutcome(converged=True, stage=STAGE_COMPLETE, gate_csq=True)
+    outcome = FitOutcome(converged=True, stage=STAGE_COMPLETE, failed_csq=True)
     row = outcome.as_row()
     assert len(row) == len(OUTCOME_COLUMNS)
     assert all(isinstance(v, int) for v in row)
@@ -167,7 +167,7 @@ def test_columns_respect_the_existing_layout_invariants():
 
     dt_ng = orbitfit._get_result_dtypes("ObjID", ("A2",))
     assert dt_ng.names[-4:] == ("a2", "a2_unc", "obs_hash", "nobs_fit")
-    assert dt_ng.names.index("gate_physical") < dt_ng.names.index("a2")
+    assert dt_ng.names.index("failed_physical") < dt_ng.names.index("a2")
 
 
 def test_empty_result_reports_not_attempted():
