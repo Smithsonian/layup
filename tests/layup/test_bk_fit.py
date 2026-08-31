@@ -288,7 +288,8 @@ def test_run_fit_dispatch_cartesian():
 def test_run_fit_dispatch_bk_native():
     """orbitfit._run_fit(engine='bk_native') matches direct
     run_bk_native_fit with MU_SUN."""
-    from layup.orbitfit import _MU_SUN, _run_fit
+    from layup.constants import MU_SUN
+    from layup.orbitfit import _run_fit
 
     ephem = get_ephem(CACHE)
     state = [3.0, 0.0, 0.0, 0.0, 0.0102, 0.001]
@@ -297,7 +298,7 @@ def test_run_fit_dispatch_bk_native():
     seed = _seed_from_state(state, epoch)
 
     via_dispatch = _run_fit(ephem, seed, obs, "bk_native")
-    direct = run_bk_native_fit(ephem, seed, obs, _MU_SUN)
+    direct = run_bk_native_fit(ephem, seed, obs, MU_SUN)
     np.testing.assert_array_equal(via_dispatch.state, direct.state)
     assert via_dispatch.method == "bk_native"
 

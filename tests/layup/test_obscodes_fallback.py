@@ -32,7 +32,7 @@ def _capture_oc_file(monkeypatch):
     def fake_super_init(self, args, auxconfigs, oc_file=None):
         recorded["oc_file"] = oc_file
 
-    monkeypatch.setattr(dpu, "layup_furnish_spiceypy", lambda cache_dir: None)
+    monkeypatch.setattr(dpu, "layup_furnish_spiceypy", lambda cache_dir, config=None: None)
     monkeypatch.setattr(dpu.SorchaObservatory, "__init__", fake_super_init)
     return recorded
 
@@ -50,7 +50,7 @@ def test_uncached_obscodes_uses_bundled(tmp_path, monkeypatch):
 
 
 def test_cached_obscodes_uses_cache(tmp_path, monkeypatch):
-    """Cached codes -> let Sorcha read the local file (oc_file=None), no download."""
+    """Cached codes -> let So rcha read the local file (oc_file=None), no download."""
     aux = LayupConfigs().auxiliary
     (tmp_path / aux.observatory_codes).write_text("{}")  # pretend `layup bootstrap` cached it
     recorded = _capture_oc_file(monkeypatch)

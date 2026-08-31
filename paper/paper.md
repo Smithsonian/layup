@@ -132,59 +132,6 @@ The fits can include terms for non-gravitational accelerations, via the Marsden 
 
 Although the primary goal of `Layup` is orbit fitting, the package also contains a Swiss army knife set of tools (orbital element conversion, ephemeris prediction, orbit visualization, and estimation of the inverse of the original semimajor axis for long period comets) with an easy-to-use user interface to support astronomers using these best-fit orbits to carry out science. `Layup` provides these tools as they are important for follow-up of new discoveries with observations not yet sent to the MPC and handling the scale of the LSST discovery rate where current tools are not optimized for the LSST-era. Existing tools are capable of calculations on the scale of a handful of objects not thousands to hundreds of thousands (such as JPL Horizons web API which handles one object at a time when predicting ephemeris). Ephemeris predictions with `Layup` are highly efficient, using ASSIST's ability to integrate once and interpolate to many epochs and observatory locations. `Layup` includes an extensive command-line interface and a Python API, and all of `Layup` utilities, including orbit fitting, have multiprocessing built in for the user, designed explicitly for use on a laptop or on a high-performance computing (HPC) cluster. 
          
-
-
-<!-- EDITORIAL, STILL OPEN (2026-08-24) -- these need prose, not corrections, so they
-are recorded rather than done.
-
-1. LENGTH. The body runs ~1700 words against JOSS's 250-1000 guidance. Longer papers
-   are accepted, but it is the first thing an editor remarks on. The trim is the
-   Summary/Functionality overlap: both list the ingest formats, both list the two
-   parameterizations, both introduce IOD (defining the acronym twice), and both state
-   that every fit returns a full covariance. Cutting the duplication fixes the count
-   and reads better.
-
-2. STATE OF THE FIELD. adam_core / THOR (Asteroid Institute) is the closest competitor
-   to the niche claimed here -- open-source Python orbit determination at survey scale
-   -- and is not mentioned. Two of its principals (Moeyens, Juric) are co-authors,
-   which makes the omission more conspicuous, not less. One sentence placing Layup
-   relative to it would close the checklist item cleanly.
-
-3. UNSUBSTANTIATED QUANTITATIVE CLAIMS. Two, and a reviewer can check neither:
-   - Validation: re-fitting the MPC catalog "reproducing the reference orbits ... to
-     about one part in 10^8". Nothing in the repository demonstrates this. Note also
-     that test_real_data_validation.py documents ~4e-7 relative agreement in position
-     against Horizons -- a different metric, but the paper should say which, or it
-     reads as a 40x overstatement.
-   - Functionality: incremental OD "in an order of magnitude less time". No benchmark
-     exists; benchmarks/README.md lists the matching one as planned.
-   Either point them at the AJ companion paper / a deposited artifact, or soften them
-   to what the repository can demonstrate.
-
-4. BIBLIOGRAPHY. veres2017 and the two Anthropic entries are cited by neither paper.
-   JOSS prefers a tight list. If the Anthropic entries were meant to satisfy the AAS
-   "acknowledge AND cite" requirement, they do not currently -- the disclosure names
-   the tools in prose without citing them.
--->
-
-<!-- CAPABILITIES SPEC (2026-07-23, verified vs ~/layup-419; stripped by the build).
-Meg's review: a few sentences on capabilities beyond orbit fitting.  Facts only.
-1. PREDICT (already below): ASSIST integrates once, interpolates to many epochs/sites.
-2. CONVERT: Cartesian (CART/BCART/BCART_EQ), cometary (COM/BCOM), Keplerian (KEP/BKEP),
-   helio+bary, both ways -- and carries the covariance through each conversion (the real
-   point; a format list undersells it).
-3. COMET ORIGINAL ORBIT (Hanno's `layup comet`; the "1/a_0" from Meg; not yet in paper):
-   integrates each long-period comet to 250 au and reports the osculating orbit there --
-   original (backward) or future (forward).  Cols: inv_ao=1/a_0 (--code-format scales to
-   1e-6 AU^-1), ao, e_ao, d_ao.  Hook: 1/a_0 ~0 is the bound-to-unbound boundary the
-   Statement of Need already sells.
-   CAVEATS: d_ao is the ~250 au evaluation distance, NOT an uncertainty (no error bar on
-   1/a_0).  Elements are heliocentric (primary=Sun) but labeled ao_barycentric -- do not
-   write "barycentric" pending layup#447.
-Deferred, unrelated: the 5-parameter/energy-prior BK line -> layup#445.
--->
-
-
 # Validation
 
 We cross-validate `Layup`'s results against those from JPL Horizons across a wide range of objects: MBAs, TNOs, interstellar objects, and radar-observed NEOs.  `Layup`'s solutions agree with JPL Horizons to within the fit uncertainties.  We further demonstrate `Layup`'s accuracy and throughput by re-fitting the full MPC catalog of over 1.5 million objects, reproducing the reference orbits of the well-observed numbered objects to about one part in $10^{8}$.
@@ -192,7 +139,7 @@ We cross-validate `Layup`'s results against those from JPL Horizons across a wid
 
 # Acknowledgements
 
-M.J.H. and M.E.S. acknowledge support from the LSST Discovery Alliance (LSST-DA) through LINCC Frameworks Incubator grants 2025-SFF-LFI-10-Holman, 2025-SFF-LFI-11-Schwamb, and 2023-SFF-LFI-01-Schwamb. LINCC Frameworks is supported by Schmidt Sciences, a philanthropic initiative founded by Eric and Wendy Schmidt, as part of the Virtual Institute of Astrophysics (VIA). M.E.S. acknowledges support in part from UK Science and Technology Facilities Council (STFC) grants ST/V000691/1 and ST/X001253/1. M.E.S. also acknowledges travel support provided by STFC for UK participation in LSST through grant ST/X001334/1. M.J., P.H.B., and  J. Murtagh  acknowledge the support from the University of Washington College of Arts and Sciences, Department of Astronomy, and the DiRAC (Data-intensive Research in Astrophysics and Cosmology) Institute. The DiRAC Institute is supported through generous gifts from the Charles and Lisa Simonyi Fund for Arts and Sciences and the Washington Research Foundation. H. R. acknowledges support by the Natural Sciences and Engineering Research Council (NSERC) Discovery Grant RGPIN-2020-04513. M.J. wishes to acknowledge the support of the Washington Research Foundation Data Science Term Chair fund, and the University of Washington Provost's Initiative in Data-Intensive Discovery. S.E. acknowledges support from the National Science Foundation through the following awards: Collaborative Research: SWIFT-SAT: Minimizing Science Impact on LSST and Observatories Worldwide through Accurate Predictions of Satellite Position and Optical Brightness NSF Award Number: 2332736 and Collaborative Research: Rubin Rocks: Enabling near-Earth asteroid science with LSST NSF Award Number: 2307570. R.R.L. was supported by the UK STFC grant ST/V506990/1. A. Wilson's studentship is funded under STFC grant UKRI1776. C.E.H. acknowledges support by the LSST-DA Catalyst Fellowship, made possible through the support of Grant 62192 from the John Templeton Foundation to LSST-DA. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect the views of the National Science Foundation.
+M.J.H. and M.E.S. acknowledge support from the LSST Discovery Alliance (LSST-DA) through LINCC Frameworks Incubator grants 2025-SFF-LFI-10-Holman, 2025-SFF-LFI-11-Schwamb, and 2023-SFF-LFI-01-Schwamb. LINCC Frameworks is supported by Schmidt Sciences. M.E.S. acknowledges support in part from UK Science and Technology Facilities Council (STFC) grants ST/V000691/1 and ST/X001253/1. M.E.S. also acknowledges travel support provided by STFC for UK participation in LSST through grant ST/X001334/1. M.J., P.H.B., and  J. Murtagh  acknowledge the support from the University of Washington College of Arts and Sciences, Department of Astronomy, and the DiRAC (Data-intensive Research in Astrophysics and Cosmology) Institute. The DiRAC Institute is supported through generous gifts from the Charles and Lisa Simonyi Fund for Arts and Sciences and the Washington Research Foundation. H. R. acknowledges support by the Natural Sciences and Engineering Research Council (NSERC) Discovery Grant RGPIN-2020-04513. M.J. wishes to acknowledge the support of the Washington Research Foundation Data Science Term Chair fund, and the University of Washington Provost's Initiative in Data-Intensive Discovery. S.E. acknowledges support from the National Science Foundation through the following awards: Collaborative Research: SWIFT-SAT: Minimizing Science Impact on LSST and Observatories Worldwide through Accurate Predictions of Satellite Position and Optical Brightness NSF Award Number: 2332736 and Collaborative Research: Rubin Rocks: Enabling near-Earth asteroid science with LSST NSF Award Number: 2307570. R.R.L. was supported by the UK STFC grant ST/V506990/1. A. Wilson's studentship is funded under STFC grant UKRI1776. C.E.H. acknowledges support by the LSST-DA Catalyst Fellowship, made possible through the support of Grant 62192 from the John Templeton Foundation to LSST-DA. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect the views of the National Science Foundation.
 
 This work was supported in part by the LSST Discovery Alliance Enabling Science grants program, the B612 Foundation, the University of Washington's DiRAC Institute, the Planetary Society, Karman+, and Breakthrough Listen through generous support of the LSST Solar System Readiness and LSST Solar System First Data Sprints. Breakthrough Listen is managed by the Breakthrough Initiatives, sponsored by the Breakthrough Prize Foundation. 
 

@@ -17,6 +17,11 @@ _CONNECT_TIMEOUT = 15  # seconds to establish the connection
 _READ_TIMEOUT = 30  # max seconds between received bytes (bounds a *stall*, not total)
 _RETRY_IF_FAILED = 3  # bounded retries (was 25)
 
+# Archives that `_decompress` unpacks and then deletes (issue #436). They are
+# tracked in the pooch registry so they can still be fetched, but they are not
+# expected to survive in the cache, so their absence is not a missing file.
+_EXTRACTED_ARCHIVE_EXTENSIONS = (".tar.gz", ".tgz")
+
 
 def layup_downloader(progressbar: bool = False) -> pooch.HTTPDownloader:
     """A pooch HTTP downloader with a fail-fast timeout (issue #388).
@@ -78,6 +83,11 @@ def download_files_if_missing(aux_config: AuxiliaryConfigs, args: Namespace) -> 
     print("Checking cache for existing files.")
     found_all_files = _check_for_existing_files(aux_config, retriever)
 
+    if found_all_files:
+        # Everything the cache is expected to hold is present, so any archive
+        # still sitting beside it is a leftover from a pre-#472 bootstrap.
+        _remove_extracted_archives(aux_config, retriever)
+
     if not found_all_files:
         # Fetch each file with its own fail-fast downloader (issue #388); a fresh
         # downloader per call keeps the per-file progress bars independent across
@@ -96,6 +106,43 @@ def download_files_if_missing(aux_config: AuxiliaryConfigs, args: Namespace) -> 
 
         print("Checking cache after attempting to download and create files.")
         _check_for_existing_files(aux_config, retriever)
+
+
+def _remove_extracted_archives(aux_config: AuxiliaryConfigs, retriever: pooch.Pooch) -> None:
+    """Delete download archives that an earlier bootstrap left in the cache.
+
+    Issue #472 removes each archive as soon as it is unpacked, but only for
+    bootstraps run since. A cache populated before that keeps the ~156 MB
+    debiasing tarball indefinitely, and never re-extracts, so it never reaches
+    that cleanup. Sweeping here makes the fix retroactive without a re-download.
+
+    Only call this once the extracted contents are known to be present.
+
+    Parameters
+    ------------
+    aux_config: AuxiliaryConfigs
+        Dataclass of auxiliary configuration file arguments.
+    retriever : pooch.Pooch
+        Pooch object that maintains the registry of files to download.
+
+    Returns
+    ----------
+    None
+    """
+    for file_name in aux_config.data_file_list:
+        if not file_name.endswith(_EXTRACTED_ARCHIVE_EXTENSIONS):
+            continue
+        file_path = os.path.join(retriever.abspath, file_name)
+        if not os.path.exists(file_path):
+            continue
+        # Best-effort, as in `_decompress`: reclaiming space is never worth
+        # failing a bootstrap over.
+        try:
+            reclaimed_mb = os.path.getsize(file_path) / (1024 * 1024)
+            os.remove(file_path)
+            print(f"Removed the leftover archive {file_path} ({reclaimed_mb:.0f} MB reclaimed).")
+        except OSError as exc:  # pragma: no cover - filesystem-dependent
+            print(f"Could not remove the leftover archive {file_path}: {exc}")
 
 
 def _check_for_existing_files(aux_config: AuxiliaryConfigs, retriever: pooch.Pooch) -> bool:
@@ -120,6 +167,11 @@ def _check_for_existing_files(aux_config: AuxiliaryConfigs, retriever: pooch.Poo
     found_all_files = True
     missing_files = []
     for file_name in file_list:
+        # An archive that was unpacked and removed is not missing, it is done
+        # with. Counting it as missing made every bootstrap after issue #472
+        # re-download the ~156 MB debiasing tarball (issue #482).
+        if file_name.endswith(_EXTRACTED_ARCHIVE_EXTENSIONS):
+            continue
         if not os.path.exists(os.path.join(retriever.abspath, file_name)):
             missing_files.append(file_name)
             found_all_files = False

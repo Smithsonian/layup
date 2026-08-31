@@ -1,80 +1,88 @@
-"""flag = 9: converged, but the orbit is not physically possible (issue #493).
+"""A fit can converge, satisfy every statistical check, and still describe an
+orbit no object could occupy.
 
-A short arc can converge with an excellent reduced chi-square onto a state no
-real object could occupy, because the arc does not constrain the velocity. The
-chi-square gate cannot catch this -- it is anti-correlated with the failure,
-since the less the object moves the better the fit (issue #485).
+A short arc does not constrain the velocity, so the differential correction can
+settle on an impossibly fast state with an excellent reduced chi-square. The
+chi-square check cannot catch it: the less the object appears to move across the
+arc, the better that fit looks.
 
 The criterion is hyperbolic excess speed, not boundedness. Layup is expected to
-fit genuine interstellar objects, and those are unbound and fast: 3I/ATLAS
-arrives at about 59 km/s. Only a speed far above any plausible arrival speed is
-evidence of a bad fit rather than an unusual object.
+fit genuine interstellar objects, which are unbound and fast -- 3I/ATLAS arrives
+at about 59 km/s -- so being unbound is never itself grounds for rejection.
 """
 
+import os
+
 import numpy as np
+import pooch
 import pytest
 
-import layup.orbitfit as orbitfit_module
-from layup.orbitfit import FLAG_IMPLAUSIBLE_ORBIT
+from layup.constants import (
+    FLAG_CONVERGED,
+    KM_S_IN_AU_PER_DAY,
+    MAX_EXCESS_SPEED_KM_S,
+    MU_SUN,
+)
+from layup.orbitfit import _implausible_excess_speed
 
-GM_SUN = 2.9591220828559115e-4  # au^3/day^2
-KM_S_IN_AU_DAY = 86400.0 / 149597870.7
-
-DEFAULT_THRESHOLD_KM_S = 200.0
 FASTEST_KNOWN_INTERSTELLAR_KM_S = 59.0  # 3I/ATLAS
 
 
-@pytest.fixture(autouse=True)
-def _restore_threshold():
-    """The threshold is module-level state; put it back after each test."""
-    original = orbitfit_module.MAX_EXCESS_SPEED_KM_S
-    yield
-    orbitfit_module.MAX_EXCESS_SPEED_KM_S = original
+def _state_with_excess_speed(v_inf_km_s, r_au=1.0):
+    """A state at ``r_au`` whose hyperbolic excess speed is ``v_inf_km_s``.
 
-
-def set_max_v_inf(km_s):
-    orbitfit_module.MAX_EXCESS_SPEED_KM_S = km_s
-
-
-def get_max_v_inf():
-    return orbitfit_module.MAX_EXCESS_SPEED_KM_S
-
-
-def test_default_threshold_clears_the_fastest_known_interstellar_object():
-    """The default must not reject a real interstellar object.
-
-    Layup's stated advantage over OrbFit and OpenOrb is that it handles the
-    bound-to-unbound transition, so a gate that rejects 3I/ATLAS would reject the
-    capability the package advertises.
+    From the vis-viva energy, v_inf^2 = v^2 - 2*GM/r, so a speed of
+    sqrt(v_inf^2 + 2*GM/r) at radius r gives exactly the excess speed asked for.
     """
-    assert get_max_v_inf() == DEFAULT_THRESHOLD_KM_S
-    assert get_max_v_inf() > 3 * FASTEST_KNOWN_INTERSTELLAR_KM_S
+    v_inf = v_inf_km_s * KM_S_IN_AU_PER_DAY
+    speed = np.sqrt(v_inf**2 + 2.0 * MU_SUN / r_au)
+    return [r_au, 0.0, 0.0, 0.0, speed, 0.0]
 
 
-def test_threshold_is_configurable_and_round_trips_in_km_per_second():
-    for km_s in (50.0, 100.0, 550.0):
-        set_max_v_inf(km_s)
-        assert get_max_v_inf() == pytest.approx(km_s)
+# --------------------------------------------------------------------------
+# The criterion itself. Constructed states, so nothing has to move the
+# threshold to exercise both sides of it.
+# --------------------------------------------------------------------------
 
 
-def test_threshold_zero_disables_the_gate():
-    set_max_v_inf(0.0)
-    assert get_max_v_inf() == 0.0
+def test_a_bound_orbit_is_never_implausible():
+    """Circular at 1 au: negative energy, so there is no excess speed at all."""
+    speed = np.sqrt(MU_SUN)
+    assert _implausible_excess_speed([1.0, 0.0, 0.0, 0.0, speed, 0.0]) is False
 
 
-# ---------------------------------------------------------------------------
-# End-to-end, through a real fit. 3I/ATLAS is the natural fixture: it is a
-# genuine interstellar object, so it is unbound and fast enough to sit on the
-# interesting side of the gate, and layup already ships its discovery-arc
-# astrometry. Moving the threshold across its excess speed must move the flag,
-# which tests the gate itself rather than the accessor.
-# ---------------------------------------------------------------------------
+def test_just_below_the_threshold_is_accepted():
+    state = _state_with_excess_speed(MAX_EXCESS_SPEED_KM_S * 0.99)
+    assert _implausible_excess_speed(state) is False
 
-import os
-import pooch
 
-from layup.utilities.data_utilities_for_tests import get_test_filepath
-from layup.utilities.file_io.CSVReader import CSVDataReader
+def test_just_above_the_threshold_is_rejected():
+    state = _state_with_excess_speed(MAX_EXCESS_SPEED_KM_S * 1.01)
+    assert _implausible_excess_speed(state) is True
+
+
+def test_the_threshold_clears_the_fastest_known_interstellar_object():
+    """Rejecting a real interstellar object would reject the bound-to-unbound
+    case layup exists to handle, so the margin is checked rather than assumed."""
+    state = _state_with_excess_speed(FASTEST_KNOWN_INTERSTELLAR_KM_S)
+    assert _implausible_excess_speed(state) is False
+    assert MAX_EXCESS_SPEED_KM_S > 3 * FASTEST_KNOWN_INTERSTELLAR_KM_S
+
+
+def test_a_nan_state_is_left_to_the_convergence_flag():
+    """A diverged fit is already reported as not converged; this check must not
+    turn it into a different kind of failure."""
+    assert _implausible_excess_speed([np.nan] * 6) is False
+
+
+def test_a_state_at_the_origin_is_not_reported():
+    """Radius zero makes the energy undefined rather than large."""
+    assert _implausible_excess_speed([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]) is False
+
+
+# --------------------------------------------------------------------------
+# End to end, through a real fit.
+# --------------------------------------------------------------------------
 
 CACHE = str(pooch.os_cache("layup"))
 _EPHEM_AVAILABLE = os.path.exists(os.path.join(CACHE, "linux_p1550p2650.440")) and os.path.exists(
@@ -83,17 +91,21 @@ _EPHEM_AVAILABLE = os.path.exists(os.path.join(CACHE, "linux_p1550p2650.440")) a
 
 requires_ephem = pytest.mark.skipif(
     not _EPHEM_AVAILABLE,
-    reason=f"ASSIST ephemeris missing at {CACHE}; skipping end-to-end gate test.",
+    reason=f"ASSIST ephemeris missing at {CACHE}; skipping the end-to-end test.",
 )
 
 
-def _fit_3i_atlas():
-    """Fit 3I/ATLAS in-process and return (flag, excess speed in km/s)."""
+@requires_ephem
+def test_a_real_interstellar_orbit_is_accepted():
+    """3I/ATLAS is unbound and fast, and layup ships its discovery arc. It must
+    come through with the flag clear and the column clear."""
     import spiceypy as spice
     from numpy.lib import recfunctions as rfn
 
     from layup.orbitfit import _orbitfit
     from layup.utilities.data_processing_utilities import LayupObservatory
+    from layup.utilities.data_utilities_for_tests import get_test_filepath
+    from layup.utilities.file_io.CSVReader import CSVDataReader
 
     obs = CSVDataReader(
         get_test_filepath("3I_ATLAS_ades.csv"), "csv", primary_id_column_name="provID"
@@ -105,35 +117,13 @@ def _fit_3i_atlas():
         [obs, helper.obscodes_to_barycentric(obs)], flatten=True, asrecarray=True, usemask=False
     )
     row = _orbitfit(obs, cache_dir=CACHE, primary_id_column_name="provID", iod="gauss", engine="cartesian")[0]
+
     state = np.array([row[k] for k in ("x", "y", "z", "xdot", "ydot", "zdot")], dtype=float)
-    r = np.linalg.norm(state[:3])
-    energy = 0.5 * np.dot(state[3:], state[3:]) - GM_SUN / r
-    v_inf = np.sqrt(2 * energy) / KM_S_IN_AU_DAY if energy > 0 else 0.0
-    return int(row["flag"]), v_inf
+    energy = 0.5 * np.dot(state[3:], state[3:]) - MU_SUN / np.linalg.norm(state[:3])
+    v_inf = np.sqrt(2 * energy) / KM_S_IN_AU_PER_DAY if energy > 0 else 0.0
 
-
-@requires_ephem
-def test_real_interstellar_orbit_passes_at_the_default_threshold():
-    flag, v_inf = _fit_3i_atlas()
     assert v_inf == pytest.approx(
         FASTEST_KNOWN_INTERSTELLAR_KM_S, abs=5.0
-    ), f"3I/ATLAS should arrive near {FASTEST_KNOWN_INTERSTELLAR_KM_S} km/s, got {v_inf:.1f}"
-    assert flag == 0, f"the default threshold rejected a real interstellar object (flag={flag})"
-
-
-@requires_ephem
-def test_gate_fires_when_the_threshold_drops_below_the_fitted_excess_speed():
-    """Same fit, same data: only the threshold moves, so only the gate can
-    explain a change in the flag."""
-    _, v_inf = _fit_3i_atlas()
-    set_max_v_inf(v_inf / 2.0)
-    flag, _ = _fit_3i_atlas()
-    assert flag == FLAG_IMPLAUSIBLE_ORBIT, f"expected flag=9 below the excess speed, got {flag}"
-
-
-@requires_ephem
-def test_disabled_gate_never_fires():
-    _, v_inf = _fit_3i_atlas()
-    set_max_v_inf(0.0)
-    flag, _ = _fit_3i_atlas()
-    assert flag == 0, f"gate fired while disabled (flag={flag})"
+    ), f"expected an arrival speed near {FASTEST_KNOWN_INTERSTELLAR_KM_S} km/s, got {v_inf:.1f}"
+    assert int(row["flag"]) == FLAG_CONVERGED, f"a real interstellar object was rejected (flag={row['flag']})"
+    assert int(row["failed_physical"]) == 0
