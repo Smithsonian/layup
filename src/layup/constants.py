@@ -1,4 +1,4 @@
-"""Physical constants for layup, defined once.
+"""Constants for layup, defined once.
 
 Before this module these values were re-declared in several places
 (``orbitfit.py``, ``predict.py``, ``iod.py``,
@@ -11,6 +11,10 @@ Importing everything from here gives a single, citable source of truth.
 Units follow layup's internal convention: distances in astronomical units (au),
 times in days, so GM values are in au^3/day^2 and the speed of light is in
 au/day.
+
+The orbit-fit status values at the end are here for the same reason: they are an
+output format, read by callers as well as written by the fitter, and they were
+previously scattered as bare integers across ``orbitfit.py``.
 """
 
 from __future__ import annotations
@@ -34,3 +38,48 @@ MU_SUN = 0.00029591220828559104
 # determination (Gauss's method) where the reference point is the solar-system
 # barycentre rather than the Sun.
 GMtotal = 0.0002963092748799319
+
+
+# ---------------------------------------------------------------------------
+# Orbit-fit status
+#
+# ``flag`` is the single-value summary an orbit fit reports. It is 0 if and only
+# if the fit converged and passed every check; the values below name the ways it
+# can be non-zero. The columns further down report the same information as
+# independent facts, which is what a caller should filter on when it needs to
+# know *which* check failed.
+# ---------------------------------------------------------------------------
+
+FLAG_NOT_ATTEMPTED = -1  # placeholder for a row that was never fit
+FLAG_CONVERGED = 0  # converged, and every check passed
+FLAG_DID_NOT_CONVERGE = 1  # the differential correction did not converge
+FLAG_CSQ_TOO_LARGE = 2  # converged; reduced chi-square above threshold
+FLAG_NO_ROOT_CONVERGED = 3  # candidates were produced, none converged on the primary interval
+FLAG_BUILDUP_FAILED = 4  # primary interval converged; the incremental build-up did not
+FLAG_NO_SOLUTION = 5  # no initial-orbit candidates and no usable fallback seed
+FLAG_DEGENERATE_COV = 6  # converged; covariance degenerate, or a variance non-positive
+FLAG_PRIOR_NOT_POSITIVE_DEFINITE = 7  # incremental: prior covariance ill-posed, so a full refit
+FLAG_INCREMENTAL_NO_FULL_OBS = 8  # incremental update with no full observation set to refit from
+
+# How far the fitting pipeline got before it stopped.
+STAGE_NOT_ATTEMPTED = 0
+STAGE_NO_CANDIDATES = 1  # initial orbit determination produced nothing usable
+STAGE_PRIMARY = 2  # reached the fit over the primary interval
+STAGE_BUILDUP = 3  # reached the incremental build-up to all observations
+STAGE_COMPLETE = 4  # fit the full observation set
+STAGE_INCREMENTAL = 5  # sequential-update bookkeeping rather than a fresh fit
+
+# The fit outcome as independent facts, one output column each. Named for their
+# polarity: each ``failed_*`` is 1 when the fit failed that check, so a clean fit
+# is zero across all of them, matching ``flag == FLAG_CONVERGED``. A ``passed_*``
+# convention would make a never-attempted fit (all zero) indistinguishable from
+# one that failed everything.
+OUTCOME_COLUMNS = ("converged", "stage", "failed_csq", "failed_cov", "failed_physical")
+
+# Which check each of the fitter's own post-convergence verdicts reports as
+# failed. Both are set *after* the Levenberg-Marquardt loop converges, so each
+# means "converged, then rejected".
+CXX_GATE_FLAGS = {FLAG_CSQ_TOO_LARGE: "failed_csq", FLAG_DEGENERATE_COV: "failed_cov"}
+
+# The flags that mean the differential correction reached a solution.
+CONVERGED_FLAGS = (FLAG_CONVERGED, FLAG_CSQ_TOO_LARGE, FLAG_DEGENERATE_COV)

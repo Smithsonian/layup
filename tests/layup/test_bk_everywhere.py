@@ -16,7 +16,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from layup.orbitfit import _MU_SUN, _run_fit
+from layup.constants import MU_SUN
+from layup.orbitfit import _run_fit
 from layup.routines import (
     FitResult,
     Observation,
@@ -213,7 +214,7 @@ def test_bk_native_ndof_zero_not_spuriously_flagged(case_name):
     assert len(obs) == 3  # guards the premise: this really is the ndof==0 case
     seed = _truth_seed(case)
 
-    result = run_bk_native_fit(ephem, seed, obs, _MU_SUN)
+    result = run_bk_native_fit(ephem, seed, obs, MU_SUN)
     assert result.ndof == 0
     assert result.csq > 0.0  # noisy obs -> nonzero residual, so csq/0 would be +inf
     assert result.flag == 0, f"ndof==0 fit spuriously flagged {result.flag} (csq={result.csq})"
