@@ -14,7 +14,16 @@ import numpy as np
 import pytest
 
 import layup.orbitfit as orbitfit
-from layup.orbitfit import (
+from layup.constants import (
+    FLAG_BUILDUP_FAILED,
+    FLAG_CONVERGED,
+    FLAG_CSQ_TOO_LARGE,
+    FLAG_DEGENERATE_COV,
+    FLAG_DID_NOT_CONVERGE,
+    FLAG_INCREMENTAL_NO_FULL_OBS,
+    FLAG_NO_ROOT_CONVERGED,
+    FLAG_NO_SOLUTION,
+    FLAG_NOT_ATTEMPTED,
     OUTCOME_COLUMNS,
     STAGE_BUILDUP,
     STAGE_COMPLETE,
@@ -22,8 +31,8 @@ from layup.orbitfit import (
     STAGE_NO_CANDIDATES,
     STAGE_NOT_ATTEMPTED,
     STAGE_PRIMARY,
-    FitOutcome,
 )
+from layup.orbitfit import FitOutcome
 
 
 class _Fit:
@@ -60,21 +69,25 @@ def _drive(monkeypatch, flags, n_obs=6):
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("gate_flag,column", [(2, "failed_csq"), (6, "failed_cov")])
+@pytest.mark.parametrize(
+    "gate_flag,column", [(FLAG_CSQ_TOO_LARGE, "failed_csq"), (FLAG_DEGENERATE_COV, "failed_cov")]
+)
 def test_gate_verdict_survives_the_no_root_marker(monkeypatch, gate_flag, column):
     """flag still reports where it stopped; the gate is reported separately."""
     result, outcome = _drive(monkeypatch, [gate_flag] * 3)
-    assert result.flag == 3, "the summary flag still marks where the fit stopped"
+    assert result.flag == FLAG_NO_ROOT_CONVERGED, "the summary flag still marks where the fit stopped"
     assert getattr(outcome, column) is True, "the gate verdict is no longer lost"
     assert outcome.converged is True, "flags 2 and 6 are set after convergence"
     assert outcome.stage == STAGE_PRIMARY
 
 
-@pytest.mark.parametrize("gate_flag,column", [(2, "failed_csq"), (6, "failed_cov")])
+@pytest.mark.parametrize(
+    "gate_flag,column", [(FLAG_CSQ_TOO_LARGE, "failed_csq"), (FLAG_DEGENERATE_COV, "failed_cov")]
+)
 def test_gate_verdict_survives_the_buildup_marker(monkeypatch, gate_flag, column):
     """First fit converges, the full-set refit is gated, build-up then fails."""
     result, outcome = _drive(monkeypatch, [0, gate_flag, gate_flag])
-    assert result.flag == 4
+    assert result.flag == FLAG_BUILDUP_FAILED
     assert getattr(outcome, column) is True
     assert outcome.converged is True
     assert outcome.stage == STAGE_BUILDUP
@@ -82,8 +95,8 @@ def test_gate_verdict_survives_the_buildup_marker(monkeypatch, gate_flag, column
 
 def test_plain_nonconvergence_reports_no_gate(monkeypatch):
     """A fit that never converged must not look like a gated one."""
-    result, outcome = _drive(monkeypatch, [1] * 3)
-    assert result.flag == 3
+    result, outcome = _drive(monkeypatch, [FLAG_DID_NOT_CONVERGE] * 3)
+    assert result.flag == FLAG_NO_ROOT_CONVERGED
     assert outcome.converged is False
     assert outcome.failed_csq is False and outcome.failed_cov is False
     assert outcome.stage == STAGE_PRIMARY
@@ -91,7 +104,7 @@ def test_plain_nonconvergence_reports_no_gate(monkeypatch):
 
 def test_clean_fit_is_complete_and_ungated(monkeypatch):
     result, outcome = _drive(monkeypatch, [0, 0, 0])
-    assert result.flag == 0
+    assert result.flag == FLAG_CONVERGED
     assert outcome.converged is True
     assert outcome.stage == STAGE_COMPLETE
     assert not any((outcome.failed_csq, outcome.failed_cov, outcome.failed_physical))
@@ -102,7 +115,7 @@ def test_no_iod_candidates_reports_that_stage(monkeypatch):
     monkeypatch.setattr(orbitfit, "get_ephem", lambda *a, **k: None)
     outcome = FitOutcome()
     result = orbitfit.do_fit([object()] * 6, [list(range(6))], "/tmp", iod="gauss", outcome=outcome)
-    assert result.flag == 5
+    assert result.flag == FLAG_NO_SOLUTION
     assert outcome.stage == STAGE_NO_CANDIDATES
     assert outcome.converged is False
 
@@ -120,20 +133,20 @@ def test_outcome_is_optional_so_existing_callers_are_unaffected(monkeypatch):
     monkeypatch.setattr(orbitfit, "filter_candidates_by_residual", lambda cands, *a, **k: (list(cands), None))
     monkeypatch.setattr(orbitfit, "get_ephem", lambda *a, **k: None)
     result = orbitfit.do_fit([object()] * 6, [list(range(6))], "/tmp", iod="gauss")
-    assert result.flag == 0
+    assert result.flag == FLAG_CONVERGED
 
 
 @pytest.mark.parametrize(
     "flag,converged,stage",
     [
-        (0, True, STAGE_COMPLETE),
-        (2, True, STAGE_COMPLETE),
-        (6, True, STAGE_COMPLETE),
-        (1, False, STAGE_NOT_ATTEMPTED),
-        (3, False, STAGE_PRIMARY),
-        (4, False, STAGE_BUILDUP),
-        (5, False, STAGE_NO_CANDIDATES),
-        (8, False, STAGE_INCREMENTAL),
+        (FLAG_CONVERGED, True, STAGE_COMPLETE),
+        (FLAG_CSQ_TOO_LARGE, True, STAGE_COMPLETE),
+        (FLAG_DEGENERATE_COV, True, STAGE_COMPLETE),
+        (FLAG_DID_NOT_CONVERGE, False, STAGE_NOT_ATTEMPTED),
+        (FLAG_NO_ROOT_CONVERGED, False, STAGE_PRIMARY),
+        (FLAG_BUILDUP_FAILED, False, STAGE_BUILDUP),
+        (FLAG_NO_SOLUTION, False, STAGE_NO_CANDIDATES),
+        (FLAG_INCREMENTAL_NO_FULL_OBS, False, STAGE_INCREMENTAL),
     ],
 )
 def test_from_flag_reconstructs_what_the_summary_still_permits(flag, converged, stage):
@@ -173,6 +186,6 @@ def test_columns_respect_the_existing_layout_invariants():
 def test_empty_result_reports_not_attempted():
     dt = orbitfit._get_result_dtypes("ObjID", [])
     row = orbitfit.create_empty_result("x", dt)
-    assert row["flag"][0] == -1
+    assert row["flag"][0] == FLAG_NOT_ATTEMPTED
     assert row["converged"][0] == 0
     assert row["stage"][0] == STAGE_NOT_ATTEMPTED

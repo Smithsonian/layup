@@ -33,7 +33,28 @@ except ImportError:  # extension not rebuilt yet
     set_ias15_adaptive_mode = lambda m: None
 # _MU_SUN (= heliocentric GM = k^2) is used by the BK-native fit for the
 # bound-orbit energy prior on gdot; SPEED_OF_LIGHT (au/day) by the radar ingest.
-from layup.constants import MU_SUN as _MU_SUN, SPEED_OF_LIGHT
+from layup.constants import (
+    CONVERGED_FLAGS,
+    CXX_GATE_FLAGS,
+    FLAG_BUILDUP_FAILED,
+    FLAG_CONVERGED,
+    FLAG_CSQ_TOO_LARGE,
+    FLAG_DEGENERATE_COV,
+    FLAG_INCREMENTAL_NO_FULL_OBS,
+    FLAG_NO_ROOT_CONVERGED,
+    FLAG_NO_SOLUTION,
+    FLAG_NOT_ATTEMPTED,
+    FLAG_PRIOR_NOT_POSITIVE_DEFINITE,
+    MU_SUN as _MU_SUN,
+    OUTCOME_COLUMNS,
+    SPEED_OF_LIGHT,
+    STAGE_BUILDUP,
+    STAGE_COMPLETE,
+    STAGE_INCREMENTAL,
+    STAGE_NO_CANDIDATES,
+    STAGE_NOT_ATTEMPTED,
+    STAGE_PRIMARY,
+)
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods
 
@@ -657,38 +678,18 @@ def _build_sequence(jds, sep_dt=90.0):
 
 
 # ---------------------------------------------------------------------------
-# Fit outcome (issues #493, #495, #499)
+# Fit outcome
 #
-# ``flag`` is one integer carrying three unrelated things: whether the estimator
+# `flag` is one integer carrying three unrelated things: whether the estimator
 # converged, how far along the pipeline it stopped, and which post-convergence
-# gate rejected the result. Those are not mutually exclusive, so one integer
-# cannot hold them -- the driver used to write its stage marker over a gate
-# verdict, reporting a fit that *had* reached a solution as one that never did.
+# check rejected it. Those are not mutually exclusive, so one integer cannot
+# hold them -- the driver used to write its stage marker over a check verdict,
+# reporting a fit that *had* reached a solution as one that never did.
 #
 # The columns below report each fact on its own and leave the combining to the
-# reader. ``flag`` is unchanged and remains the summary: 0 if and only if the
-# fit converged and every gate passed.
+# reader. `flag` is unchanged and remains the summary. The values themselves
+# live in constants.py, with the other output-format constants.
 # ---------------------------------------------------------------------------
-
-STAGE_NOT_ATTEMPTED = 0
-STAGE_NO_CANDIDATES = 1  # initial orbit determination produced nothing usable
-STAGE_PRIMARY = 2  # reached the fit over the primary interval
-STAGE_BUILDUP = 3  # reached the incremental build-up to all observations
-STAGE_COMPLETE = 4  # fit the full observation set
-STAGE_INCREMENTAL = 5  # sequential-update bookkeeping rather than a fresh fit
-
-# Named for their polarity: each is 1 when the fit FAILED that check, so a clean
-# fit is zero across all of them, matching `flag == 0`. A "passed_*" convention
-# would make a never-attempted fit (all zero) indistinguishable from one that
-# failed everything.
-OUTCOME_COLUMNS = ("converged", "stage", "failed_csq", "failed_cov", "failed_physical")
-
-# The fitter's own verdicts, and which check each one reports as failed. 2 and 6 are both
-# set *after* the Levenberg-Marquardt loop has converged (orbit_fit.cpp: the
-# reduced-chi-square test reads chi2_final, and the conditioning test is guarded
-# by `flag == 0`), so each means "converged, then rejected" -- which is exactly
-# the fact the driver used to discard.
-_CXX_GATE = {2: "failed_csq", 6: "failed_cov"}
 
 
 @dataclass
@@ -708,8 +709,8 @@ class FitOutcome:
 
     def record(self, fit):
         """Read the fitter's own verdict, before any driver flag overwrites it."""
-        self.converged = fit.flag in (0, 2, 6)
-        gate = _CXX_GATE.get(fit.flag)
+        self.converged = fit.flag in CONVERGED_FLAGS
+        gate = CXX_GATE_FLAGS.get(fit.flag)
         if gate is not None:
             setattr(self, gate, True)
 
@@ -729,19 +730,19 @@ class FitOutcome:
         not run through ``do_fit`` and so never observed the intermediate state.
         Lossy by construction -- a gate verdict that was overwritten is gone."""
         outcome = cls()
-        outcome.converged = flag in (0, 2, 6)
-        gate = _CXX_GATE.get(flag)
+        outcome.converged = flag in CONVERGED_FLAGS
+        gate = CXX_GATE_FLAGS.get(flag)
         if gate is not None:
             setattr(outcome, gate, True)
         outcome.stage = {
-            0: STAGE_COMPLETE,
-            2: STAGE_COMPLETE,
-            6: STAGE_COMPLETE,
-            3: STAGE_PRIMARY,
-            4: STAGE_BUILDUP,
-            5: STAGE_NO_CANDIDATES,
-            7: STAGE_INCREMENTAL,
-            8: STAGE_INCREMENTAL,
+            FLAG_CONVERGED: STAGE_COMPLETE,
+            FLAG_CSQ_TOO_LARGE: STAGE_COMPLETE,
+            FLAG_DEGENERATE_COV: STAGE_COMPLETE,
+            FLAG_NO_ROOT_CONVERGED: STAGE_PRIMARY,
+            FLAG_BUILDUP_FAILED: STAGE_BUILDUP,
+            FLAG_NO_SOLUTION: STAGE_NO_CANDIDATES,
+            FLAG_PRIOR_NOT_POSITIVE_DEFINITE: STAGE_INCREMENTAL,
+            FLAG_INCREMENTAL_NO_FULL_OBS: STAGE_INCREMENTAL,
         }.get(flag, STAGE_NOT_ATTEMPTED)
         return outcome
 
@@ -773,7 +774,7 @@ def create_empty_result(id, dtypes):
                 np.nan,  # epoch
                 0,  # niter
                 np.nan,  # method
-                -1,  # flag
+                FLAG_NOT_ATTEMPTED,  # flag
                 "NONE",  # format
             )
             + (np.nan,) * 36  # Flat covariance matrix
@@ -998,7 +999,7 @@ def do_fit(
         logger.debug(f"IOD {iod!r} returned no candidates")
         x = FitResult()
         outcome.stage = STAGE_NO_CANDIDATES
-        x.flag = 5
+        x.flag = FLAG_NO_SOLUTION
         return x
 
     # Pre-filter the IOD candidates by predicted-vs-observed residual
@@ -1075,7 +1076,7 @@ def do_fit(
             # surface, so return an explicit no-solution sentinel.
             x = FitResult()
             outcome.stage = STAGE_NO_CANDIDATES
-            x.flag = 5
+            x.flag = FLAG_NO_SOLUTION
             return x
         x = min(candidates, key=lambda c: c.csq)
         logger.debug(
@@ -1086,7 +1087,7 @@ def do_fit(
         # was reported as one that never converged (issue #499).
         outcome.stage = STAGE_PRIMARY
         outcome.record(x)
-        x.flag = 3
+        x.flag = FLAG_NO_ROOT_CONVERGED
         return x
 
     # Attempt to fit all the data, given the fit of the primary interval
@@ -1107,7 +1108,7 @@ def do_fit(
             if x.flag != 0:
                 outcome.stage = STAGE_BUILDUP
                 outcome.record(x)
-                x.flag = 4
+                x.flag = FLAG_BUILDUP_FAILED
                 break
             logger.debug(f"Result `state`: {x.state}")
             logger.debug(f"Epoch: {x.epoch}, CSQ: {x.csq}, ndof: {x.ndof}, num obs: {len(obs)}")
