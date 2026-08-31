@@ -94,7 +94,6 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "-t",
         "--stem",
         help="output file name stem.",
         dest="stem",
