@@ -25,9 +25,8 @@ behind it.
      - ``1`` if the fit converged but its covariance is degenerate, or a variance is
        non-positive.
    * - ``failed_physical``
-     - ``1`` if the fit converged but describes an orbit no real object could occupy.
-       Reserved: the check itself is not applied yet, so this column is currently
-       always ``0``.
+     - ``1`` if the fit converged but describes an orbit no real object could occupy:
+       its hyperbolic excess speed is implausibly large.
 
 The three ``failed_*`` columns are named for their polarity: each is ``1`` when the
 fit *failed* that check. A clean fit is therefore zero across all of them, which
@@ -93,6 +92,8 @@ The values are an enumeration, not a severity ordering.
    * - ``8``
      - Incremental update applied without a full observation set supplied for the
        refit. Bookkeeping rather than a fit failure.
+   * - ``9``
+     - Converged, but the orbit is not physically possible. See the note below.
 
 Values of ``stage``
 ----------------------------------------------------------------------------------------
@@ -121,14 +122,22 @@ result was accepted.
 
 .. note::
 
-   **A converged fit is not necessarily a real orbit.** The checks behind
+   **The physical check is a floor, not a guarantee.** The checks behind
    ``failed_csq`` and ``failed_cov`` are statistical: they ask whether the estimator
-   behaved, not whether the answer is physically possible. A short arc can converge
-   with an excellent chi-square onto a state no object could occupy, because the arc
-   does not constrain the velocity — and chi-square cannot catch it, since the less
-   the object moves across the arc the better the fit. ``failed_physical`` is
-   reserved for that check. Until it is applied, treat ``flag == 0`` as "the
-   estimator succeeded", not as "the orbit is real", and screen short arcs yourself.
+   behaved, not whether the answer is possible. A short arc can converge with an
+   excellent chi-square onto a state no object could occupy, because the arc does
+   not constrain the velocity — and chi-square cannot catch it, since the less the
+   object moves across the arc the better the fit.
+
+   ``failed_physical`` catches the extreme case, on hyperbolic excess speed. The
+   threshold is deliberately generous: layup is expected to fit genuine interstellar
+   objects, which are unbound and fast — 3I/ATLAS arrives at about 59 km/s — so being
+   unbound is never itself grounds for rejection, and the default sits well above any
+   plausible arrival speed. It will therefore accept short-arc orbits that are
+   implausible without being impossible. Screen short arcs on your own criteria as
+   well. The threshold is ``MAX_EXCESS_SPEED_KM_S`` in ``layup.constants``; lower it
+   to reject anything near-unbound, or set it far above any achievable speed to
+   switch the check off.
 
 The values are defined once, in ``layup.constants``, as ``FLAG_*``, ``STAGE_*`` and
 ``OUTCOME_COLUMNS``.
