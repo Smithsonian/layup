@@ -119,6 +119,9 @@ def test_clean_fit_is_complete_and_ungated(monkeypatch):
 
 
 def test_no_iod_candidates_reports_that_stage(monkeypatch):
+    """Initial orbit determination returns nothing, so there is no candidate to
+    screen: the fit stops before the pipeline starts, and `stage` says which
+    point that was rather than leaving it to be inferred from the flag."""
     monkeypatch.setattr(orbitfit, "get_iod", lambda name: (lambda obs, s: []))
     monkeypatch.setattr(orbitfit, "get_ephem", lambda *a, **k: None)
     outcome = FitOutcome()
@@ -158,12 +161,20 @@ def test_outcome_is_optional_so_existing_callers_are_unaffected(monkeypatch):
     ],
 )
 def test_from_flag_reconstructs_what_the_summary_still_permits(flag, converged, stage):
+    """Paths that do not run the staged pipeline -- the sequential update, and a
+    fit started from a supplied initial guess -- never observe the intermediate
+    state, so the columns are reconstructed from the summary flag alone. Lossy by
+    construction: a gate verdict that was overwritten cannot be recovered. This
+    pins what each flag value still implies."""
     outcome = FitOutcome.from_flag(flag)
     assert outcome.converged is converged
     assert outcome.stage == stage
 
 
 def test_as_row_is_ints_in_column_order():
+    """The row is written straight into an i1 column per name, so it must be
+    plain ints in OUTCOME_COLUMNS order. A bool or a reordering would be stored
+    without complaint and silently mislabel every fit."""
     outcome = FitOutcome(converged=True, stage=STAGE_COMPLETE, failed_csq=True)
     row = outcome.as_row()
     assert len(row) == len(OUTCOME_COLUMNS)
@@ -192,6 +203,9 @@ def test_columns_respect_the_existing_layout_invariants():
 
 
 def test_empty_result_reports_not_attempted():
+    """A row for an object that was never fit must not read as a failed fit:
+    flag is the not-attempted sentinel, and the columns say the same -- not
+    converged, no stage reached, no check applied."""
     dt = orbitfit._get_result_dtypes("ObjID", [])
     row = orbitfit.create_empty_result("x", dt)
     assert row["flag"][0] == FLAG_NOT_ATTEMPTED
