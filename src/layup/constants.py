@@ -60,6 +60,32 @@ FLAG_NO_SOLUTION = 5  # no initial-orbit candidates and no usable fallback seed
 FLAG_DEGENERATE_COV = 6  # converged; covariance degenerate, or a variance non-positive
 FLAG_PRIOR_NOT_POSITIVE_DEFINITE = 7  # incremental: prior covariance ill-posed, so a full refit
 FLAG_INCREMENTAL_NO_FULL_OBS = 8  # incremental update with no full observation set to refit from
+FLAG_IMPLAUSIBLE_ORBIT = 9  # converged; hyperbolic excess speed implausibly large
+
+# Hyperbolic excess speed, in km/s, above which a converged fit is reported as
+# physically impossible.
+#
+# A short arc can converge with an excellent reduced chi-square onto a state no
+# real object could occupy, because the arc does not constrain the velocity. The
+# chi-square check cannot catch this: it is anti-correlated with the failure,
+# since the less the object moves across the arc the better the fit.
+#
+# Excess speed is the one statement available without assuming the object is
+# bound. Layup is expected to fit genuine interstellar objects, and those are
+# unbound and fast -- 3I/ATLAS arrives at about 59 km/s -- so boundedness itself
+# is never grounds for rejection, and only a speed far above any plausible
+# arrival speed is evidence of a bad fit rather than an unusual object. The
+# default is about 3.4x the fastest interstellar object yet observed; measured
+# against long-arc truth orbits it rejected no correct fit, and every fit it
+# rejected was wrong.
+#
+# The value means what it says: raise it to accept faster orbits, and set it low
+# to reject anything near-unbound. To switch the check off, set it far above any
+# achievable speed.
+MAX_EXCESS_SPEED_KM_S = 200.0
+
+# km/s expressed in layup's au/day.
+KM_S_IN_AU_PER_DAY = 86400.0 / AU_KM
 
 # How far the fitting pipeline got before it stopped.
 STAGE_NOT_ATTEMPTED = 0

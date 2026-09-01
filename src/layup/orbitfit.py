@@ -40,11 +40,14 @@ from layup.constants import (
     FLAG_CONVERGED,
     FLAG_CSQ_TOO_LARGE,
     FLAG_DEGENERATE_COV,
+    FLAG_IMPLAUSIBLE_ORBIT,
     FLAG_INCREMENTAL_NO_FULL_OBS,
     FLAG_NO_ROOT_CONVERGED,
     FLAG_NO_SOLUTION,
     FLAG_NOT_ATTEMPTED,
     FLAG_PRIOR_NOT_POSITIVE_DEFINITE,
+    KM_S_IN_AU_PER_DAY,
+    MAX_EXCESS_SPEED_KM_S,
     MU_SUN,
     OUTCOME_COLUMNS,
     SPEED_OF_LIGHT,
@@ -55,6 +58,30 @@ from layup.constants import (
     STAGE_NOT_ATTEMPTED,
     STAGE_PRIMARY,
 )
+
+
+def _implausible_excess_speed(state) -> bool:
+    """True when a converged state's hyperbolic excess speed is impossibly large.
+
+    ``state`` is the barycentric equatorial state (au, au/day). Using barycentric
+    coordinates and the Sun's mass rather than the solar system's are both far
+    below the threshold that matters here.
+    """
+    pos = np.asarray(state[:3], dtype=float)
+    vel = np.asarray(state[3:6], dtype=float)
+    if not (np.all(np.isfinite(pos)) and np.all(np.isfinite(vel))):
+        return False  # a NaN state is already reported by the convergence flag
+    r = float(np.linalg.norm(pos))
+    if not r > 0:
+        return False
+    energy = 0.5 * float(np.dot(vel, vel)) - MU_SUN / r
+    if not energy > 0:
+        return False  # bound, or exactly parabolic
+    # bool(), not the numpy scalar the comparison yields: the annotation says
+    # bool, and the value is written to an integer output column.
+    return bool(np.sqrt(2.0 * energy) > MAX_EXCESS_SPEED_KM_S * KM_S_IN_AU_PER_DAY)
+
+
 from layup.convert import convert
 from layup.iod import filter_candidates_by_residual, get_iod, iod_methods, partition_close_approach
 
@@ -1471,9 +1498,17 @@ def _orbitfit(
             else:
                 logger.debug("Non-grav refinement did not converge; reporting non-grav params as NaN.")
 
-        # The non-grav refinement above can replace `res`, so take the gate
+        # The non-grav refinement above can replace `res`, so take the check
         # verdicts from whatever is actually being returned.
         outcome.record(res)
+
+        # Physical plausibility. Applied here, to the result the caller is about
+        # to receive, rather than per candidate: the driver above runs one fit
+        # per initial-orbit candidate and reads a non-zero flag as "this
+        # candidate failed", so a verdict set per candidate is retried away.
+        if res.flag == FLAG_CONVERGED and _implausible_excess_speed(res.state):
+            outcome.failed_physical = True
+            res.flag = FLAG_IMPLAUSIBLE_ORBIT
 
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
