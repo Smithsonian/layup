@@ -742,9 +742,16 @@ class FitOutcome:
         if gate is not None:
             setattr(self, gate, True)
 
-    def as_row(self):
-        """The output columns, in ``OUTCOME_COLUMNS`` order."""
+    def as_row(self, flag):
+        """The output columns, in ``OUTCOME_COLUMNS`` order.
+
+        ``accepted`` is derived from the flag the row actually carries rather
+        than tracked alongside these facts, so the two cannot disagree. It is
+        taken last, after any stage marker has overwritten the fitter's own
+        verdict, because that overwritten value is what a reader will see.
+        """
         return (
+            int(flag == FLAG_CONVERGED),
             int(self.converged),
             int(self.stage),
             int(self.failed_csq),
@@ -807,7 +814,7 @@ def create_empty_result(id, dtypes):
             )
             + (np.nan,) * 36  # Flat covariance matrix
             # never attempted: not converged, no stage reached, no gate applied
-            + ((0, STAGE_NOT_ATTEMPTED, 0, 0, 0) if "converged" in dtypes.names else ())
+            + (FitOutcome().as_row(FLAG_NOT_ATTEMPTED) if "converged" in dtypes.names else ())
             # non-grav columns (issue #351): NaN per a1/a2/a3 (+ _unc) that is present
             + tuple(np.nan for n in ("a1", "a2", "a3") if n in dtypes.names for _ in (0, 1))
             # obs fingerprint (issue #419): empty hash never matches, so a failed
@@ -1571,7 +1578,7 @@ def _orbitfit(
                     ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
-                + outcome.as_row()  # the outcome columns
+                + outcome.as_row(res.flag)  # the outcome columns
                 + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
                 + per_arc_cols  # later-arc amplitudes (comet linkage), when per_arc
                 + (obs_hash, nobs_fit)  # obs fingerprint (issue #419)
@@ -1951,7 +1958,7 @@ def _fitresult_to_row(fit, obj_id, obs_hash, nobs_fit, dtypes):
         )
         + cov
         # The sequential update does not run the staged pipeline either.
-        + (FitOutcome.from_flag(fit.flag).as_row() if "converged" in dtypes.names else ())
+        + (FitOutcome.from_flag(fit.flag).as_row(fit.flag) if "converged" in dtypes.names else ())
         + (obs_hash, nobs_fit)
     )
     return np.array([row], dtype=dtypes)

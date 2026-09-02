@@ -100,7 +100,13 @@ STAGE_INCREMENTAL = 5  # sequential-update bookkeeping rather than a fresh fit
 # is zero across all of them, matching ``flag == FLAG_CONVERGED``. A ``passed_*``
 # convention would make a never-attempted fit (all zero) indistinguishable from
 # one that failed everything.
-OUTCOME_COLUMNS = ("converged", "stage", "failed_csq", "failed_cov", "failed_physical")
+#
+# ``accepted`` is the exception, and the one to filter on: it is the summary
+# verdict as a predicate, 1 exactly when ``flag == FLAG_CONVERGED``. It reads
+# without knowing the flag taxonomy, and unlike an ``error``/``success`` rename
+# it does not label -1 (never attempted) or 8 (incremental bookkeeping) as
+# errors, which they are not (issue #498).
+OUTCOME_COLUMNS = ("accepted", "converged", "stage", "failed_csq", "failed_cov", "failed_physical")
 
 # Which check each of the fitter's own post-convergence verdicts reports as
 # failed. Both are set *after* the Levenberg-Marquardt loop converges, so each
