@@ -53,7 +53,9 @@ residual rows they contribute, not in the code path they take.
 - Ephemeris-quality integrations through ASSIST and REBOUND, using the IAS15
   integrator.
 - Predictions that integrate once and interpolate to many epochs and observatory
-  locations.
+  locations, propagating any non-gravitational acceleration the fit solved for, so
+  a predicted position and its uncertainty ellipse are consistent with the orbit
+  that produced them.
 
 ### Interfaces
 
