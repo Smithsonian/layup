@@ -17,7 +17,7 @@ actually uses -- exactly the consistency gap noted when the C++ and Python cores
 were validated separately. The orbit is the same ~2.6 AU main-belt object near
 opposition as the streak fixture (``tests/data/streak_synthetic.json``); the truth
 observables are an independent ASSIST propagation at the C++ light-time convention
-(``delay = 2 rho/c``; ``doppler = 2 rho_hat . v_rel``).
+(``delay = 2 rho/c`` plus the Shapiro delay; ``doppler = 2 rho_hat . v_rel``).
 
 Radar over a short single-station arc weakly constrains the plane-of-sky
 position, so -- as in real radar astrometry -- the fit *refines a prior orbit*:
@@ -117,7 +117,23 @@ def _radar_observables(ephem, true_state, epoch, obs_jd_tdb, r_obs, v_obs, a_obs
         tau_u = rho_u / SPEED_OF_LIGHT
     rho_hat_u = rho_u_vec / rho_u
     v_tx = v_obs - a_obs * (tau_d + tau_u)
-    delay = tau_d + tau_u
+
+    # Shapiro (relativistic) delay on both legs, matching orbit_fit.cpp. The truth
+    # here is generated to be fed back through the fitter, so it has to carry the
+    # same physics the fitter models -- otherwise the test measures the difference
+    # between two models rather than whether an orbit is recovered. The Sun is
+    # taken at the emission time, where the C++ light-time solution leaves it.
+    sun = ephem.get_particle(0, (obs_jd_tdb - tau_d) - jd_ref)   # ASSIST_BODY_SUN
+    sun_pos = np.array([sun.x, sun.y, sun.z])
+    gm_sun = 2.9591220828559115e-4                                # au^3/day^2
+    k = 2.0 * gm_sun / SPEED_OF_LIGHT**3
+    r_b = float(np.linalg.norm(r_ast - sun_pos))
+    r_r = float(np.linalg.norm(r_obs - sun_pos))
+    r_t = float(np.linalg.norm(r_tx - sun_pos))
+    shapiro = k * (np.log((r_t + r_b + rho_u) / (r_t + r_b - rho_u))
+                   + np.log((r_b + r_r + rho_d) / (r_b + r_r - rho_d)))
+
+    delay = tau_d + tau_u + shapiro
     doppler = float(rho_hat_d @ (v_ast - v_obs)) + float(rho_hat_u @ (v_ast - v_tx))
     return delay, doppler
 
