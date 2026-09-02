@@ -1,34 +1,25 @@
 import argparse
 import sys
+from importlib.metadata import distribution
 
 #
 # Generic verb dispatcher code
 #
 
 
-def _verb_entry_points():
-    """The ``layup-*`` console scripts *this* installation declares, by verb.
+def find_layup_verbs():
+    """The verbs this installation provides, as a dict of name -> entry point.
 
-    Taken from the installed distribution's own metadata rather than by
-    searching ``PATH``. Searching ``PATH`` picked up any executable named
-    ``layup-<verb>`` anywhere on it, so with two layup installations on one
-    machine the dispatcher could run the other one's verb -- and an executable
-    dropped in any writable directory earlier on ``PATH`` (an empty ``PATH``
-    entry means the working directory) would be run in preference to the real
-    one, with the user's privileges.
+    Read from the installed package's own metadata. Do not go back to searching
+    PATH for executables named layup-<verb>: that ran whichever layup came first
+    on PATH, which on a machine with more than one installation was often not
+    the one the user meant.
     """
-    from importlib.metadata import distribution
-
     verbs = {}
     for ep in distribution("layup").entry_points:
         if ep.group == "console_scripts" and ep.name.startswith("layup-"):
             verbs[ep.name[len("layup-") :]] = ep
     return verbs
-
-
-def find_layup_verbs():
-    """Available layup verbs, from this installation's own metadata."""
-    return sorted(_verb_entry_points())
 
 
 def main():
@@ -69,7 +60,7 @@ def main():
         action="store_true",
     )
 
-    parser.add_argument("verb", nargs="?", choices=available_verbs, help="Verb to execute")
+    parser.add_argument("verb", nargs="?", choices=sorted(available_verbs), help="Verb to execute")
     parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments for the verb")
 
     args = parser.parse_args()
@@ -87,7 +78,7 @@ def main():
         sys.exit(1)
 
     utility = f"layup-{args.verb}"
-    entry = _verb_entry_points().get(args.verb)
+    entry = available_verbs.get(args.verb)
     if entry is None:
         print(f"Error: '{utility}' is not available.")
         sys.exit(1)

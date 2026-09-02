@@ -47,18 +47,17 @@ def get_test_filepath(filename):
 
 
 def layup_cli(*args):
-    """argv prefix that runs *this* environment's ``layup``, not ``PATH``'s.
+    """Build an argv that runs this environment's ``layup``, not ``PATH``'s.
 
-    ``subprocess.run(["layup", ...])`` resolves the name against ``PATH``, so a
-    test exercises whichever installation comes first on the machine rather than
-    the one under test. That fails confusingly when another layup is installed
-    (a conda environment with a broken assist/rebound link, say) and, worse,
-    passes for the wrong reason when the stale installation happens to work
-    (issue #500).
+    ``subprocess.run(["layup", ...])`` resolves the name against ``PATH``, so
+    the test runs whichever layup comes first on the machine instead of the one
+    being tested. On a machine with an older layup installed the test fails on
+    arguments the current code added, and -- worse -- when the older one happens
+    to accept them, it passes without testing anything (issue #500).
 
-    Console scripts are installed alongside the interpreter running the tests,
-    so resolving from ``sys.executable`` pins the invocation to this environment
-    while still exercising the real entry point and its subcommand dispatch.
+    Console scripts are installed next to the interpreter, so resolving from
+    ``sys.executable`` pins the call to this environment while still going
+    through the real entry point and its verb dispatch.
     """
     import sys
     from pathlib import Path
