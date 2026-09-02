@@ -95,6 +95,35 @@ STAGE_BUILDUP = 3  # reached the incremental build-up to all observations
 STAGE_COMPLETE = 4  # fit the full observation set
 STAGE_INCREMENTAL = 5  # sequential-update bookkeeping rather than a fresh fit
 
+# ---------------------------------------------------------------------------
+# Non-gravitational g(r) laws
+#
+# ASSIST parameterizes the sublimation law as
+#
+#     g(r) = alpha * (r/r0)^-nm * (1 + (r/r0)^nn)^-nk
+#
+# which is the form of Marsden, Sekanina & Yeomans (1973), AJ 78, 211, and is
+# reproduced in ASSIST's own paper (Holman et al. 2023, section III.4). Both
+# presets below are in the ``[alpha, nm, nn, nk, r0]`` order that ``orbitfit``'s
+# ``nongrav_gr`` argument takes.
+# ---------------------------------------------------------------------------
+
+# The standard water-ice sublimation law for comets. alpha normalizes the law so
+# that g(1 au) = 1; with these values it does so to ten decimal places.
+# Values as tabulated by Attree et al. (2019), A&A 625, A19, Table 2.
+MARSDEN_1973_GOFR = (0.1112620426, 2.15, 5.093, 4.6142, 2.808)
+
+# The asteroidal law, g(r) = (1 au / r)^2. This is what a Yarkovsky A2 fit wants,
+# it is what JPL reports for asteroids with a detected drift (their ALN=1, NM=2,
+# NK=0, R0=1), and it is what layup uses when ``nongrav_gr`` is left at None. It
+# is spelled out here so it can be passed explicitly and compared against.
+#
+# nn is irrelevant whenever nk is zero, since the bracket is then raised to the
+# power 0. It is set to 0.0 rather than left at ASSIST's default of 5.093 -- that
+# default is Marsden's cometary n sitting inert, and anyone who sets nk without
+# also setting nn would silently get their own k with Marsden's n.
+ASTEROIDAL_GOFR = (1.0, 2.0, 0.0, 0.0, 1.0)
+
 # The fit outcome as independent facts, one output column each. Named for their
 # polarity: each ``failed_*`` is 1 when the fit failed that check, so a clean fit
 # is zero across all of them, matching ``flag == FLAG_CONVERGED``. A ``passed_*``
