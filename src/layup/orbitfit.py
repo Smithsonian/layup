@@ -49,6 +49,7 @@ from layup.constants import (
     KM_S_IN_AU_PER_DAY,
     MAX_EXCESS_SPEED_KM_S,
     MU_SUN,
+    NO_CSQ_FLAGS,
     OUTCOME_COLUMNS,
     SPEED_OF_LIGHT,
     STAGE_BUILDUP,
@@ -1512,6 +1513,11 @@ def _orbitfit(
 
         # Populate our output structured array with the orbit fit results
         success = res.flag == 0
+        # The chi-square is reported whenever the fitter produced one, not only
+        # when the fit was accepted. A fit rejected *on* chi-square otherwise
+        # discards the number that explains the rejection, and a stage marker
+        # (3, 4) hides the lowest chi-square do_fit reached.
+        has_csq = res.flag not in NO_CSQ_FLAGS
         if not success:
             _warn_if_short_arc(jds, data[primary_id_column_name][0])
         cov_matrix = tuple(res.cov[i] for i in range(36)) if success else (np.nan,) * 36
@@ -1553,7 +1559,7 @@ def _orbitfit(
             [
                 (
                     data[primary_id_column_name][0],
-                    (res.csq if success else np.nan),
+                    (res.csq if has_csq else np.nan),
                     res.ndof,
                 )
                 + (tuple(res.state[i] for i in range(6)) if success else (np.nan,) * 6)  # Flat state vector

@@ -109,3 +109,9 @@ CXX_GATE_FLAGS = {FLAG_CSQ_TOO_LARGE: "failed_csq", FLAG_DEGENERATE_COV: "failed
 
 # The flags that mean the differential correction reached a solution.
 CONVERGED_FLAGS = (FLAG_CONVERGED, FLAG_CSQ_TOO_LARGE, FLAG_DEGENERATE_COV)
+
+# The flags for which no chi-square exists to report: one where no fit was ever
+# run, and one where no initial-orbit candidate was found to score. Every other
+# flag carries a chi-square -- including the stage markers, since ``do_fit``
+# returns the lowest-chi-square candidate it tried.
+NO_CSQ_FLAGS = (FLAG_NOT_ATTEMPTED, FLAG_NO_SOLUTION)
