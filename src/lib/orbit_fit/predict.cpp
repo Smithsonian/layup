@@ -202,11 +202,41 @@ namespace orbit_fit
         return result;
     }
 
+    // Enable ASSIST's Marsden non-gravitational force on a prediction simulation,
+    // mirroring what the fit does (orbit_fit.cpp, issue #351). Without this a
+    // prediction propagates gravity-only even when the fit solved for A1/A2/A3,
+    // so the predicted position -- and the covariance mapped about it -- are wrong
+    // for any non-gravitationally fitted object (issue #522).
+    //
+    // `pp` must outlive every integration on this simulation: ASSIST holds the
+    // pointer, it does not copy. The caller owns it.
+    //
+    // Only the real particle's [A1,A2,A3] are set. Prediction needs no parameter
+    // variational particles: the fit's covariance is already 6x6 in the state, and
+    // d(state)/dA is not propagated here.
+    static void apply_nongrav_from_fit(struct assist_extras *ax,
+                                       const FitResult &fit,
+                                       std::vector<double> &pp,
+                                       size_t n_particles)
+    {
+        if (fit.nongrav_mask == 0)
+            return;
+        ax->forces = (enum ASSIST_FORCES)(ax->forces | ASSIST_FORCE_NON_GRAVITATIONAL);
+        // Same default g(r) as the fit: the asteroidal inverse square (r/r0)^-2.
+        ax->alpha = 1.0; ax->nm = 2.0; ax->nk = 0.0; ax->nn = 1.0; ax->r0 = 1.0;
+        pp.assign(3 * n_particles, 0.0);
+        pp[0] = (fit.nongrav_mask & 1) ? fit.a1 : 0.0;
+        pp[1] = (fit.nongrav_mask & 2) ? fit.a2 : 0.0;
+        pp[2] = (fit.nongrav_mask & 4) ? fit.a3 : 0.0;
+        ax->particle_params = pp.data();
+    }
+
     PredictResult predict(struct assist_ephem *ephem,
                           struct reb_particle p0, double epoch,
                           Observation this_det,
                           Eigen::MatrixXd &cov,
-                          Eigen::MatrixXd &obs_cov)
+                          Eigen::MatrixXd &obs_cov,
+                          const FitResult *fit = nullptr)
     {
 
         // Takes an ephemeris object, a simulation,
@@ -232,6 +262,12 @@ namespace orbit_fit
         int var;
         add_variational_particles(r, 0, &var);
 
+        // issue #522: propagate with the fitted non-gravitational acceleration if
+        // one was supplied. pp must outlive the integration below.
+        std::vector<double> pp;
+        if (fit)
+            apply_nongrav_from_fit(ax, *fit, pp, 1 + (size_t)r->N_var);
+
         PredictResult result = compute_single_predict(ephem, ax, var, this_det, cov, obs_cov);
 
         assist_free(ax);
@@ -239,6 +275,7 @@ namespace orbit_fit
 
         return result;
     }
+
 
     PredictResult predict_from_fit_result(struct assist_ephem *ephem,
                                           FitResult fit,
@@ -260,7 +297,8 @@ namespace orbit_fit
             fit.epoch,
             obs_position,
             cov,
-            obs_cov);
+            obs_cov,
+            &fit);
 
         return res;
     }
@@ -277,7 +315,8 @@ namespace orbit_fit
                                Eigen::MatrixXd &cov,
                                std::vector<PredictResult> &results,
                                std::vector<size_t> &in_seq,
-                               std::vector<size_t> &out_seq)
+                               std::vector<size_t> &out_seq,
+                               const FitResult &fit)
     {
         if (in_seq.empty())
             return;
@@ -291,6 +330,10 @@ namespace orbit_fit
         reb_simulation_add(r, p0);
         int var;
         add_variational_particles(r, 0, &var);
+        // issue #522: propagate with the fitted non-gravitational acceleration,
+        // not gravity-only. pp must outlive the integrations below.
+        std::vector<double> pp;
+        apply_nongrav_from_fit(ax, fit, pp, 1 + (size_t)r->N_var);
 
         Eigen::MatrixXd obs_cov(2, 2);
         for (size_t i = 0; i < in_seq.size(); ++i)
@@ -336,9 +379,9 @@ namespace orbit_fit
                          forward_in_seq, forward_out_seq);
 
         predict_sequence_pass(ephem, p0, epoch, detections, cov, results,
-                              forward_in_seq, forward_out_seq);
+                              forward_in_seq, forward_out_seq, fit);
         predict_sequence_pass(ephem, p0, epoch, detections, cov, results,
-                              reverse_in_seq, reverse_out_seq);
+                              reverse_in_seq, reverse_out_seq, fit);
 
         return results;
     }

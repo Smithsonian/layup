@@ -362,6 +362,23 @@ def parse_fit_result(
             cov[i] = 0.0
     res.cov = cov
 
+    # Carry the fitted non-gravitational parameters back onto the FitResult
+    # (issue #522). The a1/a2/a3 columns exist only when a non-gravitational fit
+    # ran, so their presence is what identifies which were active. Without this
+    # the parameters are silently dropped at the Python boundary and every
+    # downstream propagation -- predict, residuals_at_state, sequential_update --
+    # runs gravity-only on a state that was fitted with non-gravs.
+    names = getattr(fit_result_row, "dtype", None)
+    names = set(names.names) if names is not None and names.names else set()
+    mask = 0
+    for bit, col in ((1, "a1"), (2, "a2"), (4, "a3")):
+        if col in names:
+            val = float(fit_result_row[col])
+            if np.isfinite(val) and val != 0.0:
+                setattr(res, col, val)
+                mask |= bit
+    res.nongrav_mask = mask
+
     return res
 
 
