@@ -221,7 +221,17 @@ def test_predict_output(tmpdir):
     temp_out_file = f"test_output_{input_file.stem}"
 
     result = subprocess.run(
-        layup_cli("predict", str(input_file), "-f", "-o", str(temp_out_file), "-s", start)
+        layup_cli(
+            "predict",
+            str(input_file),
+            "-f",
+            "--stem",
+            str(temp_out_file),
+            "-o",
+            str(tmpdir),
+            "-s",
+            start,
+        )
     )
 
     assert result.returncode == 0
@@ -285,7 +295,7 @@ def test_predict_output(tmpdir):
             "predict",
             str(input_file),
             "-f",
-            "-o",
+            "--stem",
             str(temp_out_file),
             "-s",
             start,
@@ -423,8 +433,10 @@ def test_get_onsky_data_output(tmpdir):
             "predict",
             str(input_file),
             "-f",
-            "-o",
+            "--stem",
             str(temp_out_file),
+            "-o",
+            str(tmpdir),
             "-s",
             start,
             "-osd",

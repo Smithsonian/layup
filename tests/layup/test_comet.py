@@ -214,7 +214,7 @@ def test_comet_output(tmpdir):
     # The demo comet fixture is keyed by ObjID; comet's -pid now defaults to
     # provID (CLI-consistency), so pass -pid ObjID explicitly.
     result = subprocess.run(
-        layup_cli("comet", str(input_file), "-f", "-o", str(temp_out_file), "-pid", "ObjID")
+        layup_cli("comet", str(input_file), "-f", "--stem", str(temp_out_file), "-pid", "ObjID")
     )
 
     assert result.returncode == 0

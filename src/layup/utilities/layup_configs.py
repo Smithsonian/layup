@@ -222,8 +222,16 @@ class LayupConfigs:
     """auxiliaryConfigs dataclass which stores the keywords from the AUXILIARY section of the config file."""
 
     # this __init__ overrides a dataclass's inbuilt __init__ because we want to populate this from a file, not explicitly ourselves
-    def __init__(self, config_file_location=None):
+    def __init__(self, config_file_location=None, logger=None):
+        if logger is None:
+            import logging
+
+            logger = logging.getLogger(__name__)
+
         if config_file_location:  # if a location to a config file is supplied...
+            # Save a raw copy of the configuration to the logs as a backup.
+            with open(config_file_location, "r") as file:
+                logger.debug(f"Copy of configuration file {config_file_location}:\n{file.read()}")
             config_object = configparser.ConfigParser()  # create a ConfigParser object
             config_object.read(config_file_location)  # and read the whole config file into it
             self._read_configs_from_object(
@@ -231,6 +239,7 @@ class LayupConfigs:
             )  # now we call a function that populates the class attributes
         else:
             # if a file is not supplied the config class will be populated with the default values.
+            logger.debug("Using default config parameters.")
             self._populate_configs_class_with_default()
 
     def _read_configs_from_object(self, config_object):

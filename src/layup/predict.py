@@ -438,7 +438,7 @@ def predict(
     """
     num_workers = resolve_num_workers(num_workers)
 
-    layup_observatory = LayupObservatory(cache_dir=cache_dir)
+    layup_observatory = LayupObservatory(cache_dir=cache_dir, configs=configs)
 
     times_et = np.array([spice.str2et(f"jd {t} tdb") for t in times], dtype="<f8")
 
@@ -562,7 +562,7 @@ def predict_cli(
                 cache_dir=cache_dir,
                 primary_id_column_name=cli_args.primary_id_column_name,
             )
-
+        logger.info(f"Processing {len(data)} object(s) in chunk")
         predictions = predict(
             data,
             obscode=cli_args.station,
@@ -580,3 +580,4 @@ def predict_cli(
                 write_csv(predictions, output_file, move_columns={"ra_str_hms": 3, "dec_str_dms": 4})
             else:
                 write_csv(predictions, output_file)
+        logger.info(f"Data has been written to {output_file}")

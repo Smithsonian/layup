@@ -3,7 +3,7 @@
 #
 import argparse
 import sys
-
+import os
 from layup.utilities.cli_utilities import warn_or_remove_file
 from layup.utilities.file_access_utils import find_directory_or_exit, find_file_or_exit
 from layup_cmdline.layupargumentparser import LayupArgumentParser
@@ -94,12 +94,21 @@ def main():
         required=False,
     )
     optional.add_argument(
-        "-o",
-        "--output",
-        help="output file stem. default path is current working directory",
-        dest="o",
+        "--stem",
+        help="output file name stem.",
+        dest="stem",
         type=str,
-        default="output",
+        default="orbitfit_output",
+        required=False,
+    )
+
+    optional.add_argument(
+        "-o",
+        "--outfile",
+        help="Path to store output and logs.",
+        type=str,
+        dest="o",
+        default="./",
         required=False,
     )
     optional.add_argument(
@@ -170,7 +179,7 @@ def execute(args):
     from layup.utilities.bootstrap_utilties.download_utilities import download_files_if_missing
     from layup.utilities.layup_logging import LayupLogger
 
-    layup_logger = LayupLogger()
+    layup_logger = LayupLogger(log_directory=args.o, verb="orbitfit")
     logger = layup_logger.get_logger("layup.orbitfit_cmdline")
 
     logger.info("Starting orbitfit...")
@@ -197,12 +206,14 @@ def execute(args):
         logger.error(f"Output orbit format must be one of {supported_orbit_formats}")
     # check format of input file
     if args.output_format.lower() == "csv":
-        output_file = args.o + ".csv"
+        output_file = args.stem + ".csv"
     elif args.output_format.lower() == "hdf5":
-        output_file = args.o + ".h5"
+        output_file = args.stem + ".h5"
     else:
         logger.error("File format must be 'csv' or 'hdf5'")
         sys.exit("ERROR: File format must be 'csv' or 'hdf5'")
+
+    output_file = os.path.join(args.o, output_file)
 
     # check for overwriting output file
     warn_or_remove_file(str(output_file), args.force, logger)
@@ -211,22 +222,23 @@ def execute(args):
     if args.g is not None:
         find_file_or_exit(args.g, "-g, --guess")
 
-    configs = LayupConfigs()
     if args.config:
         find_file_or_exit(args.config, "-c, --config")
-        configs = LayupConfigs(args.config)
-
+        configs = LayupConfigs(args.config, logger)
+    else:
+        configs = LayupConfigs(logger=logger)
     # check if bootstrap files are missing, and download if necessary
     download_files_if_missing(configs.auxiliary, args)
 
     orbitfit_cli(
         input=args.input,
         input_file_format=args.type,
-        output_file_stem=args.o,
+        output_file=output_file,
         output_file_format=args.output_format,
         chunk_size=args.chunksize,
         num_workers=args.n,
         cli_args=args,
+        configs=configs,
     )
 
 

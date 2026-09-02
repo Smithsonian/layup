@@ -672,11 +672,17 @@ namespace orbit_fit
                          reverse_in_seq, reverse_out_seq,
                          forward_in_seq, forward_out_seq);
 
+        // issue #522: pass the fitted non-gravitational parameters through, or the
+        // residuals are those of a gravity-only trajectory started from a state
+        // that was fitted WITH non-gravs -- which is not the fit's residual.
+        const double a123[3] = {fit.a1, fit.a2, fit.a3};
         compute_residuals(ephem, p0, epoch,
                           detections,
                           resid_vec, partials_vec,
                           forward_in_seq, forward_out_seq,
-                          reverse_in_seq, reverse_out_seq);
+                          reverse_in_seq, reverse_out_seq,
+                          fit.nongrav_mask,
+                          fit.nongrav_mask ? a123 : nullptr);
 
         std::vector<std::array<double, 6>> out(N);
         for (size_t i = 0; i < N; ++i)

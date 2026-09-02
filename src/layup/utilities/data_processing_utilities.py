@@ -362,6 +362,23 @@ def parse_fit_result(
             cov[i] = 0.0
     res.cov = cov
 
+    # Carry the fitted non-gravitational parameters back onto the FitResult
+    # (issue #522). The a1/a2/a3 columns exist only when a non-gravitational fit
+    # ran, so their presence is what identifies which were active. Without this
+    # the parameters are silently dropped at the Python boundary and every
+    # downstream propagation -- predict, residuals_at_state, sequential_update --
+    # runs gravity-only on a state that was fitted with non-gravs.
+    names = getattr(fit_result_row, "dtype", None)
+    names = set(names.names) if names is not None and names.names else set()
+    mask = 0
+    for bit, col in ((1, "a1"), (2, "a2"), (4, "a3")):
+        if col in names:
+            val = float(fit_result_row[col])
+            if np.isfinite(val) and val != 0.0:
+                setattr(res, col, val)
+                mask |= bit
+    res.nongrav_mask = mask
+
     return res
 
 
@@ -429,10 +446,11 @@ class FakeSorchaArgs:
         self.ar_data_file_path = cache_dir
 
 
-def layup_furnish_spiceypy(cache_dir):
+def layup_furnish_spiceypy(cache_dir, config=None):
     """A simple wrapper to furnish spiceypy kernels."""
     # A simple class to mimic the arguments processed by Sorcha's observatory class
-    config = LayupConfigs()
+    if config == None:
+        config = LayupConfigs()
     furnish_spiceypy(FakeSorchaArgs(cache_dir), config.auxiliary)
 
 
@@ -441,7 +459,7 @@ class LayupObservatory(SorchaObservatory):
     A wrapper around Sorcha's Observatory class to provide additional functionality for Layup.
     """
 
-    def __init__(self, cache_dir=None):
+    def __init__(self, cache_dir=None, configs=None):
         """Create an instance of the LayupObservatory class.
 
         Parameters
@@ -455,14 +473,15 @@ class LayupObservatory(SorchaObservatory):
             cache_dir = str(pooch.os_cache(CACHE_DIR_NAME))
 
         # Get Layup configs
-        config = LayupConfigs()
+        if configs == None:
+            configs = LayupConfigs()
 
         # Kept so space-observatory Horizons lookups land their persistent
         # (naif_id, jd) -> state cache under the same cache directory.
         self.cache_dir = cache_dir
 
         # Furnish the spiceypy kernels
-        layup_furnish_spiceypy(cache_dir)
+        layup_furnish_spiceypy(cache_dir, configs)
 
         # Decide the observatory-codes source *before* handing off to Sorcha's
         # Observatory. Sorcha downloads the codes from the MPC when the
@@ -475,7 +494,7 @@ class LayupObservatory(SorchaObservatory):
         # Sorcha the copy bundled with layup immediately -- no blocking download
         # on the fit path. `layup bootstrap` remains the way to refresh the codes.
         oc_file = (
-            None if self._cached_obscodes_present(cache_dir, config.auxiliary) else write_fallback_obscodes()
+            None if self._cached_obscodes_present(cache_dir, configs.auxiliary) else write_fallback_obscodes()
         )
         if oc_file is not None:
             logger.info(
@@ -484,7 +503,7 @@ class LayupObservatory(SorchaObservatory):
             )
 
         try:
-            super().__init__(FakeSorchaArgs(cache_dir), config.auxiliary, oc_file=oc_file)
+            super().__init__(FakeSorchaArgs(cache_dir), configs.auxiliary, oc_file=oc_file)
         except (requests.exceptions.RequestException, json.JSONDecodeError) as exc:
             # Defensive fallback: the cached codes file was unreadable/corrupt (or
             # a download slipped through and failed). Use the bundled copy rather
@@ -495,7 +514,7 @@ class LayupObservatory(SorchaObservatory):
             )
             super().__init__(
                 FakeSorchaArgs(cache_dir),
-                config.auxiliary,
+                configs.auxiliary,
                 oc_file=write_fallback_obscodes(),
             )
 
