@@ -1339,6 +1339,14 @@ def _orbitfit(
 
         # bias_dict will be a dictionary when the debias flag is set to True.
         if bias_dict is not None:
+            if not astcat_column_present:
+                # Without a star catalog per observation there is no bias to look
+                # up, so debiasing would quietly do nothing. Say so rather than
+                # return astrometry the caller believes was corrected.
+                logger.warning(
+                    "Debiasing was requested but the data has no astCat column, so no "
+                    "star-catalog bias can be applied. The astrometry is unchanged."
+                )
             for d in data:
                 if radar_columns_present and _is_radar(d, column_names):
                     continue  # debiasing is an astrometric (ra/dec) correction
