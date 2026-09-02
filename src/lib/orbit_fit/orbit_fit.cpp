@@ -24,6 +24,7 @@
 
 extern "C" {
 #include "rebound.h"
+#include "assist.h"
 }
 
 namespace orbit_fit
@@ -96,6 +97,10 @@ namespace orbit_fit
     // uncertainties from arcseconds to radians and scales residuals for display.
     static constexpr double ARCSEC_PER_RAD = 206265.0;
 
+    // Sun's gravitational parameter, au^3/day^2. Used only for the Shapiro delay,
+    // whose coefficient 2*GM/c^3 works out to 1.1402e-10 d = 9.851 us.
+    static constexpr double GM_SUN_AU3_D2 = 2.9591220828559115e-4;
+
 
     // Geometry shared by all three observable residual paths, computed once by
     // compute_single_residuals after the light-time integration: the unit
@@ -123,7 +128,8 @@ namespace orbit_fit
     // extrapolating the station state (pos+vel) to the transmit time t_obs - tau
     // using the observer acceleration supplied from Python. Shapiro (relativistic)
     // delay (~2 us here) is the next refinement.
-    void compute_radar_residuals(struct reb_simulation *r, const Observation &this_det,
+    void compute_radar_residuals(struct assist_ephem *ephem, struct reb_simulation *r,
+                                 const Observation &this_det,
                                  int var, int npar, const ResidualGeometry &g,
                                  residuals &resid, partials &parts)
     {
@@ -156,12 +162,15 @@ namespace orbit_fit
         double tau_d = g.rho / SPEED_OF_LIGHT;
         double tau_u = tau_d;
         double rhu_x = g.rho_x, rhu_y = g.rho_y, rhu_z = g.rho_z, rho_u = g.rho;
+        // Kept outside the loop: the converged transmit-time station position is
+        // needed again below for the up leg's Shapiro term.
+        double rtx_x = xe, rtx_y = ye, rtx_z = ze;
         for (int it = 0; it < 3; it++)
         {
             double tau = tau_d + tau_u;
-            double rtx_x = xe - vox * tau - 0.5 * aox * tau * tau;
-            double rtx_y = ye - voy * tau - 0.5 * aoy * tau * tau;
-            double rtx_z = ze - voz * tau - 0.5 * aoz * tau * tau;
+            rtx_x = xe - vox * tau - 0.5 * aox * tau * tau;
+            rtx_y = ye - voy * tau - 0.5 * aoy * tau * tau;
+            rtx_z = ze - voz * tau - 0.5 * aoz * tau * tau;
             rhu_x = rbx - rtx_x;
             rhu_y = rby - rtx_y;
             rhu_z = rbz - rtx_z;
@@ -177,6 +186,42 @@ namespace orbit_fit
         double vtx_z = voz - aoz * tau;
 
         double model_delay = tau_d + tau_u; // round-trip light time (days)
+
+        // Shapiro (relativistic) delay. The signal traverses the Sun's potential
+        // on each leg; for a leg between A and B,
+        //     dt = (2 GM / c^3) ln[(r_A + r_B + rho) / (r_A + r_B - rho)]
+        // with r_A and r_B heliocentric distances and rho the leg length. At the
+        // geometries these observations are made it is a few microseconds --
+        // small, but radar uncertainties here are 0.3 to 2 us, so leaving it out
+        // biases the delay by several sigma per observation and inflates the
+        // chi-square enough to reject an otherwise good fit.
+        //
+        // The Sun is evaluated once, at the receive epoch. It moves of order
+        // 1e-5 au during a round trip, which shifts the logarithm's argument far
+        // below the microsecond level.
+        // The ephemeris is passed in rather than taken from r->extras: the
+        // simulation used for residuals has no assist_extras attached, so that
+        // pointer is NULL here.
+        if (ephem != NULL)
+        {
+            struct reb_particle sun = assist_get_particle(ephem, ASSIST_BODY_SUN, r->t);
+            auto heliocentric_distance = [&](double x, double y, double z) {
+                double dx = x - sun.x, dy = y - sun.y, dz = z - sun.z;
+                return sqrt(dx * dx + dy * dy + dz * dz);
+            };
+            double r_bounce = heliocentric_distance(rbx, rby, rbz);
+            double r_receive = heliocentric_distance(xe, ye, ze);
+            double r_transmit = heliocentric_distance(rtx_x, rtx_y, rtx_z);
+            const double two_gm_over_c3 =
+                2.0 * GM_SUN_AU3_D2 / (SPEED_OF_LIGHT * SPEED_OF_LIGHT * SPEED_OF_LIGHT);
+            double up = (r_transmit + r_bounce + rho_u) / (r_transmit + r_bounce - rho_u);
+            double down = (r_bounce + r_receive + g.rho) / (r_bounce + r_receive - g.rho);
+            // Guard the logarithms: the denominators vanish only for a signal
+            // grazing the Sun, which is not an observable geometry, but a
+            // non-positive argument must never reach log().
+            if (up > 0.0 && down > 0.0)
+                model_delay += two_gm_over_c3 * (log(up) + log(down));
+        }
         // Round-trip range rate: down leg uses the station velocity at receive,
         // up leg at transmit.
         double model_doppler =
@@ -429,7 +474,7 @@ namespace orbit_fit
         // for non-radar, and a streak adds its two rate rows on top.
         if (std::holds_alternative<RadarObservation>(this_det.observation_type))
         {
-            compute_radar_residuals(r, this_det, var, npar, g, resid, parts);
+            compute_radar_residuals(ephem, r, this_det, var, npar, g, resid, parts);
             return;
         }
         compute_optical_residuals(r, this_det, var, npar, g, resid, parts);
