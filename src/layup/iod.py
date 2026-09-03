@@ -192,7 +192,9 @@ def gauss_iod(observations, seq):
         logger.debug("gauss_iod: span selection found no triplet; using first/middle/last")
     idx0_, idx1, idx2 = trip
     logger.debug(f"gauss_iod: indices {idx0_}, {idx1}, {idx2}")
-    solns = gauss(GMtotal, observations[idx0_], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT)
+    solns = gauss(
+        GMtotal, observations[idx0_], observations[idx1], observations[idx2], 0.0001, SPEED_OF_LIGHT
+    )
     return solns
 
 
