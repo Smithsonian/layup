@@ -193,14 +193,45 @@ def test_six_param_fit_unaffected_and_biased_by_a2():
     assert fit6.csq > 1e3 * fit7.csq
 
 
-def test_a2_weak_constraint_guard_on_short_arc():
-    """On a short arc the A2 column is nearly collinear with the state, so the
-    joint fit is rank-deficient. The fitter must flag this (flag=6) rather than
-    returning a contaminated, over-confident solution."""
+def test_a2_on_short_arc_is_reported_as_undetermined():
+    """A ten-day arc cannot separate A2 from the state. The fit must say so in the
+    uncertainty rather than by refusing: the amplitude comes back with a formal
+    error orders of magnitude larger than itself, and larger than any physical
+    Yarkovsky amplitude, which is what tells the caller it is not a detection.
+
+    This is a stronger statement than the flag=6 this used to assert. Refusing
+    only says the fitter declined; an honest uncertainty says how badly the arc
+    constrains A2, and it does not suppress a well-constrained null."""
     obs = _build_arc(arc_days=10.0, n=10)  # ~10 days: A2 not separable from state
     ephem = get_ephem(CACHE)
     fit = run_from_vector_with_initial_guess(ephem, _seed(_STATE), obs, 100, _BIT["A2"])
-    assert fit.flag == 6, f"expected weak-constraint flag 6, got {fit.flag}"
+    assert fit.flag == 0, f"expected a converged fit, got flag {fit.flag}"
+    assert np.isfinite(fit.a2_unc) and fit.a2_unc > 0
+    # Yarkovsky amplitudes for near-Earth asteroids run to ~1e-13 au/day^2; the
+    # formal error here is many orders above that, and above |A2| itself.
+    assert fit.a2_unc > 1e-11, f"expected an uninformative sigma, got {fit.a2_unc:.3e}"
+    assert fit.a2_unc > 1e3 * abs(fit.a2)
+
+
+def test_a2_uncertainty_tracks_arc_length():
+    """The counterpart to the test above: the reported uncertainty is what carries
+    the information, and it improves by orders of magnitude with arc length. Over
+    four years the amplitude is recovered to well under a percent, where over ten
+    days it is not recovered at all -- so the short-arc result is a statement
+    about the arc, not a blanket refusal to report."""
+    ephem = get_ephem(CACHE)
+    short = run_from_vector_with_initial_guess(
+        ephem, _seed(_STATE), _build_arc(arc_days=10.0, n=10), 100, _BIT["A2"]
+    )
+    long = run_from_vector_with_initial_guess(
+        ephem, _seed(_STATE), _build_arc(arc_days=4 * 365.0, n=36), 100, _BIT["A2"]
+    )
+    assert short.flag == 0 and long.flag == 0
+    # The long arc recovers the injected amplitude; the short one does not.
+    assert abs(long.a2 - _TRUE_A2) < 0.01 * abs(_TRUE_A2)
+    assert abs(short.a2 - _TRUE_A2) > abs(_TRUE_A2)
+    # And says so: five orders of magnitude between the two formal errors.
+    assert long.a2_unc < 1e-5 * short.a2_unc
 
 
 def _build_arc_array(arc_days=4 * 365.0, n=36, a123=(0.0, _TRUE_A2, 0.0)):
@@ -337,15 +368,17 @@ def test_orbitfit_default_schema_unchanged():
     assert fit[0]["flag"] == 0
 
 
-def test_orbitfit_driver_short_arc_reports_a2_nan():
-    """Through the driver, a short arc that cannot constrain A2 falls back to the
-    6-parameter solution: flag is success, the state is still recovered, and a2 is
-    reported as NaN (not a contaminated value)."""
+def test_orbitfit_driver_short_arc_reports_an_uninformative_a2():
+    """Through the driver, a short arc that cannot constrain A2 still reports one,
+    with an uncertainty that shows it is not a detection. The state is unaffected:
+    the point of the earlier NaN was to protect the caller from a contaminated
+    orbit, and the orbit is still clean."""
     data, guess = _build_arc_array(arc_days=10.0, n=10)
     fit = orbitfit(data, cache_dir=CACHE, initial_guess=guess, fit_nongrav=True)
     row = fit[0]
-    assert row["flag"] == 0  # 6-parameter fallback succeeded
-    assert np.isnan(row["a2"]) and np.isnan(row["a2_unc"])
+    assert row["flag"] == 0
+    assert np.isfinite(row["a2"]) and np.isfinite(row["a2_unc"])
+    assert row["a2_unc"] > 1e3 * abs(row["a2"])
     # The fallback state is the clean 6-parameter orbit, still near truth.
     state = np.array([row["x"], row["y"], row["z"], row["xdot"], row["ydot"], row["zdot"]])
     pos_rel = np.linalg.norm(state[:3] - _STATE[:3]) / np.linalg.norm(_STATE[:3])
