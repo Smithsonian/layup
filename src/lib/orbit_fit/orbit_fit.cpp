@@ -93,6 +93,10 @@ namespace orbit_fit
     // short arcs) and the fit is reported as weakly constrained (flag = 6).
     static constexpr double WEAK_NONGRAV_RCOND = 1e-8;
 
+    // Placeholder amplitude (au/day^2) used to keep a non-grav parameter's column
+    // non-degenerate when its seed is zero; see the seeding loop in orbit_fit.
+    static constexpr double NONGRAV_SEED_PLACEHOLDER = 1e-20;
+
     // Arcseconds per radian (180*3600/pi). Converts astrometric/rate
     // uncertainties from arcseconds to radians and scales residuals for display.
     static constexpr double ARCSEC_PER_RAD = 206265.0;
@@ -1103,8 +1107,13 @@ namespace orbit_fit
         // active[] holds the param indices (0=A1,1=A2,2=A3) in column order. ASSIST
         // skips the non-grav block when A1=A2=A3=0, which would zero the param
         // columns; seed each active param with a tiny nonzero value so its column
-        // is non-degenerate (the partial is independent of the param's magnitude,
-        // and 1e-15 au/day^2 is dynamically negligible).
+        // is non-degenerate. The partial does not depend on the seed's magnitude,
+        // so the seed only has to be small enough to be dynamically irrelevant.
+        // It was 1e-15 au/day^2, which is not: real Yarkovsky amplitudes are of
+        // that order, so on a long arc with precise data the placeholder is a
+        // sizeable fraction of the signal. On (6489) Golevka it is 6% of the true
+        // A2 and raises the starting chi-square from 12,888 to 138,416 before the
+        // first iteration. 1e-20 restores the gravity-only chi-square exactly.
         std::vector<int> active;
         for (int i = 0; i < 3; i++)
             if (nongrav_mask & (1 << i))
@@ -1129,9 +1138,9 @@ namespace orbit_fit
         for (int k = 0; k < nactive; k++)
         {
             if (a123[active[k]] == 0.0)
-                a123[active[k]] = 1e-15;
+                a123[active[k]] = NONGRAV_SEED_PLACEHOLDER;
             if (per_arc && a123b[active[k]] == 0.0)
-                a123b[active[k]] = 1e-15;
+                a123b[active[k]] = NONGRAV_SEED_PLACEHOLDER;
         }
 
         // #419 sequential update: snapshot the prior mean x0 (= the seed state)
