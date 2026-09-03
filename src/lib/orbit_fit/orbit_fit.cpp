@@ -156,34 +156,64 @@ namespace orbit_fit
         double aoy = this_det.observer_acceleration[1];
         double aoz = this_det.observer_acceleration[2];
 
-        // Up-leg light time: iterate tau_u with the station at the transmit
-        // time t_obs - (tau_d + tau_u), Taylor-extrapolated from the receive
-        // epoch. rho is the converged down-leg distance from the caller.
+        // Up-leg light time. rho is the converged down-leg distance from the
+        // caller. Two ways to place the transmitting station:
+        //
+        //   supplied (issue #528): the caller evaluated the transmitting antenna
+        //   at the transmit epoch, t_receive - tau, and passed its state. Exact,
+        //   and correct for a bistatic measurement, where the transmitter is not
+        //   the antenna that received. Feeding a bistatic row through the
+        //   fallback below is a large error: on (6489) Golevka the modelled
+        //   Doppler is wrong by ~125 sigma per point, and all 20 of its bistatic
+        //   rows are Doppler-only.
+        //
+        //   fallback: Taylor-extrapolate the receive station back by the round
+        //   trip. Correct only when TX == RX, and truncated -- the neglected
+        //   velocity term is 2.2e-3 m/s over Golevka's ~47 s round trip.
+        //
+        // Either way rtx_* holds the transmit-time station position, which the
+        // up leg's Shapiro term below needs.
         double tau_d = g.rho / SPEED_OF_LIGHT;
         double tau_u = tau_d;
         double rhu_x = g.rho_x, rhu_y = g.rho_y, rhu_z = g.rho_z, rho_u = g.rho;
-        // Kept outside the loop: the converged transmit-time station position is
-        // needed again below for the up leg's Shapiro term.
         double rtx_x = xe, rtx_y = ye, rtx_z = ze;
-        for (int it = 0; it < 3; it++)
+        double vtx_x, vtx_y, vtx_z;
+        if (this_det.has_transmitter)
         {
-            double tau = tau_d + tau_u;
-            rtx_x = xe - vox * tau - 0.5 * aox * tau * tau;
-            rtx_y = ye - voy * tau - 0.5 * aoy * tau * tau;
-            rtx_z = ze - voz * tau - 0.5 * aoz * tau * tau;
+            rtx_x = this_det.transmitter_position[0];
+            rtx_y = this_det.transmitter_position[1];
+            rtx_z = this_det.transmitter_position[2];
             rhu_x = rbx - rtx_x;
             rhu_y = rby - rtx_y;
             rhu_z = rbz - rtx_z;
             rho_u = sqrt(rhu_x * rhu_x + rhu_y * rhu_y + rhu_z * rhu_z);
             tau_u = rho_u / SPEED_OF_LIGHT;
+            vtx_x = this_det.transmitter_velocity[0];
+            vtx_y = this_det.transmitter_velocity[1];
+            vtx_z = this_det.transmitter_velocity[2];
+        }
+        else
+        {
+            for (int it = 0; it < 3; it++)
+            {
+                double tau = tau_d + tau_u;
+                rtx_x = xe - vox * tau - 0.5 * aox * tau * tau;
+                rtx_y = ye - voy * tau - 0.5 * aoy * tau * tau;
+                rtx_z = ze - voz * tau - 0.5 * aoz * tau * tau;
+                rhu_x = rbx - rtx_x;
+                rhu_y = rby - rtx_y;
+                rhu_z = rbz - rtx_z;
+                rho_u = sqrt(rhu_x * rhu_x + rhu_y * rhu_y + rhu_z * rhu_z);
+                tau_u = rho_u / SPEED_OF_LIGHT;
+            }
+            const double tau = tau_d + tau_u;
+            vtx_x = vox - aox * tau; // station velocity at transmit
+            vtx_y = voy - aoy * tau;
+            vtx_z = voz - aoz * tau;
         }
         rhu_x /= rho_u; // up-leg unit vector (bounce -> transmit station)
         rhu_y /= rho_u;
         rhu_z /= rho_u;
-        double tau = tau_d + tau_u;
-        double vtx_x = vox - aox * tau; // station velocity at transmit
-        double vtx_y = voy - aoy * tau;
-        double vtx_z = voz - aoz * tau;
 
         double model_delay = tau_d + tau_u; // round-trip light time (days)
 

@@ -476,6 +476,13 @@ def _radar_observation(objID, d, epoch_jd, column_names):
     else:
         observer_acc = [0.0, 0.0, 0.0]
 
+    # Transmitting antenna at the transmit epoch (issue #528). When absent the
+    # C++ falls back to extrapolating the receive station, as it did before.
+    tx_cols = ("txx", "txy", "txz", "txvx", "txvy", "txvz")
+    has_tx = all(c in column_names for c in tx_cols) and not np.isnan(d["txx"])
+    tx_pos = [float(d["txx"]), float(d["txy"]), float(d["txz"])] if has_tx else [0.0, 0.0, 0.0]
+    tx_vel = [float(d["txvx"]), float(d["txvy"]), float(d["txvz"])] if has_tx else [0.0, 0.0, 0.0]
+
     return Observation.from_radar_with_id(
         str(objID),
         delay_days,
@@ -488,6 +495,53 @@ def _radar_observation(objID, d, epoch_jd, column_names):
         delay_unc,
         doppler_unc,
         observer_acc,  # Barycentric observer acceleration (au/day^2)
+        tx_pos,  # Transmitting antenna state at the transmit epoch
+        tx_vel,
+        has_tx,
+    )
+
+
+def _append_transmitter_state(data, observatory):
+    """Append the transmitting antenna's state at the transmit epoch (issue #528).
+
+    Columns ``txx, txy, txz, txvx, txvy, txvz``. The radar up leg uses these
+    directly instead of extrapolating the receive station back to the transmit
+    time. That fixes two things at once: the antenna is the one that actually
+    transmitted, which for a bistatic measurement is not the receiver, and the
+    Taylor truncation disappears.
+
+    The transmit epoch is ``t_receive - tau``. Rows carrying a delay give tau
+    from the observable. Rows without one -- Doppler-only, which is what all of
+    (6489) Golevka's bistatic observations are -- take tau interpolated from
+    this object's delay rows, which vary smoothly (46.5 to 47.2 s across its
+    1995 apparition). With no delay rows at all there is nothing to interpolate
+    from, so those rows are left without a transmitter state and the model falls
+    back to extrapolating.
+
+    The transmitting antenna is named by ``trx``, the ADES field for it, so a
+    dataset carrying ADES radar columns needs no renaming; ``stnTx`` is accepted
+    as an alias. Without either, the receiving station is used, which is the
+    monostatic case and leaves behaviour unchanged.
+    """
+    names = data.dtype.names
+    tx_col = "trx" if "trx" in names else ("stnTx" if "stnTx" in names else None)
+    if tx_col is None or "delay" not in names:
+        return data
+    has_delay = np.isfinite(data["delay"])
+    if not has_delay.any():
+        return data
+    order = np.argsort(data["et"][has_delay])
+    tau_s = np.interp(data["et"], data["et"][has_delay][order], (data["delay"][has_delay] * 1e-6)[order])
+    shifted = data.copy()
+    shifted["stn"] = np.array([str(t).strip() or str(v) for t, v in zip(data[tx_col], data["stn"])])
+    shifted["et"] = data["et"] - tau_s
+    pv = np.atleast_1d(observatory.obscodes_to_barycentric(shifted))
+    return rfn.append_fields(
+        data,
+        ["txx", "txy", "txz", "txvx", "txvy", "txvz"],
+        [pv["x"], pv["y"], pv["z"], pv["vx"], pv["vy"], pv["vz"]],
+        usemask=False,
+        asrecarray=True,
     )
 
 
@@ -1720,6 +1774,7 @@ def orbitfit(
     # columns are present so optical/streak fits are unaffected.
     if any(col in data.dtype.names for col in ("delay", "doppler")):
         data = _append_observer_acceleration(data, layup_observatory)
+        data = _append_transmitter_state(data, layup_observatory)
 
     bias_dict = None
     if debias:
