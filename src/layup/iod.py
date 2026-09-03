@@ -135,6 +135,16 @@ def _select_gauss_triplet(epochs, idx0, target_days=None):
     if n < 3:
         return None
     t = [float(epochs[i]) for i in idx0]
+    # Nothing to shorten. When the whole segment is already inside the target
+    # span the widest triplet is the best available, which is what
+    # first/middle/last takes anyway -- so this selection could only change the
+    # MIDDLE observation, which is not what it is for. On a short arc that is
+    # pure downside: the 3I/ATLAS fixture spans 19 days against a ~60 day
+    # target, both selections take the same outer pair, and moving the middle
+    # point alone shifted the epoch by 8 days and cost 1% in position on a
+    # weakly-constrained hyperbolic orbit. Defer to the caller's fallback.
+    if t[-1] - t[0] <= target_days:
+        return None
     best, cost = None, float("inf")
     for a in range(n - 2):
         # Nearest outer partner to the target span. t is time-ordered within a
