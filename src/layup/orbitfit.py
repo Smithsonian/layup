@@ -429,6 +429,15 @@ def _radar_observation(objID, d, epoch_jd, column_names):
     """Build a radar ``Observation`` from a row, converting JPL units to the
     fitter's internal units.
 
+    Monostatic only: an ``Observation`` carries a single station, used for both
+    the transmit and the receive leg. A bistatic measurement -- transmitted from
+    one antenna and received at another -- has no way to express its second site
+    here, and passing one silently evaluates the receive leg at the transmitting
+    antenna. On real Goldstone bistatic pairs that is a ~4% Doppler error, which
+    against a 0.1 Hz uncertainty is of order a hundred sigma. Filter such
+    observations out before fitting (see ISSUE_146_RADAR_DESIGN.md, where bistatic
+    is listed as a refinement).
+
     delay (us, round-trip) -> days; Doppler (Hz) -> round-trip range-rate
     (au/day) via the per-observation transmit frequency ``freqTx``. The
     barycentric observer position/velocity columns (x,y,z,vx,vy,vz) must already
