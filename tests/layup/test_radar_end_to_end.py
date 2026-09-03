@@ -17,7 +17,7 @@ actually uses -- exactly the consistency gap noted when the C++ and Python cores
 were validated separately. The orbit is the same ~2.6 AU main-belt object near
 opposition as the streak fixture (``tests/data/streak_synthetic.json``); the truth
 observables are an independent ASSIST propagation at the C++ light-time convention
-(``delay = 2 rho/c`` plus the Shapiro delay; ``doppler = 2 rho_hat . v_rel``).
+(``delay = 2 rho/c`` plus the Shapiro delay; ``doppler = c d(tau)/d(t_receive)``).
 
 Radar over a short single-station arc weakly constrains the plane-of-sky
 position, so -- as in real radar astrometry -- the fit *refines a prior orbit*:
@@ -135,7 +135,13 @@ def _radar_observables(ephem, true_state, epoch, obs_jd_tdb, r_obs, v_obs, a_obs
     )
 
     delay = tau_d + tau_u + shapiro
-    doppler = float(rho_hat_d @ (v_ast - v_obs)) + float(rho_hat_u @ (v_ast - v_tx))
+    # Round-trip range rate, carrying the same retardation denominators the fitter
+    # applies: the observable is c * d(tau)/d(t_receive), not the instantaneous sum
+    # of the two one-way range rates.
+    c = SPEED_OF_LIGHT
+    dt_bounce = (c + float(rho_hat_d @ v_obs)) / (c + float(rho_hat_d @ v_ast))
+    dt_transmit = dt_bounce * (c - float(rho_hat_u @ v_ast)) / (c - float(rho_hat_u @ v_tx))
+    doppler = c * (1.0 - dt_transmit)
     return delay, doppler
 
 
