@@ -18,6 +18,7 @@ test measure the difference between two models rather than the fitter's ability
 to recover an orbit. It is 1-2 us here against a stated 1 us uncertainty, on
 seven observations constraining six parameters, so the difference is not subtle.
 """
+
 import json
 from pathlib import Path
 
@@ -45,8 +46,12 @@ def state_at(true_state, epoch, t_target_jd):
     sim = rebound.Simulation()
     sim.t = epoch - JD_REF
     sim.add(
-        x=true_state[0], y=true_state[1], z=true_state[2],
-        vx=true_state[3], vy=true_state[4], vz=true_state[5],
+        x=true_state[0],
+        y=true_state[1],
+        z=true_state[2],
+        vx=true_state[3],
+        vy=true_state[4],
+        vz=true_state[5],
     )
     ax = assist.Extras(sim, ephem)
     sim.integrate(t_target_jd - JD_REF)
@@ -89,15 +94,16 @@ def radar_observables(true_state, epoch, obs_epoch, r_obs, v_obs):
     # trip, so a single evaluation at the receive epoch is ample.
     # At the C++ residual, integrate_light_time has left the simulation at the
     # emission (bounce) time, so the Sun is evaluated there and not at receive.
-    sun = ephem.get_particle(0, (obs_epoch - tau_d) - JD_REF)   # ASSIST_BODY_SUN
+    sun = ephem.get_particle(0, (obs_epoch - tau_d) - JD_REF)  # ASSIST_BODY_SUN
     S = np.array([sun.x, sun.y, sun.z])
-    GM_SUN = 2.9591220828559115e-4                    # au^3/day^2
+    GM_SUN = 2.9591220828559115e-4  # au^3/day^2
     k = 2.0 * GM_SUN / C_AU_DAY**3
     r_b = np.linalg.norm(r_ast - S)
     r_r = np.linalg.norm(r_obs - S)
     r_t = np.linalg.norm(r_tx - S)
-    shapiro = k * (np.log((r_t + r_b + rho_u) / (r_t + r_b - rho_u))
-                   + np.log((r_b + r_r + rho_d) / (r_b + r_r - rho_d)))
+    shapiro = k * (
+        np.log((r_t + r_b + rho_u) / (r_t + r_b - rho_u)) + np.log((r_b + r_r + rho_d) / (r_b + r_r - rho_d))
+    )
 
     delay = tau_d + tau_u + shapiro
     # Round-trip range rate with the same retardation denominators the fitter
@@ -118,8 +124,8 @@ def main():
 
     # 1-sigma uncertainties: realistic radar quality.
     # JPL delay ~ a few us round-trip; Doppler ~ sub-Hz. Convert to internal units.
-    delay_unc_days = 1.0e-6 / 86400.0       # 1 us in days
-    doppler_unc_audy = 1.0e-9                # ~ mm/s-level range-rate, au/day
+    delay_unc_days = 1.0e-6 / 86400.0  # 1 us in days
+    doppler_unc_audy = 1.0e-9  # ~ mm/s-level range-rate, au/day
 
     out = {
         "description": (
