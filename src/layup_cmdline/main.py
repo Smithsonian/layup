@@ -8,12 +8,11 @@ from importlib.metadata import distribution
 
 
 def find_layup_verbs():
-    """The verbs this installation provides, as a dict of name -> entry point.
+    """Return the verbs this installation provides, as a dict mapping verb name
+    to entry point.
 
-    Read from the installed package's own metadata. Do not go back to searching
-    PATH for executables named layup-<verb>: that ran whichever layup came first
-    on PATH, which on a machine with more than one installation was often not
-    the one the user meant.
+    The names come from the installed package's own metadata, so they are the
+    verbs belonging to this layup, not whichever ones happen to be first on PATH.
     """
     verbs = {}
     for ep in distribution("layup").entry_points:
