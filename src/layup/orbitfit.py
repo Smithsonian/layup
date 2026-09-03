@@ -1568,7 +1568,17 @@ def _orbitfit(
             if res_ng.flag == 0:
                 res = res_ng
             else:
-                logger.debug("Non-grav refinement did not converge; reporting non-grav params as NaN.")
+                # Not silent: the caller asked for a non-grav fit and is getting a
+                # gravity-only one, with the parameters reported as NaN and a flag
+                # of 0 that refers to the gravity fit. Name the flag the joint fit
+                # actually returned -- 6 is a weakly-constrained solution, not a
+                # failure to converge, and 2 is an acceptable-step fit rejected on
+                # chi-square.
+                logger.warning(
+                    "Non-grav refinement returned flag %d; keeping the 6-parameter "
+                    "solution and reporting the non-grav parameters as NaN.",
+                    res_ng.flag,
+                )
 
         # The non-grav refinement above can replace `res`, so take the check
         # verdicts from whatever is actually being returned.
