@@ -1,12 +1,14 @@
 """Generate tests/data/radar_synthetic.json for the radar (delay/Doppler) fit.
 
+Run from the repository root:  python tools/gen_radar_fixture.py
+
 Reuses the streak fixture's true orbit, epoch, and per-observation observer
 states, and computes the round-trip radar observables with the SAME light-time
 convention as the C++ model (predict.cpp::integrate_light_time iterates to the
 retarded time t_obs - rho/c):
 
     delay   = 2 * rho / c + Shapiro    round-trip light time, days
-    doppler = 2 * (rho_hat . v_rel)     round-trip range rate, au/day
+    doppler = c * d(tau)/d(t_receive)   round-trip range rate, au/day
 
 rho/v are evaluated at the retarded emission time; v_rel = v_ast - v_obs.
 
@@ -98,7 +100,14 @@ def radar_observables(true_state, epoch, obs_epoch, r_obs, v_obs):
                    + np.log((r_b + r_r + rho_d) / (r_b + r_r - rho_d)))
 
     delay = tau_d + tau_u + shapiro
-    doppler = float(rho_hat_d @ (v_ast - v_obs)) + float(rho_hat_u @ (v_ast - v_obs))
+    # Round-trip range rate with the same retardation denominators the fitter
+    # applies: the observable is c * d(tau)/d(t_receive), not the instantaneous
+    # sum of the two one-way range rates. Monostatic here, so the transmitting
+    # station is the receiving one, Taylor-extrapolated back to transmit.
+    v_tx = v_obs
+    dt_bounce = (C_AU_DAY + float(rho_hat_d @ v_obs)) / (C_AU_DAY + float(rho_hat_d @ v_ast))
+    dt_transmit = dt_bounce * (C_AU_DAY - float(rho_hat_u @ v_ast)) / (C_AU_DAY - float(rho_hat_u @ v_tx))
+    doppler = C_AU_DAY * (1.0 - dt_transmit)
     return delay, doppler
 
 

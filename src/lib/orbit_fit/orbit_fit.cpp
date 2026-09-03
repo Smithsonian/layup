@@ -252,11 +252,31 @@ namespace orbit_fit
             if (up > 0.0 && down > 0.0)
                 model_delay += two_gm_over_c3 * (log(up) + log(down));
         }
-        // Round-trip range rate: down leg uses the station velocity at receive,
-        // up leg at transmit.
-        double model_doppler =
-            (g.rho_x * (vax - vox) + g.rho_y * (vay - voy) + g.rho_z * (vaz - voz)) +
-            (rhu_x * (vax - vtx_x) + rhu_y * (vay - vtx_y) + rhu_z * (vaz - vtx_z));
+        // Round-trip range rate. The observable is c * d(tau)/d(t_receive), and
+        // differentiating the two implicit light-time equations leaves a
+        // retardation denominator on each leg:
+        //
+        //   dt_bounce   / dt_receive = (c + rho_down . v_receiver)
+        //                            / (c + rho_down . v_asteroid)
+        //   dt_transmit / dt_receive = dt_bounce/dt_receive
+        //                            * (c - rho_up . v_asteroid)
+        //                            / (c - rho_up . v_transmitter)
+        //   range rate               = c * (1 - dt_transmit/dt_receive)
+        //
+        // To first order this is the instantaneous sum of the two one-way range
+        // rates, which is what this model used to compute. The omitted term is a
+        // fractional error of order rho.v/c: small, but on (6489) Golevka's 1995
+        // apparition the line-of-sight rate reaches 6 km/s, making it 5 to 7 Hz
+        // against stated uncertainties of 0.09 to 0.40 Hz. The same denominator
+        // is already applied to the range partials below, as ltdenom.
+        double rd_v_ast = g.rho_x * vax + g.rho_y * vay + g.rho_z * vaz;
+        double rd_v_rcv = g.rho_x * vox + g.rho_y * voy + g.rho_z * voz;
+        double ru_v_ast = rhu_x * vax + rhu_y * vay + rhu_z * vaz;
+        double ru_v_tx = rhu_x * vtx_x + rhu_y * vtx_y + rhu_z * vtx_z;
+        double dt_bounce = (SPEED_OF_LIGHT + rd_v_rcv) / (SPEED_OF_LIGHT + rd_v_ast);
+        double dt_transmit =
+            dt_bounce * (SPEED_OF_LIGHT - ru_v_ast) / (SPEED_OF_LIGHT - ru_v_tx);
+        double model_doppler = SPEED_OF_LIGHT * (1.0 - dt_transmit);
         resid.delay_resid = rd.delay - model_delay;
         resid.doppler_resid = rd.doppler - model_doppler;
 
