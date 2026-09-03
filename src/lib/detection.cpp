@@ -121,11 +121,25 @@ namespace orbit_fit
         ObservationType observation_type;
         std::array<double, 3> observer_position;
         std::array<double, 3> observer_velocity;
-        // Barycentric observer acceleration (au/day^2). Only used by the radar
-        // two-leg light-time model, which Taylor-extrapolates the station state
-        // back to the signal transmit time (~one round-trip earlier). Defaults to
-        // zero, so it has no effect on optical/streak observations.
+        // Barycentric observer acceleration (au/day^2). Retained for the radar
+        // two-leg light-time model's fallback path, which Taylor-extrapolates the
+        // station state back to the signal transmit time. Defaults to zero, so it
+        // has no effect on optical/streak observations.
         std::array<double, 3> observer_acceleration{{0.0, 0.0, 0.0}};
+
+        // Barycentric state of the TRANSMITTING antenna AT THE TRANSMIT EPOCH
+        // (issue #528), so the up leg neither uses the wrong antenna nor
+        // extrapolates. For a bistatic measurement the transmitter is not the
+        // receiver: on (6489) Golevka that gives observed/model Doppler
+        // 1.039-1.044 against 0.999934 monostatic, ~125 sigma at a 0.11 Hz
+        // uncertainty. Evaluating rather than extrapolating also removes the
+        // truncation, measured at 2.2e-3 m/s in velocity over Golevka's ~47 s
+        // round trip. When has_transmitter is false the receive station is
+        // extrapolated instead, which is correct when TX == RX and is what the
+        // model did before.
+        std::array<double, 3> transmitter_position{{0.0, 0.0, 0.0}};
+        std::array<double, 3> transmitter_velocity{{0.0, 0.0, 0.0}};
+        bool has_transmitter{false};
 
         // Computed unit direction vector
         Eigen::Vector3d rho_hat;
@@ -301,12 +315,18 @@ namespace orbit_fit
                                               const std::array<double, 3> &obs_velocity,
                                               double delay_uncy = 1.0,
                                               double doppler_uncy = 1.0,
-                                              const std::array<double, 3> &obs_acceleration = {{0.0, 0.0, 0.0}})
+                                              const std::array<double, 3> &obs_acceleration = {{0.0, 0.0, 0.0}},
+                                              const std::array<double, 3> &tx_position = {{0.0, 0.0, 0.0}},
+                                              const std::array<double, 3> &tx_velocity = {{0.0, 0.0, 0.0}},
+                                              bool has_tx = false)
         {
             Observation obs = from_radar(delay, doppler, has_delay, has_doppler, epoch_val,
                                          obs_position, obs_velocity, delay_uncy, doppler_uncy,
                                          obs_acceleration);
             obs.objID = objID;
+            obs.transmitter_position = tx_position;
+            obs.transmitter_velocity = tx_velocity;
+            obs.has_transmitter = has_tx;
             return obs;
         }
     };
@@ -378,6 +398,9 @@ namespace orbit_fit
                         py::arg("epoch"), py::arg("observer_position"), py::arg("observer_velocity"),
                         py::arg("delay_unc") = 1.0, py::arg("doppler_unc") = 1.0,
                         py::arg("observer_acceleration") = std::array<double, 3>{{0.0, 0.0, 0.0}},
+                        py::arg("transmitter_position") = std::array<double, 3>{{0.0, 0.0, 0.0}},
+                        py::arg("transmitter_velocity") = std::array<double, 3>{{0.0, 0.0, 0.0}},
+                        py::arg("has_transmitter") = false,
                         "Construct a Radar observation (delay in days, doppler in au/day)")
             .def_readwrite("epoch", &Observation::epoch, "Observation epoch (as a double)")
             .def_readwrite("observation_type", &Observation::observation_type, "Variant holding the observation data")
