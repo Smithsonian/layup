@@ -883,7 +883,10 @@ namespace orbit_fit
         }
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> Bt = B.transpose();
-        C = Bt * W * B + lambda * eye; // This is where the extra term for LM is.
+        // Undamped normal matrix. It is still wanted for the covariance and for
+        // the non-grav conditioning check, but the Levenberg-Marquardt step below
+        // is taken from the Jacobian directly rather than from C.
+        C = Bt * W * B;
 
         grad = Bt * W * resid_v;
 
@@ -902,14 +905,41 @@ namespace orbit_fit
             grad += (*prior_info) * (*prior_dx);
         }
 
-        dX = C.colPivHouseholderQr().solve(-grad);
-        // An alternative looks like this.  It's probably less stable.
-        // Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> G = C.inverse();
-        // dX = -G * Bt * W * resid_v;
+        // Take the damped step from the weighted Jacobian, not from the normal
+        // matrix. Forming B^T W B squares the condition number, and for a joint
+        // state + non-grav fit that is the difference between a solvable system
+        // and an unsolvable one: on (6489) Golevka cond(sqrt(W) B) = 2.6e10
+        // becomes cond(B^T W B) = 9.2e19, past what double precision resolves.
+        // The solve then silently rank-truncates -- the three position components
+        // of dX come back as exactly zero -- and the non-grav amplitude never
+        // moves off its seed. Solving the equivalent damped least-squares problem
+        //     min || [ sqrt(W) B ; sqrt(lambda) I ] dX - [ -sqrt(W) r ; 0 ] ||
+        // by Householder QR gives the same step with the condition number
+        // unsquared. W is diagonal, so sqrt(W) is elementwise.
+        //
+        // A #419 sequential update carries a Gaussian prior whose information
+        // matrix Lambda0 = L L^T contributes L^T as further rows, with
+        // -L^T (x - x0) as their right-hand side; the normal equations of the
+        // augmented system are then exactly C + Lambda0 + lambda I and -grad.
+        const int n_aug = npar + (prior_info != nullptr ? npar : 0);
+        Eigen::MatrixXd A(total_rows + n_aug, npar);
+        Eigen::VectorXd rhs(total_rows + n_aug);
+        Eigen::VectorXd w_sqrt(total_rows);
+        for (int i = 0; i < total_rows; i++)
+            w_sqrt(i) = std::sqrt(W.coeff(i, i));
+        A.topRows(total_rows) = w_sqrt.asDiagonal() * B;
+        rhs.head(total_rows) = -(w_sqrt.asDiagonal() * resid_v);
+        A.middleRows(total_rows, npar) = std::sqrt(lambda) * eye;
+        rhs.segment(total_rows, npar).setZero();
+        if (prior_info != nullptr)
+        {
+            Eigen::MatrixXd L = Eigen::LLT<Eigen::MatrixXd>(*prior_info).matrixL();
+            A.bottomRows(npar) = L.transpose();
+            rhs.tail(npar) = -(L.transpose() * (*prior_dx));
+        }
+        dX = A.householderQr().solve(rhs);
 
         chi2 = resid_v.transpose() * W * resid_v;
-        // reset for inverse covariance
-        C -= lambda * eye;
     }
 
 
