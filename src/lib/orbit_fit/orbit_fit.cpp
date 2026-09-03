@@ -87,12 +87,6 @@ namespace py = pybind11;
 
 namespace orbit_fit
 {
-    // Minimum reciprocal condition number of the normal-matrix CORRELATION matrix
-    // for a non-grav (A2) fit to be considered well constrained (issue #351).
-    // Below this the A2 column is effectively collinear with the state (typical on
-    // short arcs) and the fit is reported as weakly constrained (flag = 6).
-    static constexpr double WEAK_NONGRAV_RCOND = 1e-8;
-
     // Placeholder amplitude (au/day^2) used to keep a non-grav parameter's column
     // non-degenerate when its seed is zero; see the seeding loop in orbit_fit.
     static constexpr double NONGRAV_SEED_PLACEHOLDER = 1e-20;
@@ -1323,31 +1317,37 @@ namespace orbit_fit
 
         cov = C.inverse();
 
-        // Weak-constraint guard for the non-grav fit (issue #351). On a short arc
-        // a non-grav column becomes nearly collinear with the state directions, so
-        // the joint solve yields garbage params and a contaminated state. Detect
-        // this via the conditioning of the CORRELATION matrix of the normal matrix
-        // C -- the raw rcond(C) is useless here because C mixes AU and AU/day^2
-        // scales, but the correlation matrix (C normalized by its diagonal) is
-        // unit-invariant and measures genuine collinearity. If it is near-singular,
-        // mark the fit weakly constrained (flag = 6) so the driver falls back to
-        // the 6-parameter solution and reports the non-grav params as NaN.
+        // Degeneracy guard for the non-grav fit (issue #351). Report the fit as
+        // weakly constrained (flag = 6), so the driver falls back to the
+        // six-parameter solution, only when the covariance cannot support an
+        // amplitude at all: a non-positive or non-finite variance means the
+        // inverse has lost that column.
+        //
+        // This used to reject on the conditioning of the whole npar x npar
+        // correlation matrix, which is not a statement about the non-grav column.
+        // A six-parameter orbit fit is itself strongly correlated, so the test was
+        // dominated by the orbit underneath: on (6489) Golevka the state block
+        // alone has rcond 2.6e-10, twenty-five times below the old 1e-8 threshold,
+        // while A2 correlates with the state at only 0.91 to 0.93. Radar tightens
+        // the state and lowers that rcond further, so adding seven radar
+        // observations to 2062 Aten's 980 optical ones turned a reported
+        // A2 = -14.96 +/- 1.70 into NaN. Better data made the fit be rejected.
+        //
+        // The concern the old test was standing in for -- a contaminated,
+        // over-confident amplitude -- was a symptom of the step being taken from
+        // the squared-condition normal matrix, and does not survive that fix. A
+        // ten-day arc now returns A2 with an uncertainty five million times its
+        // own value, which tells the caller exactly what it needs to know, and
+        // unlike a significance test it does not suppress a well-constrained null.
         if (nactive > 0 && flag == 0)
         {
-            Eigen::VectorXd diag = C.diagonal();
-            if ((diag.array() > 0.0).all())
+            for (int j = 6; j < npar; j++)
             {
-                Eigen::VectorXd s = diag.array().rsqrt(); // 1/sqrt(C_ii)
-                Eigen::MatrixXd R = s.asDiagonal() * C * s.asDiagonal();
-                Eigen::JacobiSVD<Eigen::MatrixXd> svd(R);
-                const Eigen::VectorXd &sv = svd.singularValues();
-                double rcond = sv(sv.size() - 1) / sv(0);
-                if (!(rcond >= WEAK_NONGRAV_RCOND)) // also catches NaN
+                if (!(cov(j, j) > 0.0) || !std::isfinite(cov(j, j)))
+                {
                     flag = 6;
-            }
-            else
-            {
-                flag = 6; // non-positive variance -> degenerate
+                    break;
+                }
             }
         }
 
