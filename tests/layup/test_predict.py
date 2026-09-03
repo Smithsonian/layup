@@ -15,7 +15,7 @@ from layup.predict import (
     layup_get_residual_vectors,
     layup_calculate_rates_and_geometry,
 )
-from layup.utilities.data_utilities_for_tests import get_test_filepath
+from layup.utilities.data_utilities_for_tests import get_test_filepath, layup_cli
 from layup.utilities.file_io.CSVReader import CSVDataReader
 
 
@@ -221,8 +221,7 @@ def test_predict_output(tmpdir):
     temp_out_file = f"test_output_{input_file.stem}"
 
     result = subprocess.run(
-        [
-            "layup",
+        layup_cli(
             "predict",
             str(input_file),
             "-f",
@@ -232,7 +231,7 @@ def test_predict_output(tmpdir):
             str(tmpdir),
             "-s",
             start,
-        ]
+        )
     )
 
     assert result.returncode == 0
@@ -292,8 +291,7 @@ def test_predict_output(tmpdir):
     # Testing the output of the sexagesimal conversion separately
 
     result = subprocess.run(
-        [
-            "layup",
+        layup_cli(
             "predict",
             str(input_file),
             "-f",
@@ -302,7 +300,7 @@ def test_predict_output(tmpdir):
             "-s",
             start,
             "-sg",
-        ]
+        )
     )
 
     assert result.returncode == 0
@@ -431,8 +429,7 @@ def test_get_onsky_data_output(tmpdir):
     temp_out_file = f"test_output_{input_file.stem}"
 
     result = subprocess.run(
-        [
-            "layup",
+        layup_cli(
             "predict",
             str(input_file),
             "-f",
@@ -443,7 +440,7 @@ def test_get_onsky_data_output(tmpdir):
             "-s",
             start,
             "-osd",
-        ]
+        )
     )
     assert result.returncode == 0
     result_file = Path(f"{tmpdir}/{temp_out_file}.csv")

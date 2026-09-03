@@ -6,7 +6,7 @@ import rebound
 import numpy as np
 from numpy.testing import assert_allclose, assert_equal
 from layup.comet import _remove_spc, _assist_integrate, _direction_of_integration, _apply_comet, comet_cli
-from layup.utilities.data_utilities_for_tests import get_test_filepath
+from layup.utilities.data_utilities_for_tests import get_test_filepath, layup_cli
 from layup.utilities.file_io.CSVReader import CSVDataReader
 import pandas as pd
 import assist
@@ -214,7 +214,7 @@ def test_comet_output(tmpdir):
     # The demo comet fixture is keyed by ObjID; comet's -pid now defaults to
     # provID (CLI-consistency), so pass -pid ObjID explicitly.
     result = subprocess.run(
-        ["layup", "comet", str(input_file), "-f", "--stem", str(temp_out_file), "-pid", "ObjID"]
+        layup_cli("comet", str(input_file), "-f", "--stem", str(temp_out_file), "-pid", "ObjID")
     )
 
     assert result.returncode == 0

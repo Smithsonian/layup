@@ -1,8 +1,6 @@
 import argparse
-import subprocess
 import sys
-import shutil
-import os
+from importlib.metadata import distribution
 
 #
 # Generic verb dispatcher code
@@ -10,14 +8,17 @@ import os
 
 
 def find_layup_verbs():
-    """Find available layup commands in the system's PATH."""
-    layup_verbs = []
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        if os.path.isdir(directory):
-            for item in os.listdir(directory):
-                if item.startswith("layup-") and os.access(os.path.join(directory, item), os.X_OK):
-                    layup_verbs.append(item[len("layup-") :])
-    return sorted(set(layup_verbs))
+    """Return the verbs this installation provides, as a dict mapping verb name
+    to entry point.
+
+    The names come from the installed package's own metadata, so they are the
+    verbs belonging to this layup, not whichever ones happen to be first on PATH.
+    """
+    verbs = {}
+    for ep in distribution("layup").entry_points:
+        if ep.group == "console_scripts" and ep.name.startswith("layup-"):
+            verbs[ep.name[len("layup-") :]] = ep
+    return verbs
 
 
 def main():
@@ -58,7 +59,7 @@ def main():
         action="store_true",
     )
 
-    parser.add_argument("verb", nargs="?", choices=available_verbs, help="Verb to execute")
+    parser.add_argument("verb", nargs="?", choices=sorted(available_verbs), help="Verb to execute")
     parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments for the verb")
 
     args = parser.parse_args()
@@ -75,21 +76,27 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    # Construct the full command name
     utility = f"layup-{args.verb}"
-
-    # Ensure the command is available
-    if not shutil.which(utility):
+    entry = available_verbs.get(args.verb)
+    if entry is None:
         print(f"Error: '{utility}' is not available.")
         sys.exit(1)
 
-    # Execute the command with the remaining arguments
+    # Run the verb in this process. Nothing is resolved by name, so the verb
+    # that runs is always the one belonging to this installation.
+    verb_main = entry.load()
+    argv = sys.argv
+    sys.argv = [utility, *args.args]
     try:
-        result = subprocess.run([utility] + args.args, check=True)
-        sys.exit(result.returncode)
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Command '{utility}' failed with exit code {e.returncode}.")
-        sys.exit(e.returncode)
+        code = verb_main()
+    except SystemExit as exc:  # the verbs exit on their own error paths
+        code = exc.code
+    finally:
+        sys.argv = argv
+    if code not in (0, None):
+        print(f"Error: Command '{utility}' failed with exit code {code}.")
+        sys.exit(code)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
