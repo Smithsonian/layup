@@ -152,8 +152,8 @@ class Obs80DataReader(ObjectDataReader):
             ("mag", "f4"),
             ("filt", "U1"),
             ("stn", "U3"),
-            ("cat", "U1"),
-            ("prg", "U1"),
+            ("astCat", "U1"),
+            ("program", "U1"),
             ("sys", "U7"),
             ("ctr", "i4"),
             ("pos1", "f8"),
@@ -165,13 +165,13 @@ class Obs80DataReader(ObjectDataReader):
         self.col_names = {
             "ObjID": slice(0, 5),
             "provID": slice(5, 12),
-            "prg": slice(13, 14),
+            "program": slice(13, 14),
             "obsTime": slice(15, 32),
             "ra": slice(32, 44),
             "dec": slice(44, 56),
             "mag": slice(65, 70),
             "filt": slice(70, 71),
-            "cat": slice(71, 72),
+            "astCat": slice(71, 72),
             "obs_code": slice(77, 80),
         }
 
@@ -441,13 +441,13 @@ class Obs80DataReader(ObjectDataReader):
         # Extract the relevant fields from the first mpc obs80 line.
         # obj_name = line[self.col_names["obj_name"]].strip()
         # prov_id = line[self.col_names["prov_id"]].strip()
-        prg = line[self.col_names["prg"]].strip()
+        prg = line[self.col_names["program"]].strip()
         obstime = line[self.col_names["obsTime"]].strip()
         ra = line[self.col_names["ra"]].strip()
         dec = line[self.col_names["dec"]].strip()
         mag = line[self.col_names["mag"]].strip()
         filt = line[self.col_names["filt"]].strip()
-        cat = line[self.col_names["cat"]].strip()
+        cat = line[self.col_names["astCat"]].strip()
         obs_code = line[self.col_names["obs_code"]].strip()
 
         # Use the object name as object ID if provided, otherwise use the provisional ID.
