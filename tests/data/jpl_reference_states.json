@@ -1,41 +1,41 @@
 {
-  "_comment_": "JPL Horizons reference state vectors for objects in 4_random_mpc_ADES_provIDs_no_sats.csv. Queried 2026-05-17 via the public Horizons API at the layup-recovered epochs (epoch values match exactly so the comparison is at one definite epoch). Frame: barycentric, ICRF (== layup's BCART_EQ default).  To regenerate: run orbitfit on each provID to get its epoch, then query https://ssd.jpl.nasa.gov/api/horizons.api with COMMAND=<provID>, CENTER='@0', REF_PLANE='FRAME', REF_SYSTEM='ICRF', VEC_TABLE='2', OUT_UNITS='AU-D'.",
-  "objects": {
-    "119839": {
-      "_name_": "2002 CX17",
-      "epoch_jd_tdb": 2459546.75963587081,
-      "state_au_au_per_day": [
-        1.344744268651191,
-        2.442670284100593,
-        1.527065730993102,
-        -8.398959551991471e-03,
-        3.798491654270669e-03,
-        1.566943188232538e-03
-      ]
-    },
-    "742428": {
-      "_name_": "2007 TC75",
-      "epoch_jd_tdb": 2459533.7747232849,
-      "state_au_au_per_day": [
-        1.029054061740359,
-        1.662285121153878,
-        9.235029075529506e-01,
-        -1.101126322972753e-02,
-        5.383237535305223e-03,
-        4.062708891212091e-03
-      ]
-    },
-    "609631": {
-      "_name_": "2005 HE12",
-      "epoch_jd_tdb": 2460090.9466618486,
-      "state_au_au_per_day": [
-        -9.630481465458910e-01,
-        -1.785050165331816,
-        -6.814080563547801e-01,
-        1.054265385697093e-02,
-        -5.789403538867055e-03,
-        -2.494890808728241e-03
-      ]
-    }
+ "_comment_": "JPL Horizons reference state vectors for objects in 4_random_mpc_ADES_provIDs_no_sats.csv. Queried 2026-05-17 via the public Horizons API at the layup-recovered epochs (epoch values match exactly so the comparison is at one definite epoch). Frame: barycentric, ICRF (== layup's BCART_EQ default).  To regenerate: run orbitfit on each provID to get its epoch, then query https://ssd.jpl.nasa.gov/api/horizons.api with COMMAND=<provID>, CENTER='@0', REF_PLANE='FRAME', REF_SYSTEM='ICRF', VEC_TABLE='2', OUT_UNITS='AU-D'.  Re-queried 2026-09-03 for 119839 and 742428 at their new layup epochs after the Gauss triplet selection changed (Smithsonian/layup#533): the fit epoch is the middle observation of the selected triplet, so choosing the triplet by time span moves it. 609631's epoch is unchanged. The states were verified against the fits before being stored -- both agree to a few parts in 1e7, so this is an epoch change, not a loosening of the comparison.",
+ "objects": {
+  "119839": {
+   "_name_": "2002 CX17",
+   "epoch_jd_tdb": 2459459.9744212776,
+   "state_au_au_per_day": [
+    2.01840284648861,
+    2.032411254352881,
+    1.339858830885253,
+    -0.007032096405864469,
+    0.00560532708973715,
+    0.002724960598481737
+   ]
+  },
+  "742428": {
+   "_name_": "2007 TC75",
+   "epoch_jd_tdb": 2459522.3254785473,
+   "state_au_au_per_day": [
+    1.153050560498404,
+    1.597502178654085,
+    0.8752459697410987,
+    -0.01064149746059688,
+    0.005930410024323772,
+    0.004364707744317529
+   ]
+  },
+  "609631": {
+   "_name_": "2005 HE12",
+   "epoch_jd_tdb": 2460090.9466618486,
+   "state_au_au_per_day": [
+    -0.963048146545891,
+    -1.785050165331816,
+    -0.6814080563547801,
+    0.01054265385697093,
+    -0.005789403538867055,
+    -0.002494890808728241
+   ]
   }
+ }
 }
