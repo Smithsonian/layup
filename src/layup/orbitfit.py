@@ -1651,8 +1651,8 @@ def orbitfit(
         The non-gravitational g(r) sublimation law as ``[alpha, nm, nn, nk, r0]`` in
         ASSIST's parameterization ``g(r) = alpha*(r/r0)^-nm*(1+(r/r0)^nn)^-nk``.
         Default (``None``) is the asteroidal inverse-square law ``(r/r0)^-2`` used by
-        Yarkovsky A2 fits; pass a cometary law (e.g. Marsden water-ice) to fit a
-        comet's non-gravs. Applies to any non-grav fit (explicit or ``"auto"``).
+        Yarkovsky A2 fits. For a comet, pass ``constants.MARSDEN_1973_GOFR``, the
+        standard water-ice law. Applies to any non-grav fit (explicit or ``"auto"``).
     per_arc : bool, optional
         Fit piecewise-constant *per-apparition* non-grav amplitudes (comet
         linkage). The state and ``g(r)`` are shared, but observations before the
