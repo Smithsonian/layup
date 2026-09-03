@@ -1,8 +1,10 @@
 
 [project]
 name = "layup"
+description = "Orbit fitting at LSST scale"
 license = {file = "LICENSE"}
 readme = "README.md"
+keywords = ["orbit determination", "astrometry", "asteroids", "solar system", "ephemeris"]
 authors = [
     { name = "Matthew Holman", email = "mholman@cfa.harvard.edu" }
 ]
@@ -13,6 +15,11 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dynamic = ["version"]
 requires-python = ">=3.11"
@@ -46,7 +53,10 @@ layup-demo = "layup_cmdline.demo:main"
 layup-unpack = "layup_cmdline.unpack:main"
 
 [project.urls]
+Homepage = "https://github.com/Smithsonian/layup"
+Documentation = "https://layup.readthedocs.io"
 "Source Code" = "https://github.com/Smithsonian/layup"
+Issues = "https://github.com/Smithsonian/layup/issues"
 
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
