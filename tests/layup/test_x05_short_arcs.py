@@ -1,30 +1,23 @@
-"""Inner-solar-system X05 arcs -- the regime a distant initial range misses.
+"""Inner-solar-system X05 short arcs -- the regime a distant initial range misses.
 
 These 55 arcs are Rubin-only astrometry (MPC obscode X05) for objects whose
 cold-start Gauss fit ran past a 420 s deadline and returned nothing. They are
-the cases an alternative initial-orbit method exists to cover. Published
-semi-major axes run from 2.10 to 3.93 au: 54 are main belt and one, K25N52C at
-3.93 au, sits in the Hilda region near the 3:2 resonance. The Herget prototype
-in #502 starts its range iteration at 40 au, a trans-Neptunian value, so this
-sample is the one that exercises that choice.
+the cases an alternative initial-orbit method exists to cover, and they are not
+specific to any one method: published semi-major axes run from 2.10 to 3.93 au,
+54 in the main belt and one, K25N52C at 3.93 au, in the Hilda region near the
+3:2 resonance. Any initial-orbit method whose starting range is trans-Neptunian
+-- the Herget prototype in #502 begins at 40 au -- has to reach down to this
+sample, so the fixture is what makes that choice measurable.
 
 The reference elements are MPCORB's. They are fitted to each object's full
 observation history rather than to these short arcs, so comparing against them
 is an external check and not a restatement of layup's own answer.
 
-Two things are deliberately *not* asserted:
-
-* **How many arcs converge.** Choosing the initial range is open work, and a
-  test that pinned today's count would fail on the improvement it exists to
-  encourage. The count is reported instead.
-* **The initial-orbit state itself.** It depends on the starting range, which
-  is exactly what is expected to change, so pinning it now would freeze a
-  number that is meant to move.
-
-This file carries the fixture and the checks that hold regardless of which
-initial-orbit method is used. The test that actually fits these arcs and
-compares against the published orbits belongs with the method itself, so it
-travels with the Herget work in #502 rather than sitting here skipped.
+What lives here is the fixture and the checks that hold whatever method is used:
+the arcs and the manifest have to agree, the sample has to stay in the regime
+that makes it interesting, and the arcs have to stay short. The test that fits
+these arcs and compares against the published orbits needs an initial-orbit
+method to exist, so it travels with that work rather than sitting here skipped.
 """
 
 import json
@@ -35,8 +28,8 @@ import pytest
 
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
-ARCS = Path(get_test_filepath("herget_x05.obs80"))
-MANIFEST = Path(get_test_filepath("herget_x05_truth.json"))
+ARCS = Path(get_test_filepath("x05_short_arcs.obs80"))
+MANIFEST = Path(get_test_filepath("x05_short_arcs_truth.json"))
 
 
 def arcs_by_object():
