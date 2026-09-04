@@ -34,8 +34,19 @@ import pytest
 
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 
-ARC_DIR = Path(get_test_filepath("herget_x05"))
+ARCS = Path(get_test_filepath("herget_x05.obs80"))
 MANIFEST = Path(get_test_filepath("herget_x05_truth.json"))
+
+
+def arcs_by_object():
+    """The arcs live in one obs80 file, split here on the packed designation
+    each line carries in columns 6-12. Keyed on the designation in the data
+    rather than on any filename, so a mislabelled line cannot hide."""
+    out = {}
+    for line in ARCS.read_text().splitlines():
+        if line.strip():
+            out.setdefault(line[5:12], []).append(line)
+    return out
 
 # Bounds on the published semi-major axes, wide enough to be a statement about
 # the sample rather than a restatement of its extremes (measured 2.10 to 3.93).
@@ -54,16 +65,19 @@ def manifest():
 def test_every_arc_has_reference_elements(manifest):
     """A fixture arc with no published orbit could not be checked against
     anything, so the pairing is verified rather than assumed."""
-    on_disk = {p.stem for p in ARC_DIR.glob("*.obs80")}
-    assert on_disk, f"no arcs found in {ARC_DIR}"
-    assert on_disk == set(manifest), (
+    arcs = arcs_by_object()
+    assert arcs, f"no arcs found in {ARCS}"
+    assert set(arcs) == set(manifest), (
         f"arcs and manifest disagree: "
-        f"{sorted(on_disk - set(manifest))} unlisted, "
-        f"{sorted(set(manifest) - on_disk)} missing"
+        f"{sorted(set(arcs) - set(manifest))} unlisted, "
+        f"{sorted(set(manifest) - set(arcs))} missing"
     )
     for obj, entry in manifest.items():
         assert entry["a"] is not None, f"{obj} has no reference semi-major axis"
-        assert entry["n_obs"] == sum(1 for _ in open(ARC_DIR / f"{obj}.obs80"))
+        assert entry["n_obs"] == len(arcs[obj]), (
+            f"{obj}: {len(arcs[obj])} lines in {ARCS.name}, "
+            f"manifest says {entry['n_obs']}"
+        )
 
 
 def test_the_sample_stays_in_the_inner_solar_system(manifest):
@@ -86,7 +100,7 @@ def test_the_arcs_are_short(manifest):
 
 @pytest.mark.skipif(
     os.environ.get("LAYUP_RUN_X05_FITS") != "1",
-    reason="fits 55 arcs; opt in with LAYUP_RUN_X05_FITS=1",
+    reason="LAYUP_RUN_X05_FITS is not 1; this fits 55 arcs, so it is opt-in",
 )
 def test_converged_fits_agree_with_the_published_orbits(manifest, tmp_path):
     """Whatever initial range is used, an arc that converges must reproduce the
@@ -94,7 +108,10 @@ def test_converged_fits_agree_with_the_published_orbits(manifest, tmp_path):
     from layup.iod import iod_methods
 
     if "herget" not in iod_methods():
-        pytest.skip("the herget IOD is not registered in this build")
+        pytest.skip(
+            "the herget IOD is not registered in this build, so there is nothing "
+            f"to exercise; registered methods are {sorted(iod_methods())}"
+        )
 
     import spiceypy as spice
     from numpy.lib import recfunctions as rfn
@@ -107,8 +124,14 @@ def test_converged_fits_agree_with_the_published_orbits(manifest, tmp_path):
     obsv = LayupObservatory()
     checked, converged = 0, []
 
+    all_rows = Obs80DataReader(str(ARCS)).read_rows()
+
     for obj, entry in sorted(manifest.items()):
-        rows = Obs80DataReader(str(ARC_DIR / f"{obj}.obs80")).read_rows()
+        rows = all_rows[all_rows["ObjID"] == obj]
+        assert len(rows) == entry["n_obs"], (
+            f"{obj}: reader returned {len(rows)} rows for a manifest {entry['n_obs']}; "
+            "obs80 lines and reader rows have diverged"
+        )
         et = np.array([spice.str2et(t) for t in rows["obsTime"]], dtype="<f8")
         d = rfn.append_fields(rows, "et", et, usemask=False, asrecarray=True)
         d = rfn.merge_arrays(
