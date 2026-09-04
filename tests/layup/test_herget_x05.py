@@ -21,12 +21,13 @@ Two things are deliberately *not* asserted:
   is exactly what is expected to change, so pinning it now would freeze a
   number that is meant to move.
 
-What is asserted is the part that must hold whatever the method does: an arc
-that converges has to land on the published orbit.
+This file carries the fixture and the checks that hold regardless of which
+initial-orbit method is used. The test that actually fits these arcs and
+compares against the published orbits belongs with the method itself, so it
+travels with the Herget work in #502 rather than sitting here skipped.
 """
 
 import json
-import os
 from pathlib import Path
 
 import numpy as np
@@ -96,65 +97,3 @@ def test_the_arcs_are_short(manifest):
     fixture would make the sample easier without anyone noticing."""
     n = np.array([e["n_obs"] for e in manifest.values()])
     assert n.max() <= 30, f"an arc has {n.max()} observations; these should be short"
-
-
-@pytest.mark.skipif(
-    os.environ.get("LAYUP_RUN_X05_FITS") != "1",
-    reason="LAYUP_RUN_X05_FITS is not 1; this fits 55 arcs, so it is opt-in",
-)
-def test_converged_fits_agree_with_the_published_orbits(manifest, tmp_path):
-    """Whatever initial range is used, an arc that converges must reproduce the
-    published orbit. Arcs that do not converge are counted, not failed."""
-    from layup.iod import iod_methods
-
-    if "herget" not in iod_methods():
-        pytest.skip(
-            "the herget IOD is not registered in this build, so there is nothing "
-            f"to exercise; registered methods are {sorted(iod_methods())}"
-        )
-
-    import spiceypy as spice
-    from numpy.lib import recfunctions as rfn
-
-    from layup.orbitfit import _orbitfit
-    from layup.utilities.data_processing_utilities import LayupObservatory
-    from layup.utilities.file_io.Obs80Reader import Obs80DataReader
-
-    GM = 2.9591220828559115e-4
-    obsv = LayupObservatory()
-    checked, converged = 0, []
-
-    all_rows = Obs80DataReader(str(ARCS)).read_rows()
-
-    for obj, entry in sorted(manifest.items()):
-        rows = all_rows[all_rows["ObjID"] == obj]
-        assert len(rows) == entry["n_obs"], (
-            f"{obj}: reader returned {len(rows)} rows for a manifest {entry['n_obs']}; "
-            "obs80 lines and reader rows have diverged"
-        )
-        et = np.array([spice.str2et(t) for t in rows["obsTime"]], dtype="<f8")
-        d = rfn.append_fields(rows, "et", et, usemask=False, asrecarray=True)
-        d = rfn.merge_arrays(
-            [d, obsv.obscodes_to_barycentric(d)], flatten=True, asrecarray=True, usemask=False
-        )
-        res = _orbitfit(d, primary_id_column_name="ObjID", iod="herget", engine="cartesian")[0]
-        checked += 1
-        if int(res["flag"]) != 0:
-            continue
-        state = np.array([res[k] for k in ("x", "y", "z", "xdot", "ydot", "zdot")], dtype=float)
-        energy = 0.5 * state[3:] @ state[3:] - GM / np.linalg.norm(state[:3])
-        if energy >= 0:
-            continue  # an unbound fit has no semi-major axis to compare
-        a_fit = -GM / (2 * energy)
-        da = abs(a_fit - entry["a"]) / entry["a"]
-        converged.append(da)
-        assert da < MAX_DA_OVER_A, (
-            f"{obj}: converged but a = {a_fit:.4f} against a published {entry['a']:.4f} "
-            f"(|da/a| = {da:.2e})"
-        )
-
-    assert converged, f"no arc converged out of {checked}; the method is not running"
-    print(
-        f"\n{len(converged)}/{checked} converged; "
-        f"median |da/a| = {np.median(converged):.2e}, worst = {max(converged):.2e}"
-    )
