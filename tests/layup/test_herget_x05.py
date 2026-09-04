@@ -48,6 +48,7 @@ def arcs_by_object():
             out.setdefault(line[5:12], []).append(line)
     return out
 
+
 # Bounds on the published semi-major axes, wide enough to be a statement about
 # the sample rather than a restatement of its extremes (measured 2.10 to 3.93).
 A_MIN, A_MAX = 1.5, 4.5
@@ -75,8 +76,7 @@ def test_every_arc_has_reference_elements(manifest):
     for obj, entry in manifest.items():
         assert entry["a"] is not None, f"{obj} has no reference semi-major axis"
         assert entry["n_obs"] == len(arcs[obj]), (
-            f"{obj}: {len(arcs[obj])} lines in {ARCS.name}, "
-            f"manifest says {entry['n_obs']}"
+            f"{obj}: {len(arcs[obj])} lines in {ARCS.name}, " f"manifest says {entry['n_obs']}"
         )
 
 
