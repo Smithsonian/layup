@@ -1523,7 +1523,7 @@ def _orbitfit(
         # Perform the orbit fitting
         outcome = FitOutcome()
         if initial_guess is None or initial_guess["flag"] != 0:
-            if iod.lower() in ["gauss", "auto"]:
+            if iod.lower() in ["gauss", "auto", "herget"]:
                 res = do_fit(
                     observations=observations,
                     seq=sequence,
@@ -1705,8 +1705,8 @@ def orbitfit(
         weighting for old comet apparitions (a row with a NaN/nonpositive value
         falls back to the default).
     iod : str
-        The IOD used to generate an initial guess orbit. Supports 'gauss'
-        and 'auto' (Gauss with BK-IOD fallback).
+        The IOD used to generate an initial guess orbit. Supports 'gauss',
+        'herget' and 'auto' (Gauss with BK-IOD fallback).
         Default is 'auto'.
     fit_nongrav : bool | str | iterable of str
         Which non-gravitational Marsden parameters to fit after the 6-parameter
