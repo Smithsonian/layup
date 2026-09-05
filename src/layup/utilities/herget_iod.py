@@ -6,12 +6,13 @@ from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 import assist
 import rebound
 from _layup_cpp._core import FitResult
-from layup.utilities.universal_kepler import universal_step
+from layup.utilities.universal_kepler import universal_step, KeplerConvergenceError
+from layup.constants import MU_SUN
 
 SPEED_OF_LIGHT_AU_DAY = 173.145
 
 
-def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations=100):
+def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations=100, initial_rho=2):
     """Runs the Herget method on a set of observations.
 
     Parameters
@@ -20,14 +21,14 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
         List of all the observations of the object
     seq : list[list]
         list of lists containing the indices of observations that are closely spaced in time
+    ephem : assist.ephem.Ephem object
+        the ephemeris data for running assist
     tolerance : float
         the maximum delta_rho residuals allowed; will continue to converge until the residuals are below this value
-    args : argparse.Namespace
-        The argparse object that was created when running from the CLI. Needed to instantiate assist simulations
-    aux : LayupConfigs.auxiliary object
-        Auxiliary Layup configs; needed to instantiate assist simulations
     max_iterations : int (optional, default: 100)
-        the maximum number of iterations before the fitting stops"""
+        the maximum number of iterations before the fitting stops
+    initial_rho : float (optional, default: 2.0)
+        The initial guess for the range (for both the first and nth observation)"""
     seq_lengths = [len(i) for i in seq]
     longest_i = np.argmax(seq_lengths)  # finds the sequence index with the most observations contained in it
     obs = np.array(observations)[seq[longest_i]]
@@ -37,14 +38,14 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
     obs_1 = obs[0]
     r_e_1 = obs_1.observer_position
     rho_hat_1 = np.array(obs_1.rho_hat)
-    rho_1 = 40  # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
+    rho_1 = initial_rho  # this is the magnitude of rho, direction given by rho_hat, initial guess is 2au
     t1 = obs_1.epoch
     r1 = r_e_1 + rho_1 * rho_hat_1
 
     obs_n = obs[-1]
     r_e_n = obs_n.observer_position
     rho_hat_n = np.array(obs_n.rho_hat)
-    rho_n = 40  # this is the magnitude of rho, direction given by rho_hat, initial guess is 40au
+    rho_n = initial_rho  # this is the magnitude of rho, direction given by rho_hat, initial guess is 2au
     tn = obs_n.epoch
     rn = r_e_n + rho_n * rho_hat_n
 
@@ -66,18 +67,28 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
             # print(observation.epoch)
 
         delta_rho1, delta_rhon, state_1 = find_drho(
-            obs, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat_n
+            obs, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations
         )
+        if abs(delta_rho1) > rho_1 / 2:
+            delta_rho1 = (abs(delta_rho1) / delta_rho1) * rho_1 / 2 # to prevent a runaway effect, cap delta_rho to half of rho
+        if abs(delta_rhon) > rho_n / 2:
+            delta_rhon = (abs(delta_rhon) / delta_rhon) * rho_n / 2
+        #print(delta_rho1, delta_rhon, state_1)
 
         # Update rho values
         rho_1 -= delta_rho1
         r1 = r_e_1 + rho_1 * np.array(rho_hat_1)
         rho_n -= delta_rhon
         rn = r_e_n + rho_n * np.array(rho_hat_n)
-        print(delta_rho1, delta_rhon)
-        # print(rho_1, rho_n)
+        
 
         iteration += 1
+    if iteration >= max_iterations:
+        return [] # if max_iterations is reached consider the IOD a failure, return empty list (will trigger flag 5)
+    
+    # After finding convergent orbit, restore observation epochs
+    for i, observation in enumerate(obs):
+        observation.epoch = epochs[i]
 
     state = state_1
     solution = FitResult()
@@ -85,7 +96,7 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
     solution.epoch = epochs[0]
     solution.method = "herget"
     solution.niter = iteration
-    solution.flag = 0  # Success flag
+    solution.flag = 0 # success flag
     solution.ndof = len(observations)
     solution.csq = 0.0
     solution.cov = [0.01] * 36
@@ -93,7 +104,7 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
     return [solution]
 
 
-def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat_n):
+def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations=100):
     """Find the adjustment to make to rho_1 and rho_n to make in order to reduce the residuals of the observations
 
     Parameters
@@ -110,14 +121,18 @@ def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat
         position vector at time tn
     tolerance : float
         the average value of delta_rho1 and delta_rhon at which the orbit is considered to have converged at
-    args : argparse.Namespace
-        The argparse object that was created when running from the CLI. Needed to instantiate assist simulations
-    aux : LayupConfigs.auxiliary object
-        Auxiliary Layup configs; needed to instantiate assist simulations
+    ephem : assist.ephem.Ephem object
+        the ephemeris data for running assist
+    rho_1 : float
+        the magnitude of rho at time t1
     rho_hat_1 : numpy array
         unit vector of rho at time t1
+    rho_n : float
+        the magnitude of rho at time tn
     rho_hat_n : numpy array
         unit vector of rho at time tn
+    max_iterations : int (optional, default: 100)
+        the maximum number of iterations before the velocity fitter stops
 
     Returns
     -------
@@ -130,15 +145,17 @@ def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat
     """
 
     # Find velocities at rho_1 and rho_n
-    [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance)
-    [var_vx1, var_vy1, var_vz1], _ = find_velocity(t1, tn, r1 + rho_hat_1, rn, tolerance)
+    [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance *rho_1/10, max_iterations)
+    [var_vx1, var_vy1, var_vz1], _ = find_velocity(t1, tn, r1 + rho_hat_1, rn, tolerance * rho_1/10, max_iterations)
 
     # Simulation setup
     sim = rebound.Simulation()
 
     sim.add(x=r1[0], y=r1[1], z=r1[2], vx=vx1, vy=vy1, vz=vz1)
     var = sim.add_variation(testparticle=0)
-    var.particles[0].xyz = rho_hat_1
+    print(rho_hat_1 *rho_1)
+    print(rho_hat_n *rho_n)
+    var.particles[0].xyz = rho_hat_1 
     var.particles[0].vxyz = np.array([var_vx1 - vx1, var_vy1 - vy1, var_vz1 - vz1])
 
     ex = assist.Extras(sim, ephem)
@@ -166,10 +183,9 @@ def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat
         a1[2 * i] = b[2 * i] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), A)
         a1[2 * i + 1] = b[2 * i + 1] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), D)
 
-    _, [var_vxn, var_vyn, var_vzn] = find_velocity(t1, tn, r1, rn + rho_hat_n, tolerance)
+    _, [var_vxn, var_vyn, var_vzn] = find_velocity(t1, tn, r1, rn + rho_hat_n, tolerance * rho_n/10, max_iterations)
 
     # Do the same for rho_n, set up simulation again
-    vxn, vyn, vzn = sim.particles[0].vxyz
     sim = rebound.Simulation()
     sim.add(x=rn[0], y=rn[1], z=rn[2], vx=vxn, vy=vyn, vz=vzn)
     var = sim.add_variation(testparticle=0)
@@ -215,7 +231,7 @@ def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_hat_1, rho_hat
     return delta_rho1, delta_rhon, [*r1, vx1, vy1, vz1]
 
 
-def find_velocity(t1, tn, r1, rn, tolerance):
+def find_velocity(t1, tn, r1, rn, tolerance, max_iterations=100):
     """Converge on a velocity which takes position r1 at time t1 to position rn at time tn.
     Uses the universal kepler stepper to integrate over time.
 
@@ -231,6 +247,9 @@ def find_velocity(t1, tn, r1, rn, tolerance):
         Position vector at time tn
     tolerance : float
         how closely the calculated rn value must lie within the correct value
+    max_iterations : int (optional, default: 100)
+        the maximum number of iterations before the velocity fitter stops
+
 
     Returns
     -------
@@ -250,8 +269,10 @@ def find_velocity(t1, tn, r1, rn, tolerance):
     state_n = [*rn + abs(tolerance) + 1, 0, 0, 0]
 
     # Find new values for vx, vy and vz in turn
-    while np.linalg.norm(state_n[:3] - rn) > tolerance:
+    iter = 0
+    while np.linalg.norm(state_n[:3] - rn) > tolerance and iter < max_iterations:
         state_1[3:], state_n = find_new_vel_with_universal_kepler(t1, tn, state_1, rn)
+        iter += 1
 
     return state_1[3:], state_n[3:]
 
@@ -288,12 +309,11 @@ def find_new_vel_with_universal_kepler(t1, tn, state_1, state_n):
 
     # Initialise variables
     dt = tn - t1
-    GMtotal = 0.0002963092748799319
 
     for i in range(3):
         variation = np.zeros(6)
         variation[i + 3] = 1  # we are varying vx, vy and vz by 1, once at a time
-        var_results = universal_step(GMtotal, dt, state_1, variation=variation)
+        var_results = universal_step(MU_SUN, dt, state_1, variation=variation)
 
         diff = find_mag_to_adjust(
             np.array(state_n[:3]),

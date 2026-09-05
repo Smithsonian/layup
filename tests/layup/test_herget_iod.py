@@ -1,4 +1,5 @@
 import os
+import pytest
 import numpy as np
 from numpy.lib import recfunctions as rfn
 from numpy.testing import assert_allclose, assert_equal
@@ -152,7 +153,7 @@ def test_find_drho(tmpdir):
     # call find_drho, check if it reduces the sum of the residuals
 
     delta_rho1, delta_rhon, state_1 = herget.find_drho(
-        observations, t_1, t_n, state_1[:3], r_n, 0.001, ephem, rho_hat_1, rho_hat_n
+        observations, t_1, t_n, state_1[:3], r_n, 0.001, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n
     )
 
     # Update rho values
@@ -192,14 +193,19 @@ def test_find_drho(tmpdir):
 
     assert sum_residuals_2 < sum_residuals_1
 
+# Testing the Herget method on a NEO, a TNO and an MBA respectively
+@pytest.mark.parametrize("input_filename, known_params", 
+                         [("2000DM8_ephem.csv", [-1.347056879947840E-01,  -2.504771109562541E-01,  -6.466721968427541E-01,   2.282262916092779E-02,  -1.003982441217503E-02,   4.713377602770403E-03]), 
+                          ("2000OK67_ephem.csv", [39.55820757262561, 5.655976721534595,2.754981653420371,-4.215749136290368e-04,2.526859896941292e-03,1.364363007123930e-03]), 
+                          ("1999RD50_ephem.csv", [-3.350179305305814E+00,   1.442932213387603E+00,   3.530458601733787E-01,  -3.205574758999479E-03,  -7.070988618487596E-03,  -3.007867002987624E-03])])
 
-def test_whole_herget_method(tmpdir):
+def test_whole_herget_method(tmpdir, input_filename, known_params):
     import subprocess
     from pathlib import Path
 
     os.chdir(tmpdir)
 
-    test_filename = "2000OK67_ephem.csv"
+    test_filename = input_filename
     input_file = Path(get_test_filepath(test_filename))
     temp_out_file = f"test_output_{input_file.stem}"
 
@@ -216,16 +222,7 @@ def test_whole_herget_method(tmpdir):
     output_data = output_csv_reader.read_rows()
 
     # "True" orbital parameters taken from JPL to compare
-    state_true = np.array(
-        [
-            39.55820757262561,
-            5.655976721534595,
-            2.754981653420371,
-            -4.215749136290368e-04,
-            2.526859896941292e-03,
-            1.364363007123930e-03,
-        ]
-    )
+    state_true = np.array(known_params)
 
     assert_allclose(
         [*state_true],
