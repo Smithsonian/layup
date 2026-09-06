@@ -37,8 +37,7 @@ from layup.utilities.universal_kepler import (
     stumpff_c,
     universal_step,
 )
-
-GM = 2.9591220828559104e-4  # AU^3/day^2, layup's MU_SUN
+from layup.constants import MU_SUN
 
 HERE = pathlib.Path(__file__).parent
 
@@ -48,7 +47,7 @@ HERE = pathlib.Path(__file__).parent
 # --------------------------------------------------------------------------
 
 
-def _state(a, e, gm=GM):
+def _state(a, e, gm=MU_SUN):
     """A planar state at aphelion for semimajor axis a and eccentricity e.
 
     At an apse u = r.v = 0, which makes the expected radial range trivially
@@ -77,13 +76,13 @@ STATES = {
 }
 
 
-def _hyperbolic_state(gm=GM):
+def _hyperbolic_state(gm=MU_SUN):
     r = 3.0
     v_esc = math.sqrt(2.0 * gm / r)
     return _tilted(np.array([r, 0.0, 0.0, 0.0, 1.6 * v_esc, 0.0]))
 
 
-def _period(state, gm=GM):
+def _period(state, gm=MU_SUN):
     r0 = np.linalg.norm(state[:3])
     alpha = 2.0 * gm / r0 - state[3:] @ state[3:]
     a = gm / alpha
@@ -197,8 +196,8 @@ def _propagate_via_elements(gm, dt, state):
 def test_state_matches_classical_elements(name, frac):
     state = STATES[name]
     dt = frac * _period(state)
-    got = universal_step(GM, dt, state).state
-    want = _propagate_via_elements(GM, dt, state)
+    got = universal_step(MU_SUN, dt, state).state
+    want = _propagate_via_elements(MU_SUN, dt, state)
     assert got == pytest.approx(want, rel=1e-11, abs=1e-13)
 
 
@@ -206,11 +205,11 @@ def test_state_matches_classical_elements(name, frac):
 def test_energy_and_angular_momentum_conserved(name):
     state = STATES[name]
     P = _period(state)
-    e0 = 0.5 * state[3:] @ state[3:] - GM / np.linalg.norm(state[:3])
+    e0 = 0.5 * state[3:] @ state[3:] - MU_SUN / np.linalg.norm(state[:3])
     h0 = np.cross(state[:3], state[3:])
     for frac in (0.13, 0.4, 0.87, 2.6):
-        s = universal_step(GM, frac * P, state).state
-        e1 = 0.5 * s[3:] @ s[3:] - GM / np.linalg.norm(s[:3])
+        s = universal_step(MU_SUN, frac * P, state).state
+        e1 = 0.5 * s[3:] @ s[3:] - MU_SUN / np.linalg.norm(s[:3])
         assert e1 == pytest.approx(e0, rel=1e-12)
         assert np.cross(s[:3], s[3:]) == pytest.approx(h0, rel=1e-12)
 
@@ -221,8 +220,8 @@ def test_round_trip(name):
     state = STATES[name]
     dt = 0.37 * _period(state)
     var = np.array([0.3, -0.2, 0.11, 1e-3, 2e-3, -5e-4])
-    fwd = universal_step(GM, dt, state, variation=var)
-    back = universal_step(GM, -dt, fwd.state, variation=fwd.variation)
+    fwd = universal_step(MU_SUN, dt, state, variation=var)
+    back = universal_step(MU_SUN, -dt, fwd.state, variation=fwd.variation)
     assert back.state == pytest.approx(state, rel=1e-11, abs=1e-13)
     assert back.variation == pytest.approx(var, rel=1e-9, abs=1e-13)
 
@@ -230,17 +229,17 @@ def test_round_trip(name):
 def test_hyperbolic_propagation():
     state = _hyperbolic_state()
     r0 = np.linalg.norm(state[:3])
-    alpha = 2.0 * GM / r0 - state[3:] @ state[3:]
+    alpha = 2.0 * MU_SUN / r0 - state[3:] @ state[3:]
     assert alpha < 0, "test state should be unbound"
-    e0 = 0.5 * state[3:] @ state[3:] - GM / r0
+    e0 = 0.5 * state[3:] @ state[3:] - MU_SUN / r0
     for dt in (-400.0, -20.0, 5.0, 200.0, 3000.0):
-        out = universal_step(GM, dt, state)
-        e1 = 0.5 * out.state[3:] @ out.state[3:] - GM / np.linalg.norm(out.state[:3])
+        out = universal_step(MU_SUN, dt, state)
+        e1 = 0.5 * out.state[3:] @ out.state[3:] - MU_SUN / np.linalg.norm(out.state[:3])
         assert e1 == pytest.approx(e0, rel=1e-11)
     # and it should come back
     dt = 1500.0
-    there = universal_step(GM, dt, state).state
-    back = universal_step(GM, -dt, there).state
+    there = universal_step(MU_SUN, dt, state).state
+    back = universal_step(MU_SUN, -dt, there).state
     assert back == pytest.approx(state, rel=1e-10, abs=1e-13)
 
 
@@ -249,15 +248,15 @@ def test_near_parabolic_branch_is_exercised():
     state = STATES["mainbelt"]
     r0 = np.linalg.norm(state[:3])
     dt = 0.1 * r0  # inside the branch
-    got = universal_step(GM, dt, state).state
-    want = _propagate_via_elements(GM, dt, state)
+    got = universal_step(MU_SUN, dt, state).state
+    want = _propagate_via_elements(MU_SUN, dt, state)
     assert got == pytest.approx(want, rel=1e-11, abs=1e-13)
 
 
 def test_zero_dt_is_identity():
     state = STATES["tno"]
     var = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    out = universal_step(GM, 0.0, state, variation=var)
+    out = universal_step(MU_SUN, 0.0, state, variation=var)
     assert out.state == pytest.approx(state, abs=1e-14)
     assert out.variation == pytest.approx(var, abs=1e-14)
 
@@ -285,8 +284,8 @@ def _fd_stm(gm, dt, state, rel=1e-7):
 def test_variational_matches_finite_differences(name, frac):
     state = STATES[name]
     dt = frac * _period(state)
-    analytic = state_transition_matrix(GM, dt, state)
-    numeric = _fd_stm(GM, dt, state)
+    analytic = state_transition_matrix(MU_SUN, dt, state)
+    numeric = _fd_stm(MU_SUN, dt, state)
     # Compare column-wise against that column's own magnitude: the position
     # and velocity blocks differ by many orders of magnitude, so a single
     # global tolerance would be meaningless.
@@ -298,8 +297,8 @@ def test_variational_matches_finite_differences(name, frac):
 def test_variational_matches_finite_differences_hyperbolic():
     state = _hyperbolic_state()
     for dt in (-300.0, 50.0, 900.0):
-        analytic = state_transition_matrix(GM, dt, state)
-        numeric = _fd_stm(GM, dt, state)
+        analytic = state_transition_matrix(MU_SUN, dt, state)
+        numeric = _fd_stm(MU_SUN, dt, state)
         for j in range(6):
             scale = max(np.max(np.abs(numeric[:, j])), 1e-12)
             assert np.max(np.abs(analytic[:, j] - numeric[:, j])) / scale < 2e-6
@@ -320,7 +319,7 @@ def test_stm_is_symplectic(name):
     state = STATES[name]
     J = np.block([[np.zeros((3, 3)), np.eye(3)], [-np.eye(3), np.zeros((3, 3))]])
     for frac in (0.11, 0.5, 1.7):
-        M = state_transition_matrix(GM, frac * _period(state), state)
+        M = state_transition_matrix(MU_SUN, frac * _period(state), state)
         floor = 20.0 * np.linalg.norm(M) ** 2 * np.finfo(float).eps
         assert M.T @ J @ M == pytest.approx(J, abs=floor)
         assert np.linalg.det(M) == pytest.approx(1.0, abs=max(1e-13, floor))
@@ -332,9 +331,9 @@ def test_variation_is_linear():
     dt = 0.3 * _period(state)
     a = np.array([0.5, -0.25, 0.1, 1e-4, -2e-4, 3e-5])
     b = np.array([-0.1, 0.4, 0.7, 5e-5, 1e-4, -1e-4])
-    va = universal_step(GM, dt, state, variation=a).variation
-    vb = universal_step(GM, dt, state, variation=b).variation
-    vab = universal_step(GM, dt, state, variation=2.0 * a - 3.0 * b).variation
+    va = universal_step(MU_SUN, dt, state, variation=a).variation
+    vb = universal_step(MU_SUN, dt, state, variation=b).variation
+    vab = universal_step(MU_SUN, dt, state, variation=2.0 * a - 3.0 * b).variation
     assert vab == pytest.approx(2.0 * va - 3.0 * vb, rel=1e-10, abs=1e-14)
 
 
@@ -352,8 +351,8 @@ def test_state_is_periodic_across_revolutions(n):
     """
     state = STATES["mainbelt"]
     P = _period(state)
-    ref = universal_step(GM, 0.3 * P, state)
-    got = universal_step(GM, (n + 0.3) * P, state)
+    ref = universal_step(MU_SUN, 0.3 * P, state)
+    got = universal_step(MU_SUN, (n + 0.3) * P, state)
     assert got.n_rev == n
     # Rounding in a single solve at large s accumulates with revolution
     # count: measured 2.7e-14 AU at n=1 rising to 6.2e-10 AU at n=40.
@@ -373,11 +372,11 @@ def test_variational_still_matches_fd_across_revolutions(n):
     """
     state = STATES["mainbelt"]
     dt = (n + 0.3) * _period(state)
-    analytic = state_transition_matrix(GM, dt, state)
+    analytic = state_transition_matrix(MU_SUN, dt, state)
     # Larger FD step than the single-revolution case: the STM grows with
     # revolution count (that is the point of this test), so the differencing
     # cancels more and a smaller step is noisier, not better.
-    numeric = _fd_stm(GM, dt, state, rel=1e-6)
+    numeric = _fd_stm(MU_SUN, dt, state, rel=1e-6)
     for j in range(6):
         scale = max(np.max(np.abs(numeric[:, j])), 1e-12)
         assert np.max(np.abs(analytic[:, j] - numeric[:, j])) / scale < 1e-5
@@ -388,7 +387,7 @@ def test_partials_grow_secularly_with_revolutions():
     reason a state-only multi-rev fix would have been wrong."""
     state = STATES["mainbelt"]
     P = _period(state)
-    norms = [np.linalg.norm(state_transition_matrix(GM, (n + 0.3) * P, state)) for n in (0, 1, 2, 5)]
+    norms = [np.linalg.norm(state_transition_matrix(MU_SUN, (n + 0.3) * P, state)) for n in (0, 1, 2, 5)]
     assert norms == sorted(norms), f"STM norm should increase with revolutions: {norms}"
     assert norms[-1] > 3.0 * norms[0]
 
@@ -461,14 +460,14 @@ def test_matches_c_within_one_period(c_universal_step, name, frac):
     dt = frac * _period(state)
     var = np.array([0.3, -0.2, 0.11, 1e-3, 2e-3, -5e-4])
 
-    flag, c_state, c_var = c_universal_step(GM, dt, state, var)
+    flag, c_state, c_var = c_universal_step(MU_SUN, dt, state, var)
     if flag != 0:
         # The C's absolute tolerance is unreachable for some orbits; that is
         # pinned by test_c_tolerance_fails_on_distant_orbits below, and there
         # is nothing to compare against here.
         pytest.skip(f"C did not converge for {name} at {frac}P (its own defect)")
 
-    py = universal_step(GM, dt, state, variation=var)
+    py = universal_step(MU_SUN, dt, state, variation=var)
     assert py.state == pytest.approx(c_state, rel=1e-11, abs=1e-13)
     assert py.variation == pytest.approx(c_var, rel=1e-9, abs=1e-13)
 
@@ -477,9 +476,9 @@ def test_matches_c_hyperbolic(c_universal_step):
     state = _hyperbolic_state()
     var = np.array([0.2, 0.1, -0.3, 1e-3, -1e-3, 2e-4])
     for dt in (-250.0, 40.0, 800.0):
-        flag, c_state, c_var = c_universal_step(GM, dt, state, var)
+        flag, c_state, c_var = c_universal_step(MU_SUN, dt, state, var)
         assert flag == 0
-        py = universal_step(GM, dt, state, variation=var)
+        py = universal_step(MU_SUN, dt, state, variation=var)
         assert py.state == pytest.approx(c_state, rel=1e-11, abs=1e-13)
         assert py.variation == pytest.approx(c_var, rel=1e-9, abs=1e-13)
 
@@ -501,13 +500,13 @@ def test_c_tolerance_fails_on_distant_orbits(c_universal_step):
         P = _period(state)
         for frac in fracs:
             dt = frac * P
-            flag, _, _ = c_universal_step(GM, dt, state, np.zeros(6))
+            flag, _, _ = c_universal_step(MU_SUN, dt, state, np.zeros(6))
             if flag != 0:
                 c_failures.append((name, frac))
                 if name in ("tno", "eccentric"):
                     distant_failures.append((name, frac))
             # the port must converge regardless
-            universal_step(GM, dt, state)
+            universal_step(MU_SUN, dt, state)
 
     assert c_failures, "expected the C to fail somewhere in this sweep"
     assert distant_failures, f"expected distant-orbit failures, got {c_failures}"
@@ -523,15 +522,15 @@ def test_c_is_wrong_past_one_period_and_the_port_is_not(c_universal_step):
     P = _period(state)
     var = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
-    ref = universal_step(GM, 0.3 * P, state).state
+    ref = universal_step(MU_SUN, 0.3 * P, state).state
     dt = 5.3 * P
-    flag, c_state, _ = c_universal_step(GM, dt, state, var)
+    flag, c_state, _ = c_universal_step(MU_SUN, dt, state, var)
 
     assert flag == 0, "the C reports success -- that is what makes it dangerous"
     c_err = np.linalg.norm(c_state[:3] - ref[:3])
     assert c_err > 10.0, f"expected the C to be far off, got {c_err} AU"
 
-    py = universal_step(GM, dt, state).state
+    py = universal_step(MU_SUN, dt, state).state
     assert py == pytest.approx(ref, rel=1e-9, abs=1e-11)
 
 
@@ -542,11 +541,11 @@ def test_c_is_wrong_past_one_period_and_the_port_is_not(c_universal_step):
 
 def test_rejects_bad_shapes():
     with pytest.raises(ValueError):
-        universal_step(GM, 1.0, np.zeros(5))
+        universal_step(MU_SUN, 1.0, np.zeros(5))
     with pytest.raises(ValueError):
-        universal_step(GM, 1.0, STATES["tno"], variation=np.zeros(3))
+        universal_step(MU_SUN, 1.0, STATES["tno"], variation=np.zeros(3))
 
 
 def test_rejects_zero_position():
     with pytest.raises(ValueError):
-        universal_step(GM, 1.0, np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0]))
+        universal_step(MU_SUN, 1.0, np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0]))
