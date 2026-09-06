@@ -7,9 +7,7 @@ import assist
 import rebound
 from _layup_cpp._core import FitResult
 from layup.utilities.universal_kepler import universal_step, KeplerConvergenceError
-from layup.constants import MU_SUN
-
-SPEED_OF_LIGHT_AU_DAY = 173.145
+from layup.constants import MU_SUN, SPEED_OF_LIGHT
 
 
 def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations=100, initial_rho=2):
@@ -63,7 +61,7 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
         # Light-time correct the observation times
         for i, observation in enumerate(obs):
             # print(observation.epoch)
-            observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT_AU_DAY)
+            observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT)
             # print(observation.epoch)
 
         delta_rho1, delta_rhon, state_1 = find_drho(
