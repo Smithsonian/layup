@@ -192,12 +192,46 @@ def test_find_drho(tmpdir):
 
     assert sum_residuals_2 < sum_residuals_1
 
-# Testing the Herget method on a NEO, a TNO and an MBA respectively
-@pytest.mark.parametrize("input_filename, known_params", 
-                         [("2000DM8_ephem.csv", [-1.347056879947840E-01,  -2.504771109562541E-01,  -6.466721968427541E-01,   2.282262916092779E-02,  -1.003982441217503E-02,   4.713377602770403E-03]), 
-                          ("2000OK67_ephem.csv", [39.55820757262561, 5.655976721534595,2.754981653420371,-4.215749136290368e-04,2.526859896941292e-03,1.364363007123930e-03]), 
-                          ("1999RD50_ephem.csv", [-3.350179305305814E+00,   1.442932213387603E+00,   3.530458601733787E-01,  -3.205574758999479E-03,  -7.070988618487596E-03,  -3.007867002987624E-03])])
 
+# Testing the Herget method on a NEO, a TNO and an MBA respectively
+@pytest.mark.parametrize(
+    "input_filename, known_params",
+    [
+        (
+            "2000DM8_ephem.csv",
+            [
+                -1.347056879947840e-01,
+                -2.504771109562541e-01,
+                -6.466721968427541e-01,
+                2.282262916092779e-02,
+                -1.003982441217503e-02,
+                4.713377602770403e-03,
+            ],
+        ),
+        (
+            "2000OK67_ephem.csv",
+            [
+                39.55820757262561,
+                5.655976721534595,
+                2.754981653420371,
+                -4.215749136290368e-04,
+                2.526859896941292e-03,
+                1.364363007123930e-03,
+            ],
+        ),
+        (
+            "1999RD50_ephem.csv",
+            [
+                -3.350179305305814e00,
+                1.442932213387603e00,
+                3.530458601733787e-01,
+                -3.205574758999479e-03,
+                -7.070988618487596e-03,
+                -3.007867002987624e-03,
+            ],
+        ),
+    ],
+)
 def test_all(tmpdir, input_filename, known_params):
     import subprocess
     from pathlib import Path
@@ -209,9 +243,9 @@ def test_all(tmpdir, input_filename, known_params):
     temp_out_file = f"test_output_{input_file.stem}"
     print(temp_out_file)
 
-    #result = subprocess.run(
+    # result = subprocess.run(
     #    ["layup", "orbitfit", str(input_file), "ADES_csv", "-f", "-o", str(temp_out_file), "-i", "herget"]
-    #)
+    # )
     class FakeCliArgs:
         def __init__(self, g=None):
             self.ar_data_file_path = None
@@ -221,8 +255,9 @@ def test_all(tmpdir, input_filename, known_params):
             self.debias = False
             self.weight_data = False
             self.g = g  # Command line argument for initial guesses file
-            self.output_orbit_format = 'BCART_EQ'
+            self.output_orbit_format = "BCART_EQ"
             self.iod = "herget"
+
     orbitfit_cli(
         input=input_file,
         input_file_format="ADES_csv",

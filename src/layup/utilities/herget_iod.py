@@ -68,22 +68,25 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
             obs, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations
         )
         if abs(delta_rho1) > rho_1 / 2:
-            delta_rho1 = (abs(delta_rho1) / delta_rho1) * rho_1 / 2 # to prevent a runaway effect, cap delta_rho to half of rho
+            delta_rho1 = (
+                (abs(delta_rho1) / delta_rho1) * rho_1 / 2
+            )  # to prevent a runaway effect, cap delta_rho to half of rho
         if abs(delta_rhon) > rho_n / 2:
             delta_rhon = (abs(delta_rhon) / delta_rhon) * rho_n / 2
-        #print(delta_rho1, delta_rhon, state_1)
+        # print(delta_rho1, delta_rhon, state_1)
 
         # Update rho values
         rho_1 -= delta_rho1
         r1 = r_e_1 + rho_1 * np.array(rho_hat_1)
         rho_n -= delta_rhon
         rn = r_e_n + rho_n * np.array(rho_hat_n)
-        
 
         iteration += 1
     if iteration >= max_iterations:
-        return [] # if max_iterations is reached consider the IOD a failure, return empty list (will trigger flag 5)
-    
+        return (
+            []
+        )  # if max_iterations is reached consider the IOD a failure, return empty list (will trigger flag 5)
+
     # After finding convergent orbit, restore observation epochs
     for i, observation in enumerate(obs):
         observation.epoch = epochs[i]
@@ -94,7 +97,7 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
     solution.epoch = epochs[0]
     solution.method = "herget"
     solution.niter = iteration
-    solution.flag = 0 # success flag
+    solution.flag = 0  # success flag
     solution.ndof = len(observations)
     solution.csq = 0.0
     solution.cov = [0.01] * 36
@@ -102,7 +105,9 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
     return [solution]
 
 
-def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations=100):
+def find_drho(
+    observations, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations=100
+):
     """Find the adjustment to make to rho_1 and rho_n to make in order to reduce the residuals of the observations
 
     Parameters
@@ -143,17 +148,19 @@ def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, 
     """
 
     # Find velocities at rho_1 and rho_n
-    [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance *rho_1/10, max_iterations)
-    [var_vx1, var_vy1, var_vz1], _ = find_velocity(t1, tn, r1 + rho_hat_1, rn, tolerance * rho_1/10, max_iterations)
+    [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance * rho_1 / 10, max_iterations)
+    [var_vx1, var_vy1, var_vz1], _ = find_velocity(
+        t1, tn, r1 + rho_hat_1, rn, tolerance * rho_1 / 10, max_iterations
+    )
 
     # Simulation setup
     sim = rebound.Simulation()
 
     sim.add(x=r1[0], y=r1[1], z=r1[2], vx=vx1, vy=vy1, vz=vz1)
     var = sim.add_variation(testparticle=0)
-    print(rho_hat_1 *rho_1)
-    print(rho_hat_n *rho_n)
-    var.particles[0].xyz = rho_hat_1 
+    print(rho_hat_1 * rho_1)
+    print(rho_hat_n * rho_n)
+    var.particles[0].xyz = rho_hat_1
     var.particles[0].vxyz = np.array([var_vx1 - vx1, var_vy1 - vy1, var_vz1 - vz1])
 
     ex = assist.Extras(sim, ephem)
@@ -181,7 +188,9 @@ def find_drho(observations, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, 
         a1[2 * i] = b[2 * i] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), A)
         a1[2 * i + 1] = b[2 * i + 1] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), D)
 
-    _, [var_vxn, var_vyn, var_vzn] = find_velocity(t1, tn, r1, rn + rho_hat_n, tolerance * rho_n/10, max_iterations)
+    _, [var_vxn, var_vyn, var_vzn] = find_velocity(
+        t1, tn, r1, rn + rho_hat_n, tolerance * rho_n / 10, max_iterations
+    )
 
     # Do the same for rho_n, set up simulation again
     sim = rebound.Simulation()
