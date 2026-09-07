@@ -124,7 +124,6 @@ def test_find_drho(tmpdir):
     state_1[3:], _ = herget.find_velocity(t_1, t_n, state_1[:3], r_n, 0.001)
 
     ephem, _, _ = build_ephem_and_mus()
-    print(dir(ephem))
     sim = rebound.Simulation()
     ex = assist.Extras(sim, ephem)
     sim.t = t_1 - ephem.jd_ref
@@ -243,9 +242,6 @@ def test_all(tmpdir, input_filename, known_params):
     temp_out_file = f"test_output_{input_file.stem}"
     print(temp_out_file)
 
-    # result = subprocess.run(
-    #    ["layup", "orbitfit", str(input_file), "ADES_csv", "-f", "-o", str(temp_out_file), "-i", "herget"]
-    # )
     class FakeCliArgs:
         def __init__(self, g=None):
             self.ar_data_file_path = None

@@ -60,9 +60,7 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
 
         # Light-time correct the observation times
         for i, observation in enumerate(obs):
-            # print(observation.epoch)
             observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT)
-            # print(observation.epoch)
 
         delta_rho1, delta_rhon, state_1 = find_drho(
             obs, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations
@@ -158,8 +156,6 @@ def find_drho(
 
     sim.add(x=r1[0], y=r1[1], z=r1[2], vx=vx1, vy=vy1, vz=vz1)
     var = sim.add_variation(testparticle=0)
-    print(rho_hat_1 * rho_1)
-    print(rho_hat_n * rho_n)
     var.particles[0].xyz = rho_hat_1
     var.particles[0].vxyz = np.array([var_vx1 - vx1, var_vy1 - vy1, var_vz1 - vz1])
 
