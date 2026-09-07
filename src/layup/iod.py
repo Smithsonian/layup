@@ -37,7 +37,9 @@ import math
 from typing import Callable, Optional, Sequence
 
 from layup.constants import GMtotal, SPEED_OF_LIGHT
-from layup.routines import FitResult, Observation, gauss
+from layup.routines import FitResult, Observation, gauss, get_ephem
+from layup.utilities.herget_iod import herget_with_assist
+from layup.orbit_maths import build_ephem_and_mus
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +201,24 @@ def gauss_iod(observations, seq):
 
 
 register_iod("gauss", gauss_iod)
+
+def herget_iod(observations, seq):
+    """Herget's method on all observations within the largest list in seq
+    
+    Iteratively corrects the range of two observations (nominally the 1st and nth) such that they are fit 
+    perfectly and the residuals are reasonably spread among the remaining obs"""
+    
+    ephem, _, _ = build_ephem_and_mus()
+    solns = herget_with_assist(observations, seq, ephem, tolerance=0.0001, max_iterations=100)
+    if solns == []:
+        solns = herget_with_assist(observations, seq, ephem, tolerance=0.0001, max_iterations=100, initial_rho=5)
+    if solns == []:
+        solns = herget_with_assist(observations, seq, ephem, tolerance=0.0001, max_iterations=100, initial_rho=40)
+
+    return solns
+
+
+register_iod("herget", herget_iod)
 
 
 # ----------------------------------------------------------------------- #
