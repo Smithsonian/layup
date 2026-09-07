@@ -182,7 +182,7 @@ def _apply_with_kwargs(func, data, kwargs):
     return func(data, **kwargs)
 
 
-def _run_pool(run_function, n_workers):
+def _run_pool(tuple_task_list, n_workers):
     """
     General function to run multi_processing.Pool .
     This function spawns (_MP_CONTEXT) a pool of n_workers and
@@ -192,7 +192,7 @@ def _run_pool(run_function, n_workers):
     Parameters
     -----------
 
-    run_function : list of (func, chunked_data, kwargs) tuples
+    tuple_task_list : list of (func, chunked_data, kwargs) tuples
         Arguments used for the _apply_with_kwargs function. Each tuple in list is for a
         parallel core/worker
     n_workers : int
@@ -205,8 +205,9 @@ def _run_pool(run_function, n_workers):
     """
     with _MP_CONTEXT.Pool(processes=n_workers, initializer=_init_worker) as pool:  # parallel across n_workers
         try:
-            # run the function with supplied kwargs
-            results = pool.starmap(_apply_with_kwargs, run_function)
+            # starmaps takes a function and an iterable parameter (in this casue the list)
+            # and iterates through all the chunked data. (each chunk is given a core)
+            results = pool.starmap(_apply_with_kwargs, tuple_task_list)
         except KeyboardInterrupt:
             # if keyboard interupt stop all processes
             pool.terminate()
@@ -251,9 +252,10 @@ def process_data(data, n_workers, func, **kwargs):
     # and end is the last index of the block + 1.
     blocks = [(i, min(i + block_size, len(data))) for i in range(0, len(data), block_size)]
 
-    run_function = [(func, data[start:end], kwargs) for start, end in blocks]
+    # creates a tuple of the function, chunked data and addionall args to be iterated over in the pool
+    tuple_task_list = [(func, data[start:end], kwargs) for start, end in blocks]
 
-    return _run_pool(run_function, n_workers)
+    return _run_pool(tuple_task_list, n_workers)
 
 
 def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
@@ -292,10 +294,10 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
     kwargs["primary_id_column_name"] = primary_id_column_name
     # list of pids
     pid_list = [data[data[primary_id_column_name] == id] for id in np.unique(data[primary_id_column_name])]
-    # tuple list of function and args used
-    run_function = [(func, pid_chunked_data, kwargs) for pid_chunked_data in pid_list]
+    # tuple list of function, data (pid chunked) and args used
+    tuple_task_list = [(func, pid_chunked_data, kwargs) for pid_chunked_data in pid_list]
 
-    return _run_pool(run_function, n_workers)
+    return _run_pool(tuple_task_list, n_workers)
 
 
 def get_cov_columns():
