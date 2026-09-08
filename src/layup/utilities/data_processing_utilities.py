@@ -171,6 +171,10 @@ def _init_worker():
     This removes signal error for the subprocesses that are parallised.
     Therefore the main process is the only thing in control of a keyboard error
     and terminates the subprocesses.
+
+    Copyright (c) Amethyst Reese
+    Licensed under the MIT License
+    Adapted from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
     """
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -188,6 +192,11 @@ def _run_pool(tuple_task_list, n_workers):
     This function spawns (_MP_CONTEXT) a pool of n_workers and
     runs arguements from run_function in _apply_with_kwargs.
     Code then returns the concatenated results from the workers.
+
+    Copyright (c) Amethyst Reese
+    Licensed under the MIT License
+    Adapted parts from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
+  
 
     Parameters
     -----------
