@@ -1,9 +1,9 @@
 Orbit fit status
 ========================================================================================
 
-Every fit that ``layup orbitfit`` produces reports its outcome in six columns: a
-single-value summary, ``flag``, and five columns that report the individual facts
-behind it.
+Every fit that ``layup orbitfit`` produces reports its outcome in seven columns: a
+single-value summary, ``flag``, a plain ``accepted`` predicate, and five columns
+that report the individual facts behind them.
 
 .. list-table::
    :header-rows: 1
@@ -11,6 +11,10 @@ behind it.
 
    * - Column
      - Meaning
+   * - ``accepted``
+     - ``1`` if the fit is usable: it converged and passed every check. The same
+       thing ``flag == 0`` says, as a predicate you can filter on without knowing
+       the flag values.
    * - ``flag``
      - Summary. ``0`` if and only if the fit converged and passed every check.
    * - ``converged``
@@ -23,7 +27,11 @@ behind it.
        the acceptance threshold.
    * - ``failed_cov``
      - ``1`` if the fit converged but its covariance is degenerate, or a variance is
-       non-positive.
+       non-positive. This check runs **only when non-gravitational parameters are
+       being fitted**, where it detects a non-gravitational term that has become
+       collinear with the state. A gravity-only fit is never marked here, so a
+       column of zeros does not mean the covariances were examined and found
+       sound.
    * - ``failed_physical``
      - ``1`` if the fit converged but describes an orbit no real object could occupy:
        its hyperbolic excess speed is implausibly large.
@@ -35,9 +43,9 @@ matches ``flag == 0``.
 Which column should I filter on?
 ----------------------------------------------------------------------------------------
 
-**For orbits you intend to use, filter on** ``flag == 0``. That is the summary, it
-means the fit converged and every check passed, and it is what the rest of ``layup``
-uses internally.
+**For orbits you intend to use, filter on** ``accepted == 1``, or equivalently
+``flag == 0``. Both mean the fit converged and every check passed, and ``flag == 0``
+is what the rest of ``layup`` uses internally.
 
 Read the other columns when you need to know *why* something was rejected — for
 triage, for diagnosing a survey's failure modes, or to accept fits that failed a
