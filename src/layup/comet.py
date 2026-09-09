@@ -16,9 +16,24 @@ from layup.utilities.data_processing_utilities import (
     resolve_num_workers,
 )
 
-# These are the maximum and minimum dates that the ASSIST ephemeris file allows for
+# Bounds of the ASSIST planetary ephemeris, outside which the integration falls
+# back to a pure REBOUND simulation. layup ships linux_p1550p2650.440, which
+# covers 1550-01-01 to 2650-01-01, i.e. MJD -112815 to 288952.
+#
+# The lower bound previously read -163545 (1411-02-09), 139 years EARLIER than the
+# file begins, so a backward integration kept calling ASSIST for 139 years outside
+# its coverage. That matters here: a near-parabolic comet takes of order a
+# thousand years to reach the 250 au reference distance, so backward integrations
+# reach the 1400s routinely. ASSIST's out-of-bounds interpolation leaves
+# current_state stale rather than raising, so the result is plausible numbers
+# rather than a failure.
+#
+# These should come from assist_ephem_time_bounds() rather than being hardcoded.
+# That entry point is in ASSIST main but not in any release -- the pinned
+# assist 1.2.3 exports neither the Python attribute nor the C symbol -- so the
+# constants stand until a release carries it.
 ASSIST_TIMEFRAME_MAX_MJD = 236455
-ASSIST_TIMEFRAME_MIN_MJD = -163545
+ASSIST_TIMEFRAME_MIN_MJD = -112815
 
 # Heliocentric distance (au) at which a comet's "original"/"future" barycentric
 # orbit is evaluated. Far enough from the Sun that planetary perturbations are

@@ -235,3 +235,15 @@ def test_comet_output(tmpdir):
     assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"], rtol=2e-4)
     assert np.allclose(output_data["d_ao"], known_data["d_ao"])
     assert np.allclose(output_data["e_ao"], known_data["e_ao"])
+
+
+def test_ephemeris_bounds_lie_within_the_shipped_ephemeris():
+    """The fallback guard must not permit calls outside the ASSIST planetary
+    ephemeris. layup ships linux_p1550p2650.440, covering MJD -112815 to 288952;
+    ASSIST's out-of-bounds interpolation returns stale state rather than raising,
+    so a guard that is too permissive fails silently."""
+    from layup.comet import ASSIST_TIMEFRAME_MAX_MJD, ASSIST_TIMEFRAME_MIN_MJD
+
+    EPHEM_FIRST_MJD, EPHEM_LAST_MJD = -112815, 288952
+    assert ASSIST_TIMEFRAME_MIN_MJD >= EPHEM_FIRST_MJD
+    assert ASSIST_TIMEFRAME_MAX_MJD <= EPHEM_LAST_MJD
