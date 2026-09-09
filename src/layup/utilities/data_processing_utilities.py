@@ -179,31 +179,31 @@ def _init_worker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def _apply_with_kwargs(func, data, kwargs):
+def _apply_func_with_kwargs(func, data, kwargs):
     """
-    For mulitprocessing to supply correct args and chuncked data across cores.
+    Utility function that unpacks the tuple to run the function and
+    kwargs.
     """
     return func(data, **kwargs)
 
 
 def _run_pool(tuple_task_list, n_workers):
     """
-    General function to run multi_processing.Pool .
+    General function to run multi_processing.Pool.
     This function spawns (_MP_CONTEXT) a pool of n_workers and
-    runs arguements from run_function in _apply_with_kwargs.
-    Code then returns the concatenated results from the workers.
+    uses pool.starmap to iterate through the list of tuples in tuple_task_list for function
+    _apply_with_kwargs. Code then returns the concatenated results from the workers.
 
     Copyright (c) Amethyst Reese
     Licensed under the MIT License
     Adapted parts from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
-  
+
 
     Parameters
     -----------
 
     tuple_task_list : list of (func, chunked_data, kwargs) tuples
-        Arguments used for the _apply_with_kwargs function. Each tuple in list is for a
-        parallel core/worker
+        list of tuples containing arguments used for the _apply_with_kwargs function.
     n_workers : int
         Number of workers/cores used.
 
@@ -216,7 +216,7 @@ def _run_pool(tuple_task_list, n_workers):
         try:
             # starmaps takes a function and an iterable parameter (in this casue the list)
             # and iterates through all the chunked data. (each chunk is given a core)
-            results = pool.starmap(_apply_with_kwargs, tuple_task_list)
+            results = pool.starmap(_apply_func_with_kwargs, tuple_task_list)
         except KeyboardInterrupt:
             # if keyboard interupt stop all processes
             pool.terminate()
