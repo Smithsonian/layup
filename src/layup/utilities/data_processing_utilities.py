@@ -2,7 +2,6 @@ import gzip
 import json
 import logging
 import multiprocessing
-from multiprocessing import Pool
 import os
 import sys
 import signal
