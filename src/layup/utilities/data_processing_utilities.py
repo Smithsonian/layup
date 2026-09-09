@@ -215,13 +215,13 @@ def _run_pool(tuple_task_list, n_workers):
         try:
             # starmaps takes a function and an iterable parameter (in this casue the list)
             # and iterates through all the chunked data. (each chunk is given a core)
-            results = pool.starmap(_apply_func_with_kwargs, tuple_task_list)
+            results = pool.starmap(_apply_func_with_kwargs, tuple_task_list, chunksize=1)
         except KeyboardInterrupt:
             # if keyboard interupt stop all processes
             pool.terminate()
             pool.join()
             logger.error("Processing canceled due to keyboard exit.")
-            sys.exit("Processing canceled due to keyboard exit.")
+            raise
         else:
             pool.close()
             pool.join()
