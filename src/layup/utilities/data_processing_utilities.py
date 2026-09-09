@@ -3,8 +3,9 @@ import json
 import logging
 import multiprocessing
 import os
+import sys
+import signal
 import tempfile
-from concurrent.futures import ProcessPoolExecutor
 from importlib.resources import files
 
 import numpy as np
@@ -164,6 +165,69 @@ def write_fallback_obscodes():
     return dest
 
 
+def _init_worker():
+    """
+    This removes signal error for the subprocesses that are parallised.
+    Therefore the main process is the only thing in control of a keyboard error
+    and terminates the subprocesses.
+
+    Copyright (c) Amethyst Reese
+    Licensed under the MIT License
+    Adapted from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
+    """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def _apply_func_with_kwargs(func, data, kwargs):
+    """
+    Utility function that unpacks the tuple to run the function and
+    kwargs.
+    """
+    return func(data, **kwargs)
+
+
+def _run_pool(tuple_task_list, n_workers):
+    """
+    General function to run multi_processing.Pool.
+    This function spawns (_MP_CONTEXT) a pool of n_workers and
+    uses pool.starmap to iterate through the list of tuples in tuple_task_list for function
+    _apply_with_kwargs. Code then returns the concatenated results from the workers.
+
+    Copyright (c) Amethyst Reese
+    Licensed under the MIT License
+    Adapted parts from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
+
+
+    Parameters
+    -----------
+
+    tuple_task_list : list of (func, chunked_data, kwargs) tuples
+        list of tuples containing arguments used for the _apply_with_kwargs function.
+    n_workers : int
+        Number of workers/cores used.
+
+    Returns
+    --------
+    results : np.array
+        The concatenated results of all the cores/workers.
+    """
+    with _MP_CONTEXT.Pool(processes=n_workers, initializer=_init_worker) as pool:  # parallel across n_workers
+        try:
+            # starmaps takes a function and an iterable parameter (in this casue the list)
+            # and iterates through all the chunked data. (each chunk is given a core)
+            results = pool.starmap(_apply_func_with_kwargs, tuple_task_list, chunksize=1)
+        except KeyboardInterrupt:
+            # if keyboard interupt stop all processes
+            pool.terminate()
+            pool.join()
+            logger.error("Processing canceled due to keyboard exit.")
+            raise
+        else:
+            pool.close()
+            pool.join()
+    return np.concatenate(results)
+
+
 def process_data(data, n_workers, func, **kwargs):
     """
     Process a structured numpy array in parallel for a given function and keyword arguments
@@ -196,11 +260,10 @@ def process_data(data, n_workers, func, **kwargs):
     # and end is the last index of the block + 1.
     blocks = [(i, min(i + block_size, len(data))) for i in range(0, len(data), block_size)]
 
-    with ProcessPoolExecutor(max_workers=n_workers, mp_context=_MP_CONTEXT) as executor:
-        # Create a future applying the function to each block of data
-        futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
-        # Concatenate all processed blocks together as our final result
-        return np.concatenate([future.result() for future in futures])
+    # creates a tuple of the function, chunked data and addionall args to be iterated over in the pool
+    tuple_task_list = [(func, data[start:end], kwargs) for start, end in blocks]
+
+    return _run_pool(tuple_task_list, n_workers)
 
 
 def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
@@ -237,14 +300,12 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
         return data
 
     kwargs["primary_id_column_name"] = primary_id_column_name
-    with ProcessPoolExecutor(max_workers=n_workers, mp_context=_MP_CONTEXT) as executor:
-        # Create a future applying the function to each block of data for a given object id
-        futures = [
-            executor.submit(func, data[data[primary_id_column_name] == id], **kwargs)
-            for id in np.unique(data[primary_id_column_name])
-        ]
-        # Concatenate all processed blocks together as our final result
-        return np.concatenate([future.result() for future in futures])
+    # list of pids
+    pid_list = [data[data[primary_id_column_name] == id] for id in np.unique(data[primary_id_column_name])]
+    # tuple list of function, data (pid chunked) and args used
+    tuple_task_list = [(func, pid_chunked_data, kwargs) for pid_chunked_data in pid_list]
+
+    return _run_pool(tuple_task_list, n_workers)
 
 
 def get_cov_columns():
