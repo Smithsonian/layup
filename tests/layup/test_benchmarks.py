@@ -9,6 +9,7 @@ import importlib.util
 import pathlib
 
 import numpy as np
+import pytest
 
 from _bk_guards import requires_ephem
 
@@ -43,6 +44,9 @@ def test_bench_convert_runs():
     assert not np.isnan(result["seconds"])
 
 
+# ~145 s locally against the 300 s pytest-timeout; see the note in
+# test_pipeline_integration.py.
+@pytest.mark.timeout(600)
 @requires_ephem
 def test_bench_residuals_runs():
     """The residuals benchmark runs and reports positive throughput. Since

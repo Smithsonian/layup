@@ -176,10 +176,11 @@ def test_as_row_is_ints_in_column_order():
     plain ints in OUTCOME_COLUMNS order. A bool or a reordering would be stored
     without complaint and silently mislabel every fit."""
     outcome = FitOutcome(converged=True, stage=STAGE_COMPLETE, failed_csq=True)
-    row = outcome.as_row()
+    row = outcome.as_row(FLAG_CSQ_TOO_LARGE)
     assert len(row) == len(OUTCOME_COLUMNS)
     assert all(isinstance(v, int) for v in row)
-    assert row == (1, STAGE_COMPLETE, 1, 0, 0)
+    # converged, then rejected on chi-square: accepted is 0 though converged is 1.
+    assert row == (0, 1, STAGE_COMPLETE, 1, 0, 0)
 
 
 # --------------------------------------------------------------------------
