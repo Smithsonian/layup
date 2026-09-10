@@ -46,14 +46,17 @@ def two_line_row_continuation(line):
 def two_line_rows_match(first_line, second_line):
     """Checks that ``second_line`` is the continuation line belonging to
     ``first_line``: it is a continuation line, repeats the same designation
-    (columns 1-14) and reports the same observatory code (columns 78-80).
+    (columns 1-12) and reports the same observatory code (columns 78-80).
+
+    Columns 13-14 are the discovery asterisk and note 1; the MPC does not
+    repeat either on a continuation line, so they are outside the comparison.
 
     This guards against a desynchronised file (an orphan continuation line, or
     a first line whose continuation is missing) silently mis-pairing.
     """
     if not two_line_row_continuation(second_line):
         return False
-    if first_line[0:14] != second_line[0:14]:
+    if first_line[0:12] != second_line[0:12]:
         return False
     return first_line[77:80] == second_line[77:80]
 
