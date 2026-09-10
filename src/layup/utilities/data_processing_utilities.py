@@ -180,8 +180,8 @@ def _init_worker():
 
 def _terminate(signum, frame):
     """
-    Handler for SIGTERM while using multiprocessing.
-    Any SIGTERM (signal terminate) will be treated as a
+    Handler for SIGTERM and SIGHUP while using multiprocessing.
+    Any SIGTERM (signal terminate) or SIGHUP will be treated as a
     KeyboardInterrupt in _run_pool()
     """
     raise KeyboardInterrupt
@@ -225,8 +225,9 @@ def _run_pool(tuple_task_list, n_workers):
     on_main_thread = threading.current_thread() is threading.main_thread()
     _prev_term = None
     if on_main_thread:
-        # _prev_term stores the previous way SIGTERM was handled.
-        _prev_term = signal.signal(signal.SIGTERM, _terminate)
+        # _prev_term stores the previous way SIGTERM and SIGHUP was handled.
+        _prev_term_SIGTERM = signal.signal(signal.SIGTERM, _terminate)
+        _prev_term_SIGHUP = signal.signal(signal.SIGHUP, _terminate)
     else:
         logger.warning(
             "layup is being called not on the main thread, SIGTERM will not be handled. Therefore orbitfitting may leave orphaned processes if terminated. Use: \n`ps -eo pid,ppid,args -ww | awk '$2==1' | grep -i \"multiprocessing.spawn\\|layup\"`\n to check for layup orphan processes, and `kill <pid>` to remove them."
@@ -238,7 +239,7 @@ def _run_pool(tuple_task_list, n_workers):
                 # and iterates through all the chunked data. (chunks are queued waiting for a free core.)
                 results = pool.starmap(_apply_func_with_kwargs, tuple_task_list, chunksize=1)
             except KeyboardInterrupt:
-                # if keyboard interrupt or SIGTERM (signal terminate) stop all pool processes
+                # if keyboard interrupt, SIGTERM (signal terminate) or SIGHUP stop all pool processes
                 if on_main_thread:
                     # ignore additional signal terminates until all pools are terminated.
                     signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -253,8 +254,12 @@ def _run_pool(tuple_task_list, n_workers):
 
     finally:
         if on_main_thread:
-            # resets SIGTERM to previous handler from _prev_term before exiting function.
-            signal.signal(signal.SIGTERM, _prev_term)
+            if _prev_term_SIGTERM is not None:
+                # resets SIGTERM to previous handler from _prev_term_SIGTERM before exiting function.
+                signal.signal(signal.SIGTERM, _prev_term_SIGTERM)
+            if _prev_term_SIGHUP is not None:
+                # resets SIGHUP to previous handler from _prev_term_SIGHUP before exiting function.
+                signal.signal(signal.SIGHUP, _prev_term_SIGHUP)
 
 
 def process_data(data, n_workers, func, **kwargs):
