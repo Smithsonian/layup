@@ -229,7 +229,7 @@ def _run_pool(tuple_task_list, n_workers):
         _prev_term = signal.signal(signal.SIGTERM, _terminate)
     else:
         logger.warning(
-            "layup is being called not on the main thread, SIGTERM will not be handled. Therefore orbitfitting may leave orphaned processes if terminated. Use `ps -eo pid,ppid,args -ww | awk '$2==1' | grep -i \"multiprocessing.spawn\\|layup\"` to check for layup orphan processes, and `kill <pid>` to remove them."
+            "layup is being called not on the main thread, SIGTERM will not be handled. Therefore orbitfitting may leave orphaned processes if terminated. Use: \n`ps -eo pid,ppid,args -ww | awk '$2==1' | grep -i \"multiprocessing.spawn\\|layup\"`\n to check for layup orphan processes, and `kill <pid>` to remove them."
         )
     try:
         with _MP_CONTEXT.Pool(processes=n_workers, initializer=_init_worker) as pool:
