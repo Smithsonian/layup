@@ -292,10 +292,10 @@ def test_desync_count_matches_read_and_objects(tmp_path):
 # A pairing rule that compared columns 1-14 dropped both lines of every such
 # record -- 13,118 observations over 12,731 objects across the numbered and
 # unnumbered archives, with zero genuine desyncs among them.
-_DISC_SAT_S = 'R7020K10EF0O* S2010 03 10.51885 05 36 45.64 +37 12 34.2                L~0JaDC51'
-_DISC_SAT_s = 'R7020K10EF0O  s2010 03 10.51885 1 + 1932.5539 + 5273.3610 + 4018.4484   ~0JaDC51'
-_ROVING_V = '00009        KV2025 06 03.15975 14 45 01.27 -13 37 10.8           9.9 rZ~8vs0247'
-_ROVING_v = '00009         v2025 06 03.15975 1 278.4806   +40.8400     303           ~8vs0247'
+_DISC_SAT_S = "R7020K10EF0O* S2010 03 10.51885 05 36 45.64 +37 12 34.2                L~0JaDC51"
+_DISC_SAT_s = "R7020K10EF0O  s2010 03 10.51885 1 + 1932.5539 + 5273.3610 + 4018.4484   ~0JaDC51"
+_ROVING_V = "00009        KV2025 06 03.15975 14 45 01.27 -13 37 10.8           9.9 rZ~8vs0247"
+_ROVING_v = "00009         v2025 06 03.15975 1 278.4806   +40.8400     303           ~8vs0247"
 
 
 @pytest.mark.parametrize(
