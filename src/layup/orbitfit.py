@@ -832,10 +832,13 @@ class FitOutcome:
         gate = CXX_GATE_FLAGS.get(flag)
         if gate is not None:
             setattr(outcome, gate, True)
+        if flag == FLAG_IMPLAUSIBLE_ORBIT:
+            outcome.failed_physical = True
         outcome.stage = {
             FLAG_CONVERGED: STAGE_COMPLETE,
             FLAG_CSQ_TOO_LARGE: STAGE_COMPLETE,
             FLAG_DEGENERATE_COV: STAGE_COMPLETE,
+            FLAG_IMPLAUSIBLE_ORBIT: STAGE_COMPLETE,
             FLAG_NO_ROOT_CONVERGED: STAGE_PRIMARY,
             FLAG_BUILDUP_FAILED: STAGE_BUILDUP,
             FLAG_NO_SOLUTION: STAGE_NO_CANDIDATES,
@@ -2371,16 +2374,13 @@ def orbitfit_cli(
 def split_accepted_flagged(fit_orbits):
     """Partition fit results into the accepted rows and the flagged ones.
 
-    Both halves keep every column. A flagged row is not necessarily a failed
-    one: flags 2, 6 and 9 all mark a fit that converged -- reduced chi-square
-    above threshold, a degenerate covariance, an implausible excess speed --
-    and each is a judgement the caller may want to make differently. Returning
-    the identifier alone would force a second run without ``--separate-flagged``
-    to recover the orbit. ``converged`` and ``accepted`` (OUTCOME_COLUMNS) say
-    which rows hold a fitted orbit and which hold only the initial value, so the
-    flagged output is self-describing without dropping the state columns.
+    Both halves keep every column. A flagged row may still hold a fitted orbit:
+    the flag values are defined in ``constants.py``, and those in
+    ``CONVERGED_FLAGS`` mean the differential correction reached a solution that
+    a later check then rejected. ``accepted`` and ``converged``
+    (``OUTCOME_COLUMNS``) report both facts per row.
     """
-    accepted_mask = fit_orbits["flag"] == 0
+    accepted_mask = fit_orbits["flag"] == FLAG_CONVERGED
     return fit_orbits[accepted_mask], fit_orbits[~accepted_mask]
 
 

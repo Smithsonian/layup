@@ -382,17 +382,11 @@ def test_orbit_fit_cli_raises_with_unknown_engine(tmpdir):
 
 # --------------------------------------------------------------------------
 # -sf / --separate-flagged
-#
-# The split path had no coverage. It matters because a flagged row is not
-# necessarily a failed one: flags 2, 6 and 9 all mark fits that converged
-# (chi-square above threshold, degenerate covariance, implausible excess
-# speed), so the flagged output has to carry enough to act on.
 # --------------------------------------------------------------------------
 def _fake_fit_results(flags):
     """A results array shaped like orbitfit's output, one row per flag."""
     from layup.constants import OUTCOME_COLUMNS
 
-    names = ["provID", "x", "y", "z", "xdot", "ydot", "zdot", "csq", "ndof", "method", "flag"]
     dtype = (
         [("provID", "<U16")]
         + [(n, "<f8") for n in ("x", "y", "z", "xdot", "ydot", "zdot", "csq")]
@@ -405,40 +399,41 @@ def _fake_fit_results(flags):
         arr[i]["flag"] = f
         arr[i]["x"] = 1.5 + i
         arr[i]["xdot"] = 0.01 * (i + 1)
-        arr[i]["accepted"] = 1 if f == 0 else 0
-        arr[i]["converged"] = 1 if f in (0, 2, 6, 9) else 0
     return arr
 
 
 def test_split_accepted_flagged_keeps_every_column():
-    """The flagged half keeps the full row, orbit included.
+    """Both halves carry the same fields, so a flagged row keeps its orbit.
 
-    Flags 2, 6 and 9 converged; emitting only the identifier would force a
-    second run without --separate-flagged to recover their orbits.
+    The flags are taken from ``CONVERGED_FLAGS`` rather than written out, so
+    this tracks ``constants.py`` if the set ever changes.
     """
+    from layup.constants import CONVERGED_FLAGS, FLAG_CONVERGED, FLAG_DID_NOT_CONVERGE
     from layup.orbitfit import split_accepted_flagged
 
-    arr = _fake_fit_results([0, 0, 1, 2, 6, 9])
+    flags = list(CONVERGED_FLAGS) + [FLAG_DID_NOT_CONVERGE]
+    arr = _fake_fit_results(flags)
     accepted, flagged = split_accepted_flagged(arr)
 
-    assert len(accepted) == 2 and len(flagged) == 4
-    assert np.all(accepted["flag"] == 0)
-    assert sorted(flagged["flag"].tolist()) == [1, 2, 6, 9]
+    assert np.all(accepted["flag"] == FLAG_CONVERGED)
+    assert len(accepted) == flags.count(FLAG_CONVERGED)
+    assert len(flagged) == len(flags) - len(accepted)
 
-    # the regression: both halves carry identical fields
     assert flagged.dtype.names == arr.dtype.names
     assert accepted.dtype.names == arr.dtype.names
     for name in ("x", "y", "z", "xdot", "ydot", "zdot", "accepted", "converged"):
-        assert name in flagged.dtype.names, f"{name} missing from the flagged half"
+        assert name in flagged.dtype.names
 
-    # the converged-but-flagged rows still hold their state
-    conv = flagged[flagged["converged"] == 1]
-    assert len(conv) == 3
-    assert np.all(conv["x"] != 0.0)
+    # every converged flag other than 0 lands in the flagged half with its state
+    converged_but_flagged = [f for f in CONVERGED_FLAGS if f != FLAG_CONVERGED]
+    for f in converged_but_flagged:
+        row = flagged[flagged["flag"] == f]
+        assert len(row) == 1
+        assert row["x"][0] != 0.0
 
 
 def test_separate_flagged_main_output_is_accepted_only(tmpdir):
-    """End to end: with -sf the main output holds only flag == 0."""
+    """With -sf the main output holds only flag == 0."""
     os.chdir(tmpdir)
     out_stem = "sf_output"
     out_file = os.path.join(tmpdir, f"{out_stem}.csv")
@@ -467,18 +462,13 @@ def test_separate_flagged_main_output_is_accepted_only(tmpdir):
     )
 
     assert os.path.exists(out_file)
+    accepted = CSVDataReader(out_file, "csv", primary_id_column_name="provID").read_rows()
+    assert len(accepted) > 0
+    assert np.all(accepted["flag"] == 0)
 
     def header(path):
         with open(path) as fh:
             return fh.readline().strip().split(",")
 
-    accepted = CSVDataReader(out_file, "csv", primary_id_column_name="provID").read_rows()
-    assert len(accepted) > 0
-    assert np.all(accepted["flag"] == 0)
-
-    # This fixture happens to fit cleanly, so the flagged file may not exist.
-    # Column-for-column equality is asserted deterministically in
-    # test_split_accepted_flagged_keeps_every_column; check it here too when
-    # the fixture does produce one.
     if os.path.exists(flagged_file):
         assert header(flagged_file) == header(out_file)
