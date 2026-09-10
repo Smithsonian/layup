@@ -2354,21 +2354,34 @@ def orbitfit_cli(
             )
 
         if cli_args.separate_flagged:
-            # Split the results into two files: one for successful fits and one for failed fits
-            success_mask = fit_orbits["flag"] == 0
-            fit_orbits_success = fit_orbits[success_mask]
-            fit_orbits_failed = fit_orbits[~success_mask]
+            fit_orbits_success, fit_orbits_failed = split_accepted_flagged(fit_orbits)
 
             if len(fit_orbits_success) > 0:
                 _emit(fit_orbits_success, output_file)
 
             if len(fit_orbits_failed) > 0:
-                _emit(fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged)
+                _emit(fit_orbits_failed, output_file_flagged)
 
         else:  # All results go to a single output file
             _emit(fit_orbits, output_file)
 
     logger.info(f"Data has been written to {output_file}")
+
+
+def split_accepted_flagged(fit_orbits):
+    """Partition fit results into the accepted rows and the flagged ones.
+
+    Both halves keep every column. A flagged row is not necessarily a failed
+    one: flags 2, 6 and 9 all mark a fit that converged -- reduced chi-square
+    above threshold, a degenerate covariance, an implausible excess speed --
+    and each is a judgement the caller may want to make differently. Returning
+    the identifier alone would force a second run without ``--separate-flagged``
+    to recover the orbit. ``converged`` and ``accepted`` (OUTCOME_COLUMNS) say
+    which rows hold a fitted orbit and which hold only the initial value, so the
+    flagged output is self-describing without dropping the state columns.
+    """
+    accepted_mask = fit_orbits["flag"] == 0
+    return fit_orbits[accepted_mask], fit_orbits[~accepted_mask]
 
 
 def _is_valid_data(data):
