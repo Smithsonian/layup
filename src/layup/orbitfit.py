@@ -838,10 +838,13 @@ class FitOutcome:
         gate = CXX_GATE_FLAGS.get(flag)
         if gate is not None:
             setattr(outcome, gate, True)
+        if flag == FLAG_IMPLAUSIBLE_ORBIT:
+            outcome.failed_physical = True
         outcome.stage = {
             FLAG_CONVERGED: STAGE_COMPLETE,
             FLAG_CSQ_TOO_LARGE: STAGE_COMPLETE,
             FLAG_DEGENERATE_COV: STAGE_COMPLETE,
+            FLAG_IMPLAUSIBLE_ORBIT: STAGE_COMPLETE,
             FLAG_NO_ROOT_CONVERGED: STAGE_PRIMARY,
             FLAG_BUILDUP_FAILED: STAGE_BUILDUP,
             FLAG_NO_SOLUTION: STAGE_NO_CANDIDATES,
@@ -2360,21 +2363,31 @@ def orbitfit_cli(
             )
 
         if cli_args.separate_flagged:
-            # Split the results into two files: one for successful fits and one for failed fits
-            success_mask = fit_orbits["flag"] == 0
-            fit_orbits_success = fit_orbits[success_mask]
-            fit_orbits_failed = fit_orbits[~success_mask]
+            fit_orbits_success, fit_orbits_failed = split_accepted_flagged(fit_orbits)
 
             if len(fit_orbits_success) > 0:
                 _emit(fit_orbits_success, output_file)
 
             if len(fit_orbits_failed) > 0:
-                _emit(fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged)
+                _emit(fit_orbits_failed, output_file_flagged)
 
         else:  # All results go to a single output file
             _emit(fit_orbits, output_file)
 
     logger.info(f"Data has been written to {output_file}")
+
+
+def split_accepted_flagged(fit_orbits):
+    """Partition fit results into the accepted rows and the flagged ones.
+
+    Both halves keep every column. A flagged row may still hold a fitted orbit:
+    the flag values are defined in ``constants.py``, and those in
+    ``CONVERGED_FLAGS`` mean the differential correction reached a solution that
+    a later check then rejected. ``accepted`` and ``converged``
+    (``OUTCOME_COLUMNS``) report both facts per row.
+    """
+    accepted_mask = fit_orbits["flag"] == FLAG_CONVERGED
+    return fit_orbits[accepted_mask], fit_orbits[~accepted_mask]
 
 
 def _is_valid_data(data):

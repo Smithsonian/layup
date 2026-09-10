@@ -378,3 +378,55 @@ def test_orbit_fit_cli_raises_with_unknown_engine(tmpdir):
             cli_args=FakeCliArgs(),
         )
         assert "Unknown engine" in str(e.value)
+
+
+# --------------------------------------------------------------------------
+# -sf / --separate-flagged
+# --------------------------------------------------------------------------
+def _fake_fit_results(flags):
+    """A results array shaped like orbitfit's output, one row per flag."""
+    from layup.constants import OUTCOME_COLUMNS
+
+    dtype = (
+        [("provID", "<U16")]
+        + [(n, "<f8") for n in ("x", "y", "z", "xdot", "ydot", "zdot", "csq")]
+        + [("ndof", "<i4"), ("method", "<U16"), ("flag", "<i4")]
+        + [(n, "i1") for n in OUTCOME_COLUMNS]
+    )
+    arr = np.zeros(len(flags), dtype=dtype)
+    for i, f in enumerate(flags):
+        arr[i]["provID"] = f"obj{i}"
+        arr[i]["flag"] = f
+        arr[i]["x"] = 1.5 + i
+        arr[i]["xdot"] = 0.01 * (i + 1)
+    return arr
+
+
+def test_split_accepted_flagged_keeps_every_column():
+    """Both halves carry the same fields, so a flagged row keeps its orbit.
+
+    The flags are taken from ``CONVERGED_FLAGS`` rather than written out, so
+    this tracks ``constants.py`` if the set ever changes.
+    """
+    from layup.constants import CONVERGED_FLAGS, FLAG_CONVERGED, FLAG_DID_NOT_CONVERGE
+    from layup.orbitfit import split_accepted_flagged
+
+    flags = list(CONVERGED_FLAGS) + [FLAG_DID_NOT_CONVERGE]
+    arr = _fake_fit_results(flags)
+    accepted, flagged = split_accepted_flagged(arr)
+
+    assert np.all(accepted["flag"] == FLAG_CONVERGED)
+    assert len(accepted) == flags.count(FLAG_CONVERGED)
+    assert len(flagged) == len(flags) - len(accepted)
+
+    assert flagged.dtype.names == arr.dtype.names
+    assert accepted.dtype.names == arr.dtype.names
+    for name in ("x", "y", "z", "xdot", "ydot", "zdot", "accepted", "converged"):
+        assert name in flagged.dtype.names
+
+    # every converged flag other than 0 lands in the flagged half with its state
+    converged_but_flagged = [f for f in CONVERGED_FLAGS if f != FLAG_CONVERGED]
+    for f in converged_but_flagged:
+        row = flagged[flagged["flag"] == f]
+        assert len(row) == 1
+        assert row["x"][0] != 0.0
