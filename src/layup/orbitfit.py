@@ -429,14 +429,20 @@ def _radar_observation(objID, d, epoch_jd, column_names):
     """Build a radar ``Observation`` from a row, converting JPL units to the
     fitter's internal units.
 
-    Monostatic only: an ``Observation`` carries a single station, used for both
-    the transmit and the receive leg. A bistatic measurement -- transmitted from
-    one antenna and received at another -- has no way to express its second site
-    here, and passing one silently evaluates the receive leg at the transmitting
-    antenna. On real Goldstone bistatic pairs that is a ~4% Doppler error, which
-    against a 0.1 Hz uncertainty is of order a hundred sigma. Filter such
-    observations out before fitting (see ISSUE_146_RADAR_DESIGN.md, where bistatic
-    is listed as a refinement).
+    Bistatic measurements are modelled. An ``Observation`` carries the receiving
+    station and, separately, the transmitting antenna's state at the transmit
+    epoch (``tx_pos``/``tx_vel``, gated by ``has_tx``), so the up leg uses the
+    antenna that actually transmitted rather than the receiver extrapolated
+    backwards. ``_append_transmitter_state`` resolves it from ``trx`` -- the ADES
+    field -- or the ``stnTx`` alias; without either, the receiving station is used
+    and the monostatic case is unchanged.
+
+    The one case that still falls back is an object with **no delay row at all**.
+    The transmit epoch is ``t_receive - tau``, and a Doppler-only row takes tau
+    interpolated from the object's own delay rows; with none to interpolate from,
+    the model extrapolates the receive station. So the criterion for a usable
+    bistatic fit is that the object carries at least one delay measurement, not
+    that the measurement is monostatic.
 
     delay (us, round-trip) -> days; Doppler (Hz) -> round-trip range-rate
     (au/day) via the per-observation transmit frequency ``freqTx``. The
