@@ -1829,7 +1829,9 @@ def orbitfit(
     return fitted
 
 
-def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None):
+def _observations_for_update(
+    data, cache_dir, weight_data=False, bias_dict=None, primary_id_column_name="provID"
+):
     """Augment one object's observations with the observer barycentric state and
     build the C++ ``Observation`` list, mirroring ``orbitfit()``'s preprocessing.
 
@@ -1871,7 +1873,7 @@ def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None)
                 streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
                 streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
             o = Observation.from_streak_with_id(
-                str(d["provID"]),
+                str(d[primary_id_column_name]),
                 d["ra"] * DEG,
                 d["dec"] * DEG,
                 d["raRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
@@ -1883,7 +1885,7 @@ def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None)
             )
         else:
             o = Observation.from_astrometry_with_id(
-                str(d["provID"]),
+                str(d[primary_id_column_name]),
                 d["ra"] * DEG,
                 d["dec"] * DEG,
                 jd,
@@ -1928,6 +1930,7 @@ def sequential_update(
     debias_data=False,
     max_update_sigma=4.0,
     iter_max=100,
+    primary_id_column_name="provID",
 ):
     """Sequential / information-filter update of a prior orbit fit (issue #419).
 
@@ -1971,13 +1974,15 @@ def sequential_update(
     ephem = get_ephem(kernels_loc)
     bias_dict = generate_bias_dict(cache_dir) if debias_data else None
 
-    new_obs = _observations_for_update(new_data, cache_dir, weight_data, bias_dict)
+    new_obs = _observations_for_update(new_data, cache_dir, weight_data, bias_dict, primary_id_column_name)
     seq = run_sequential_update(ephem, prior_fit, new_obs, iter_max)
 
     def _full_refit():
         if all_data is None:
             return None
-        all_obs = _observations_for_update(all_data, cache_dir, weight_data, bias_dict)
+        all_obs = _observations_for_update(
+            all_data, cache_dir, weight_data, bias_dict, primary_id_column_name
+        )
         return run_from_vector_with_initial_guess(ephem, prior_fit, all_obs, iter_max)
 
     # The information update did not converge (e.g. a non-positive-definite prior,
@@ -2146,6 +2151,7 @@ def incremental_orbitfit(
                     weight_data=weight_data,
                     debias_data=debias,
                     max_update_sigma=max_update_sigma,
+                    primary_id_column_name=primary_id_column_name,
                 )
                 routing["sequential" if seq.method == "sequential_update" else "sequential_fallback"] += 1
                 seq_rows.append(_fitresult_to_row(seq, oid, obs_hash, nobs, out_dtype))
