@@ -190,14 +190,53 @@ def test_apply_comet(tmpdir):
         get_test_filepath("code_LPCs_originals.csv"), "csv", primary_id_column_name="ObjID"
     ).read_rows()
 
-    # Compare inv_ao to the CODE Catalogue for each comet
+    # Compare inv_ao to the CODE Catalogue for each comet, in units of the
+    # catalogue's OWN quoted uncertainty.
+    #
+    # The previous tolerance was atol=1000 in units of 1e-6/au, against a median
+    # agreement of 0.0095 and a median catalogue uncertainty of 2.12 -- roughly
+    # a hundred thousand times looser than the quantity it checked, so the
+    # integration could have been badly wrong and this would still have passed
+    # (issue #508).
+    #
+    # An absolute tolerance is also the wrong instrument, because the
+    # catalogue's uncertainty spans three orders of magnitude across the sample.
+    # C/1980 E1 differs by 2.28 against a quoted sigma of 5.16 -- half a sigma,
+    # not a failure -- while C/2010 U3 differs by 1.58 against 0.29, which is
+    # five. `dinv_ao` is published beside `inv_ao` precisely so that this
+    # comparison can be made properly.
+    #
+    # Measured over the full 334-comet catalogue: median 0.0042 sigma,
+    # 90th percentile 0.079. Two comets exceed six sigma and both are
+    # understood; see KNOWN_NONGRAV below.
+    TOL_SIGMA = 6.0
+    KNOWN_NONGRAV = {"C/2020 S4", "C/2007 Q3"}
+
+    z = []
     for comet in output["ObjID"]:
         i_test = np.where(output["ObjID"] == comet)[0][0]
         i_expected = np.where(expected["ObjID"] == comet)[0][0]
-        assert_allclose(
-            output[i_test]["inv_ao_CODE"], expected[i_expected]["inv_ao"], atol=1000
-        )  # It is difficult to test the accuracy of the simulations without a measure of uncertainties
-        # so this tolerance is quite high. The simulations give an order of magnitude agreement with the code catalogue.
+        delta = float(output[i_test]["inv_ao_CODE"]) - float(expected[i_expected]["inv_ao"])
+        sigma = float(expected[i_expected]["dinv_ao"])
+        if sigma <= 0:
+            continue
+        z.append(abs(delta) / sigma)
+        if str(comet) in KNOWN_NONGRAV:
+            # Gravity-only integration of a comet with a real non-gravitational
+            # acceleration. Both are the smallest-perihelion objects in the
+            # sample; C/2020 S4 needs A1 = 7.6e-8 au/d^2, and JPL independently
+            # fits 6.34e-8 under the same distant-activity scaling. Excluded
+            # from the bound, not from the comparison -- see the test below,
+            # which asserts they remain discrepant.
+            continue
+        assert abs(delta) <= TOL_SIGMA * sigma, (
+            f"{comet}: original 1/a differs from the CODE Catalogue by {delta:.3f} "
+            f"= {abs(delta) / sigma:.1f} sigma of its quoted {sigma:.3f}"
+        )
+
+    # A per-comet bound is loose by construction; this catches a systematic
+    # drift that leaves every individual comet inside it.
+    assert np.median(z) < 0.05, f"median agreement degraded to {np.median(z):.4f} sigma"
 
 
 def test_comet_output(tmpdir):
@@ -299,3 +338,49 @@ def test_timeframe_constants_match_sim_t_units():
     for jd in (2287999.0, 2688001.0):  # just outside each end
         sim_t = jd - JD_REF
         assert not (ASSIST_TIMEFRAME_MIN_J2000_DAYS < sim_t < ASSIST_TIMEFRAME_MAX_J2000_DAYS)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("LAYUP_SLOW_TESTS"),
+    reason="needs the full catalogue; neither object is in the 12-comet CI subset",
+)
+def test_apply_comet_nongrav_comets_remain_discrepant(tmpdir):
+    """The two comets excluded from the bound must stay discrepant (#508).
+
+    They are excluded because a gravity-only integration cannot reproduce a
+    comet with a real non-gravitational acceleration -- not because they are
+    inconvenient. If either ever agrees, the reason matters: it would mean
+    either that non-gravitational forces had been introduced into this path, or
+    that something had changed which makes the disagreement disappear for the
+    wrong reason. Both should be noticed rather than silently absorbed.
+    """
+    os.chdir(tmpdir)
+
+    data = CSVDataReader(
+        get_test_filepath("code_LPCs.csv"), "csv", primary_id_column_name="ObjID"
+    ).read_rows()
+    expected = CSVDataReader(
+        get_test_filepath("code_LPCs_originals.csv"), "csv", primary_id_column_name="ObjID"
+    ).read_rows()
+
+    class FakeCliArgs:
+        primary_id_column_name = "ObjID"
+        n = 1
+        chunk = 10000
+        ar_data_file_path = None
+        force = True
+        code_format = True
+
+    output = _apply_comet(data, FakeCliArgs(), LayupConfigs().auxiliary, primary_id_column_name="ObjID")
+
+    for comet in ("C/2020 S4", "C/2007 Q3"):
+        i = np.where(output["ObjID"] == comet)[0]
+        j = np.where(expected["ObjID"] == comet)[0]
+        assert len(i) and len(j), f"{comet} missing from the sample"
+        delta = float(output[i[0]]["inv_ao_CODE"]) - float(expected[j[0]]["inv_ao"])
+        sigma = float(expected[j[0]]["dinv_ao"])
+        assert abs(delta) > 6.0 * sigma, (
+            f"{comet} now agrees to {abs(delta) / sigma:.1f} sigma. If non-gravitational "
+            f"forces were added to this path, move it out of KNOWN_NONGRAV and tighten "
+            f"the bound; if not, find out why the disagreement went away."
+        )
