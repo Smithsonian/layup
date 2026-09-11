@@ -16,9 +16,26 @@ from layup.utilities.data_processing_utilities import (
     resolve_num_workers,
 )
 
-# These are the maximum and minimum dates that the ASSIST ephemeris file allows for
-ASSIST_TIMEFRAME_MAX_MJD = 236455
-ASSIST_TIMEFRAME_MIN_MJD = -163545
+# Coverage limits of the ASSIST planetary ephemeris, in the units the guards
+# below actually compare against: **TDB days from J2000**, not MJD.
+# ``generate_simulations`` sets ``sim.t = epoch - ephem.jd_ref`` with
+# ``ephem.jd_ref = 2451545.0``, so ``sim.t`` is days from J2000 and these
+# constants have to be in the same units to be meaningful.
+#
+#   +236455 -> JD 2688000.0 -> 2647-05-24
+#   -163545 -> JD 2288000.0 -> 1552-03-25
+#
+# which is ``linux_p1550p2650.440`` (1550-2650) with a margin at each end.
+#
+# WARNING: these are hardcoded to the DEFAULT kernel. A run configured with a
+# different planetary ephemeris -- the ``de440.bsp`` swap that lets observations
+# before 1849 be reduced, for instance -- has different coverage, and these
+# guards would then be wrong in whichever direction the kernel is narrower.
+# ASSIST gained ``assist_ephem_time_bounds()`` upstream, which would let these
+# be queried from the loaded ephemeris instead; it is not in a released
+# ``assist`` yet (1.2.3 does not export the symbol), so they stay hardcoded.
+ASSIST_TIMEFRAME_MAX_J2000_DAYS = 236455
+ASSIST_TIMEFRAME_MIN_J2000_DAYS = -163545
 
 # Heliocentric distance (au) at which a comet's "original"/"future" barycentric
 # orbit is evaluated. Far enough from the Sun that planetary perturbations are
@@ -146,9 +163,9 @@ def _direction_of_integration(sim, ex, step, ephem, Mtot, include_assist=True):
         dt = -abs(step)
         oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=include_assist)
 
-        while of.d < oi.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:  # Returns to its perihelion
+        while of.d < oi.d and sim.t > ASSIST_TIMEFRAME_MIN_J2000_DAYS:  # Returns to its perihelion
             oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=include_assist)
-        if sim.t < ASSIST_TIMEFRAME_MIN_MJD:
+        if sim.t < ASSIST_TIMEFRAME_MIN_J2000_DAYS:
             convert_to_rebound = True
 
     else:
@@ -213,14 +230,14 @@ def _apply_comet(data, args, aux=None, cache_dir=None, primary_id_column_name=No
         )  # Decide whether to go backwards in time or forwards
 
         if dt > 0:
-            while of.d > REFERENCE_DISTANCE_AU and oi.d > of.d and sim.t < ASSIST_TIMEFRAME_MAX_MJD:
+            while of.d > REFERENCE_DISTANCE_AU and oi.d > of.d and sim.t < ASSIST_TIMEFRAME_MAX_J2000_DAYS:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=True)
 
         else:
-            while of.d < REFERENCE_DISTANCE_AU and oi.d < of.d and sim.t > ASSIST_TIMEFRAME_MIN_MJD:
+            while of.d < REFERENCE_DISTANCE_AU and oi.d < of.d and sim.t > ASSIST_TIMEFRAME_MIN_J2000_DAYS:
                 oi, of, sim = _assist_integrate(sim, ex, dt, ephem, Mtot, include_assist=True)
 
-        if sim.t >= ASSIST_TIMEFRAME_MAX_MJD or sim.t <= ASSIST_TIMEFRAME_MIN_MJD:
+        if sim.t >= ASSIST_TIMEFRAME_MAX_J2000_DAYS or sim.t <= ASSIST_TIMEFRAME_MIN_J2000_DAYS:
             # If comet goes outside assist timeframe, continue the simulation in pure rebound
             rebound_only.append(comet)
             logger.warning(f"{comet} has exceeded the timeframe of the ASSIST Ephemeris")
