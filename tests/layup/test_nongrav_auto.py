@@ -81,9 +81,22 @@ def test_select_auto_escalates_when_a2_alone_insufficient(monkeypatch):
     grav = _res(csq=1000.0, ndof=100)
 
     def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
-        # A2 alone is insignificant; A1+A2 both land significant with a big drop.
-        if nongrav_mask == O._NONGRAV_BITS["A2"]:
-            return _res(csq=995.0, flag=0, nongrav_mask=nongrav_mask, a2=1e-15, a2_unc=1e-15)
+        # No SINGLE parameter is warranted on its own -- each is insignificant --
+        # but A1+A2 together land significant with a big drop, so the selector
+        # has to escalate past the whole one-parameter tier to find it.
+        singles = {O._NONGRAV_BITS[n] for n in ("A1", "A2", "A3")}
+        if nongrav_mask in singles:
+            return _res(
+                csq=995.0,
+                flag=0,
+                nongrav_mask=nongrav_mask,
+                a1=1e-15,
+                a1_unc=1e-15,
+                a2=1e-15,
+                a2_unc=1e-15,
+                a3=1e-15,
+                a3_unc=1e-15,
+            )
         return _res(
             csq=10.0, flag=0, nongrav_mask=nongrav_mask, a1=1e-13, a1_unc=1e-15, a2=1e-13, a2_unc=1e-15
         )
@@ -143,3 +156,107 @@ def test_select_auto_threshold_suppresses_nongrav(monkeypatch):
     lenient = O.NongravAutoThresholds(accept_reduced_chi2=20.0)
     out = O._select_nongrav_auto(None, grav, None, thresholds=lenient)
     assert out is grav and not tried
+
+
+# --- #544: single-parameter rungs, and best-in-tier selection --- #
+
+
+def _significant(mask, csq, **kw):
+    """A converged, well-conditioned fit with every requested parameter at 100 sigma."""
+    vals = {}
+    for name, bit in O._NONGRAV_BITS.items():
+        if mask & bit:
+            vals[name.lower()] = 1e-13
+            vals[name.lower() + "_unc"] = 1e-15
+    vals.update(kw)
+    return _res(csq=csq, flag=0, nongrav_mask=mask, **vals)
+
+
+def test_a1_alone_is_reachable(monkeypatch):
+    """The ladder ran A2 -> A1A2 -> A1A2A3, so a radial-only acceleration could
+    only be found through a rung already fitting A2 beside it. On 1I/'Oumuamua
+    that is fatal: A1 alone is 10.9 sigma and A1+A2+A3 puts it at 0.9."""
+    grav = _res(csq=1000.0, ndof=100)
+    A1, A2, A3 = (O._NONGRAV_BITS[n] for n in ("A1", "A2", "A3"))
+
+    def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
+        if nongrav_mask == A1:
+            return _significant(A1, csq=100.0)
+        return _res(
+            csq=999.0,
+            flag=0,
+            nongrav_mask=nongrav_mask,
+            a1=1e-15,
+            a1_unc=1e-15,
+            a2=1e-15,
+            a2_unc=1e-15,
+            a3=1e-15,
+            a3_unc=1e-15,
+        )
+
+    monkeypatch.setattr(O, "run_from_vector_with_initial_guess", fake_fit)
+    assert O._select_nongrav_auto(None, grav, None).nongrav_mask == A1
+
+
+def test_a3_alone_is_reachable(monkeypatch):
+    """The dark comets are the A3 case -- A3 significant, A2 not."""
+    grav = _res(csq=1000.0, ndof=100)
+    A3 = O._NONGRAV_BITS["A3"]
+
+    def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
+        if nongrav_mask == A3:
+            return _significant(A3, csq=100.0)
+        return _res(
+            csq=999.0,
+            flag=0,
+            nongrav_mask=nongrav_mask,
+            a1=1e-15,
+            a1_unc=1e-15,
+            a2=1e-15,
+            a2_unc=1e-15,
+            a3=1e-15,
+            a3_unc=1e-15,
+        )
+
+    monkeypatch.setattr(O, "run_from_vector_with_initial_guess", fake_fit)
+    assert O._select_nongrav_auto(None, grav, None).nongrav_mask == A3
+
+
+def test_best_in_tier_not_first_in_tier(monkeypatch):
+    """Two warranted one-parameter models must be separated by fit quality, not
+    by the order the tier is written in.
+
+    This is the 1I case: A2 is warranted at 3.7 sigma with dchi2 13.9, A1 at
+    10.9 sigma with dchi2 119.0, and A2 is tried first. Returning the first
+    warranted model makes the answer an artifact of the tuple's order.
+    """
+    grav = _res(csq=1000.0, ndof=100)
+    A1, A2 = O._NONGRAV_BITS["A1"], O._NONGRAV_BITS["A2"]
+
+    def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
+        if nongrav_mask == A2:
+            return _significant(A2, csq=986.0)  # warranted, but barely
+        if nongrav_mask == A1:
+            return _significant(A1, csq=881.0)  # warranted, and far better
+        return _res(csq=1000.0, flag=1, nongrav_mask=nongrav_mask)
+
+    monkeypatch.setattr(O, "run_from_vector_with_initial_guess", fake_fit)
+    out = O._select_nongrav_auto(None, grav, None)
+    assert out.nongrav_mask == A1, "should take the better warranted single, not the first"
+
+
+def test_parsimony_still_beats_quality_across_tiers(monkeypatch):
+    """A warranted single is preferred to a warranted pair even when the pair
+    fits better -- tiers are searched in order, so parsimony is not traded away."""
+    grav = _res(csq=1000.0, ndof=100)
+    A1, A2 = O._NONGRAV_BITS["A1"], O._NONGRAV_BITS["A2"]
+
+    def fake_fit(ephem, res, obs, nongrav_mask=0, **kwargs):
+        if nongrav_mask == A1:
+            return _significant(A1, csq=900.0)
+        if nongrav_mask == (A1 | A2):
+            return _significant(A1 | A2, csq=10.0)  # much better, but two parameters
+        return _res(csq=1000.0, flag=1, nongrav_mask=nongrav_mask)
+
+    monkeypatch.setattr(O, "run_from_vector_with_initial_guess", fake_fit)
+    assert O._select_nongrav_auto(None, grav, None).nongrav_mask == A1

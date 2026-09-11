@@ -214,7 +214,29 @@ def _parse_nongrav(fit_nongrav):
 # increasing complexity, and the first that converges, is well-conditioned
 # (flag 0), and is statistically warranted (see NongravAutoThresholds) is adopted;
 # otherwise the gravity-only fit is kept.
-_AUTO_NONGRAV_LADDER = (("A2",), ("A1", "A2"), ("A1", "A2", "A3"))
+#
+# Every SINGLE parameter is tried before any pair (issue #544). The ladder began
+# as A2 -> A1A2 -> A1A2A3, which can only find a radial or out-of-plane
+# acceleration by way of a rung that is already fitting A2 alongside it -- and
+# that is not a detour, it is fatal, because the parameters are strongly
+# correlated over a single apparition. Measured on 1I/'Oumuamua (222
+# observations, Veres weights):
+#
+#     A1 alone      reduced chi2 0.217   A1 = 2.06e-07   8.7 sigma
+#     A2 alone                   0.372   A2 = -2.36e-08  2.8 sigma
+#     A3 alone                   0.389   A3 = -6.06e-09  0.8 sigma
+#     A1 + A2                    0.218   A1 8.2 sigma, A2 0.1 sigma
+#     A1 + A2 + A3               0.218   A1 0.9 sigma  <-- from 8.7
+#
+# The triplet does not fit better -- reduced chi2 is unchanged to three
+# decimals -- it just divides one detection between three parameters and
+# inflates the uncertainty tenfold. A2 is kept first so that an asteroid with a
+# Yarkovsky signal still selects the model it selected before.
+_AUTO_NONGRAV_LADDER = (
+    (("A2",), ("A1",), ("A3",)),
+    (("A1", "A2"),),
+    (("A1", "A2", "A3"),),
+)
 
 
 @dataclass(frozen=True)
@@ -230,6 +252,20 @@ class NongravAutoThresholds:
     accept_reduced_chi2 : float
         A gravity-only fit whose reduced chi-square is at or below this is kept
         as-is; non-grav models are tried only above it. Default 1.5.
+
+        This is a COST control, not a statistical one, and it is worth knowing
+        when it will not do what it looks like it does. It assumes that omitting
+        a real non-gravitational acceleration pushes the gravity-only reduced
+        chi-square above the threshold. That holds only when the astrometric
+        uncertainties are calibrated. Where they are conservative -- which is
+        most of the archive, since the majority of modern astrometry is weighted
+        by the Veres et al. (2017) catch-all rather than a per-station value --
+        the reduced chi-square sits well below 1 whether or not the acceleration
+        is there, and no non-grav model is ever tried. 1I/'Oumuamua fits
+        gravity-only at 0.263 and carries an 8.7-sigma A1 (issue #544).
+
+        Set this to 0.0 to disable the early accept and always walk the ladder,
+        at the cost of up to five extra fits per object.
     delta_chi2_per_param : float
         Minimum chi-square drop required per added non-grav parameter to adopt a
         model (9.0 ~ 3-sigma). Default 9.0.
@@ -292,13 +328,25 @@ def _select_nongrav_auto(
     if _gravity_fit_acceptable(res_grav.csq, res_grav.ndof, thresholds):
         return res_grav  # gravity-only fit is acceptable; no non-gravs needed
     gr = _gofr_arg(gofr)
-    for names in _AUTO_NONGRAV_LADDER:
-        mask = sum(_NONGRAV_BITS[n] for n in names)
-        res_ng = run_from_vector_with_initial_guess(
-            assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr
-        )
-        if res_ng.flag == 0 and _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
-            return res_ng  # parsimonious, well-determined non-grav model
+    for tier in _AUTO_NONGRAV_LADDER:
+        # Within a tier every model costs the same number of parameters, so
+        # parsimony cannot choose between them and the largest chi-square drop
+        # does. Taking the FIRST warranted model instead would make the answer
+        # depend on the order the tier happens to be written in: on
+        # 1I/'Oumuamua both A2 (3.7 sigma, dchi2 13.9) and A1 (10.9 sigma,
+        # dchi2 119.0) are warranted, and A2 wins on position alone (#544).
+        best = None
+        for names in tier:
+            mask = sum(_NONGRAV_BITS[n] for n in names)
+            res_ng = run_from_vector_with_initial_guess(
+                assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr
+            )
+            if res_ng.flag != 0 or not _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
+                continue
+            if best is None or res_ng.csq < best.csq:
+                best = res_ng
+        if best is not None:
+            return best  # best warranted model at the lowest workable complexity
     return res_grav  # no non-grav model is warranted
 
 
