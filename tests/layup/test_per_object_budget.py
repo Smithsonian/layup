@@ -30,7 +30,7 @@ def _quick(data, **kwargs):
 
 
 def _slow(data, **kwargs):
-    time.sleep(30)
+    time.sleep(60)
     return np.asarray([len(data)])
 
 
@@ -41,9 +41,15 @@ def _quick_by_id(data, primary_id_column_name=None, **kwargs):
 def _slow_for_b(data, primary_id_column_name=None, **kwargs):
     """Grind forever on one particular object, return promptly for the rest."""
     if str(data[primary_id_column_name][0]) == "b":
-        time.sleep(30)
+        time.sleep(60)
     return np.asarray([len(data)])
 
+
+# Generous against a cold CI worker: _run_pool now waits for every worker to
+# start before the clock begins, but the first task in a child still pays the
+# import of this module. The hung tasks sleep 60 s, so the assertions below
+# remain decisive at any budget well under that.
+BUDGET = 10.0
 
 ROWS = np.array([("a",), ("b",), ("c",)], dtype=[("provID", "U4")])
 
@@ -57,17 +63,17 @@ def test_a_hung_task_no_longer_withholds_the_others():
     """The point of the issue: the fast results come back."""
     tasks = [(_quick, np.zeros(3), {}), (_slow, np.zeros(9), {}), (_quick, np.zeros(5), {})]
     t0 = time.monotonic()
-    out = _run_pool(tasks, 3, per_task_budget_s=2.0)
+    out = _run_pool(tasks, 3, per_task_budget_s=BUDGET)
     elapsed = time.monotonic() - t0
     assert sorted(out.tolist()) == [3, 5], "the two quick tasks must survive"
-    assert elapsed < 25, f"returned in {elapsed:.1f}s; must not wait out the hung task"
+    assert elapsed < 45, f"returned in {elapsed:.1f}s; must not wait out the hung task"
 
 
 def test_the_abandoned_object_is_named(caplog):
     """It must say which object was dropped, not silently omit it."""
     tasks = [(_quick, np.zeros(3), {}), (_slow, np.zeros(9), {})]
     with caplog.at_level("WARNING"):
-        _run_pool(tasks, 2, per_task_budget_s=2.0, task_labels=["alpha", "beta"])
+        _run_pool(tasks, 2, per_task_budget_s=BUDGET, task_labels=["alpha", "beta"])
     assert "Abandoned 1 of 2" in caplog.text
     assert "beta" in caplog.text, "the abandoned task must be identified"
 
@@ -81,10 +87,10 @@ def test_a_generous_budget_abandons_nothing():
 def test_process_data_by_id_threads_the_budget():
     """The per-object entry point: one object grinds, the other two return."""
     t0 = time.monotonic()
-    out = process_data_by_id(ROWS, 3, _slow_for_b, "provID", per_object_budget_s=2.0)
+    out = process_data_by_id(ROWS, 3, _slow_for_b, "provID", per_object_budget_s=BUDGET)
     elapsed = time.monotonic() - t0
     assert out.tolist() == [1, 1], "objects a and c must come back"
-    assert elapsed < 25, f"returned in {elapsed:.1f}s"
+    assert elapsed < 45, f"returned in {elapsed:.1f}s"
 
 
 def test_process_data_by_id_is_unchanged_without_a_budget():

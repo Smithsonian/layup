@@ -178,6 +178,11 @@ def _init_worker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
+def _pool_is_up(_=None):
+    """A no-op task, used only to wait for a worker to finish starting."""
+    return True
+
+
 def _apply_func_with_kwargs(func, data, kwargs):
     """
     Utility function that unpacks the tuple to run the function and
@@ -273,6 +278,14 @@ def _collect_within_budget(pool, tuple_task_list, n_workers, per_task_budget_s, 
     """
     import math
     import time
+
+    # Wait for every worker to finish starting BEFORE the clock starts. Worker
+    # startup is not task time, and it is not small or predictable: spawning a
+    # process and importing Layup into it took 80 ms on a warm developer
+    # machine and longer than a 2 s budget on a cold CI runner, where it
+    # consumed the whole budget and every task was abandoned before it began.
+    for warm in [pool.apply_async(_pool_is_up) for _ in range(n_workers)]:
+        warm.get()
 
     pending = {}
     for i, task in enumerate(tuple_task_list):
