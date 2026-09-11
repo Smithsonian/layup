@@ -986,25 +986,6 @@ _PICKER_IAS15_ADAPTIVE_MODE = 2
 # from layup.routines returns the C struct; the Python residual filter
 # needs the rebound/assist Python wrapper instead, so we cache one per
 # cache_dir.
-_assist_python_ephem_cache: dict = {}
-
-
-def _get_python_ephem(cache_dir):
-    """Lazy-load and cache the Python-side assist.Ephem for the filter."""
-    key = str(cache_dir)
-    if key in _assist_python_ephem_cache:
-        return _assist_python_ephem_cache[key]
-    try:
-        import assist
-    except ImportError:
-        return None
-    try:
-        eph = assist.Ephem(os.path.join(key, "linux_p1550p2650.440"), os.path.join(key, "sb441-n16.bsp"))
-    except Exception as e:
-        logger.warning(f"assist.Ephem load failed for {cache_dir}: {e}")
-        return None
-    _assist_python_ephem_cache[key] = eph
-    return eph
 
 
 def _pick_best_root(candidates, min_r_au):
@@ -1116,11 +1097,10 @@ def do_fit(
     # the picker loop down to 1-2 LM fits per case in the common
     # case (vs up to 8 brute-force LMs). Loose threshold (default
     # 1000σ) so the right root is never rejected.
-    py_ephem = _get_python_ephem(cache_dir)
-    if py_ephem is not None and len(solns) > 1:
+    if len(solns) > 1:
         before = len(solns)
         solns = filter_candidates_by_residual(
-            solns, observations, py_ephem, threshold_sigma=prefilter_threshold_sigma
+            solns, observations, get_ephem(cache_dir), threshold_sigma=prefilter_threshold_sigma
         )
         if len(solns) < before:
             logger.debug(

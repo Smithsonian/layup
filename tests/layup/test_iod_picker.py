@@ -68,12 +68,16 @@ def _prefilter_setup(monkeypatch, residual_sigma_by_state, n_obs=5):
         idx_of[id(o)] = j
         obs.append(o)
 
-    def fake_pred(ephem, state, epoch, o):
-        rs = residual_sigma_by_state(state, idx_of[id(o)]) if per_obs else residual_sigma_by_state(state)
-        ang = rs * sigma  # rad
-        return np.array([np.cos(ang), np.sin(ang), 0.0])
+    def fake_residuals(ephem, candidate, obss):
+        """Stub the whole-arc residual call (#555 replaced the per-observation
+        predictor with one `residuals_at_state` pass per candidate)."""
+        state = candidate.state
+        return [
+            (residual_sigma_by_state(state, idx_of[id(o)]) if per_obs else residual_sigma_by_state(state))
+            for o in obss
+        ]
 
-    monkeypatch.setattr(iod, "_predict_rho_hat", fake_pred)
+    monkeypatch.setattr(iod, "_candidate_residuals_sigma", fake_residuals)
 
     def cand(r):
         return SimpleNamespace(state=np.array([r, 0.0, 0.0, 0.0, 0.0, 0.0]), epoch=0.0)
