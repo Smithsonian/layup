@@ -1567,7 +1567,7 @@ def _orbitfit(
         # Perform the orbit fitting
         outcome = FitOutcome()
         if initial_guess is None or initial_guess["flag"] != 0:
-            if iod.lower() in ["gauss", "auto"]:
+            if iod.lower() in ["gauss", "auto", "herget"]:
                 res = do_fit(
                     observations=observations,
                     seq=sequence,
