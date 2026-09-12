@@ -150,7 +150,7 @@ def test_find_drho(tmpdir):
 
     # call find_drho, check if it reduces the sum of the residuals
 
-    delta_rho1, delta_rhon, state_1 = herget.find_drho(
+    delta_rho1, delta_rhon, state_1, _ = herget.find_drho(
         observations, t_1, t_n, state_1[:3], r_n, 0.001, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n
     )
 

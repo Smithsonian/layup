@@ -210,14 +210,14 @@ def herget_iod(observations, seq):
     perfectly and the residuals are reasonably spread among the remaining obs"""
 
     ephem, _, _ = build_ephem_and_mus()
-    solns = herget_with_assist(observations, seq, ephem, tolerance=0.0001, max_iterations=100)
+    solns = herget_with_assist(observations, seq, ephem)
     if solns == []:
         solns = herget_with_assist(
-            observations, seq, ephem, tolerance=0.0001, max_iterations=100, initial_rho=5
+            observations, seq, ephem, initial_rho=5
         )
     if solns == []:
         solns = herget_with_assist(
-            observations, seq, ephem, tolerance=0.0001, max_iterations=100, initial_rho=40
+            observations, seq, ephem, initial_rho=40
         )
 
     return solns

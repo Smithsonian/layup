@@ -6,11 +6,11 @@ from sorcha.ephemeris.simulation_setup import create_assist_ephemeris
 import assist
 import rebound
 from layup.routines import FitResult
-from layup.utilities.universal_kepler import universal_step, KeplerConvergenceError
+from layup.utilities.universal_kepler import universal_step, KeplerConvergenceError, state_transition_matrix
 from layup.constants import MU_SUN, SPEED_OF_LIGHT
 
 
-def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations=100, initial_rho=2):
+def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations=100, initial_rho=2):
     """Runs the Herget method on a set of observations.
 
     Parameters
@@ -50,19 +50,20 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
     iteration = 0
     delta_rho1 = tolerance + 1
     delta_rhon = tolerance + 1
+    dets = [1] # determinant of the 2x2 matrix, will stop the loop if this is too small
 
     # Get original epochs so we can light-time correct them each iteration
     epochs = np.zeros(len(obs))
     for i, observation in enumerate(obs):
         epochs[i] = observation.epoch
 
-    while (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance and iteration < max_iterations:
+    while (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance and iteration < max_iterations and np.median(np.array(dets)) > 0.01:
 
         # Light-time correct the observation times
         for i, observation in enumerate(obs):
             observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT)
 
-        delta_rho1, delta_rhon, state_1 = find_drho(
+        delta_rho1, delta_rhon, state_1, det = find_drho(
             obs, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations
         )
         if abs(delta_rho1) > rho_1 / 2:
@@ -72,6 +73,9 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
         if abs(delta_rhon) > rho_n / 2:
             delta_rhon = (abs(delta_rhon) / delta_rhon) * rho_n / 2
         # print(delta_rho1, delta_rhon, state_1)
+        
+        dets.append(abs(det))
+        print(det)
 
         # Update rho values
         rho_1 -= delta_rho1
@@ -80,14 +84,17 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.001, max_iterations
         rn = r_e_n + rho_n * np.array(rho_hat_n)
 
         iteration += 1
-    if iteration >= max_iterations:
+        
+    # restore observation epochs
+    for i, observation in enumerate(obs):
+        observation.epoch = epochs[i]
+    
+    if iteration >= max_iterations or det <= 0.01:
         return (
             []
         )  # if max_iterations is reached consider the IOD a failure, return empty list (will trigger flag 5)
 
-    # After finding convergent orbit, restore observation epochs
-    for i, observation in enumerate(obs):
-        observation.epoch = epochs[i]
+    
 
     state = state_1
     solution = FitResult()
@@ -143,21 +150,34 @@ def find_drho(
         the amount to adjust rho_n by to return a more accurate orbit
     state_1[x, y, z, vx, vy, vz]
         the new guess for the state vector at t1
+    det : float
+        determinant of the matrix of coefficients to the normal equations
     """
 
     # Find velocities at rho_1 and rho_n
-    [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance * rho_1 / 10, max_iterations)
-    [var_vx1, var_vy1, var_vz1], _ = find_velocity(
-        t1, tn, r1 + rho_hat_1, rn, tolerance * rho_1 / 10, max_iterations
-    )
+    [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance * rho_1 / 100, max_iterations)
+    
+    # finding vel using state transition matrix; uses the state_transition_matrix from universal_kepler.py to analytically
+    # determine the change in velocity 
+    Phi = state_transition_matrix(MU_SUN, tn - t1, [*r1, vx1, vy1, vz1])
+    
+    if rho_1 > 2:
+        drho1 = rho_hat_1
+        drhon = rho_hat_n
+    else:
+        drho1 = rho_hat_1 * 0.01
+        drhon = rho_hat_n * 0.01
+        
+    var_vxyz_1 = -np.matmul(np.matmul(np.linalg.inv(Phi[0:3, 3:6]), Phi[0:3, 0:3]), np.transpose(drho1))
+    var_vxyz_n = np.matmul(np.matmul(Phi[3:6, 3:6], np.linalg.inv(Phi[0:3, 3:6])), np.transpose(drhon))
 
     # Simulation setup
     sim = rebound.Simulation()
 
     sim.add(x=r1[0], y=r1[1], z=r1[2], vx=vx1, vy=vy1, vz=vz1)
     var = sim.add_variation(testparticle=0)
-    var.particles[0].xyz = rho_hat_1
-    var.particles[0].vxyz = np.array([var_vx1 - vx1, var_vy1 - vy1, var_vz1 - vz1])
+    var.particles[0].xyz = drho1
+    var.particles[0].vxyz = var_vxyz_1
 
     ex = assist.Extras(sim, ephem)
     sim.t = t1 - ephem.jd_ref
@@ -184,16 +204,13 @@ def find_drho(
         a1[2 * i] = b[2 * i] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), A)
         a1[2 * i + 1] = b[2 * i + 1] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), D)
 
-    _, [var_vxn, var_vyn, var_vzn] = find_velocity(
-        t1, tn, r1, rn + rho_hat_n, tolerance * rho_n / 10, max_iterations
-    )
 
     # Do the same for rho_n, set up simulation again
     sim = rebound.Simulation()
     sim.add(x=rn[0], y=rn[1], z=rn[2], vx=vxn, vy=vyn, vz=vzn)
     var = sim.add_variation(testparticle=0)
-    var.particles[0].xyz = rho_hat_n
-    var.particles[0].vxyz = np.array([var_vxn - vxn, var_vyn - vyn, var_vzn - vzn])
+    var.particles[0].xyz = drhon
+    var.particles[0].vxyz = var_vxyz_n
 
     ex = assist.Extras(sim, ephem)
     sim.t = tn - ephem.jd_ref
@@ -215,11 +232,11 @@ def find_drho(
         a2[2 * i] = b[2 * i] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), A)
         a2[2 * i + 1] = b[2 * i + 1] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), D)
 
-    sigma_a1b = sum(a1 * b)
-    sigma_a2b = sum(a2 * b)
-    sigma_a1squared = sum(a1**2)
-    sigma_a2squared = sum(a2**2)
-    sigma_a1a2 = sum(a1 * a2)
+    sigma_a1b = sum((a1 * b)/np.linalg.norm(drho1))
+    sigma_a2b = sum((a2 * b)/np.linalg.norm(drhon))
+    sigma_a1squared = sum((a1**2)/sum(drho1**2))
+    sigma_a2squared = sum(a2**2/sum(drhon**2)) 
+    sigma_a1a2 = sum(a1 * a2/ sum(drho1*drhon))
 
     delta_rho1 = (sigma_a1b * sigma_a2squared - sigma_a2b * sigma_a1a2) / (
         sigma_a1a2**2 - sigma_a1squared * sigma_a2squared
@@ -230,11 +247,12 @@ def find_drho(
     # print(sigma_a1b + delta_rho1*sigma_a1squared + delta_rhon*sigma_a1a2)
     # print(sigma_a2b + delta_rho1*sigma_a1a2 + delta_rhon*sigma_a2squared)
     # print(sum(a1*(b + delta_rho1*a1 + delta_rhon*a2)))
+    det = sigma_a1squared * sigma_a2squared - sigma_a1a2**2 # determinant of the 2x2 matrix; good check for degeneracy
 
-    return delta_rho1, delta_rhon, [*r1, vx1, vy1, vz1]
+    return delta_rho1, delta_rhon, [*r1, vx1, vy1, vz1], det
 
 
-def find_velocity(t1, tn, r1, rn, tolerance, max_iterations=100):
+def find_velocity(t1, tn, r1, rn, tolerance=0.0001, max_iterations=100):
     """Converge on a velocity which takes position r1 at time t1 to position rn at time tn.
     Uses the universal kepler stepper to integrate over time.
 
