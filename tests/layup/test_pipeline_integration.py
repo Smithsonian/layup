@@ -13,6 +13,7 @@ Ephemeris-gated (needs `layup bootstrap`); everything runs single-worker
 from importlib.resources import files
 
 import numpy as np
+import pytest
 
 from layup.convert import convert
 from layup.orbitfit import orbitfit
@@ -31,6 +32,11 @@ def _load_demo_observations():
     return np.atleast_1d(CSVDataReader(path, "csv", primary_id_column_name="provID").read_rows())
 
 
+# ~150 s on an idle machine against the suite-wide 300 s pytest-timeout, so on a
+# loaded runner (four xdist workers competing) the macOS 3.13 leg goes over. The
+# work is real -- a full fit, convert and predict over the demo set -- so give it
+# room rather than trimming the coverage.
+@pytest.mark.timeout(600)
 @requires_ephem
 def test_observations_fit_convert_predict_pipeline():
     obs = _load_demo_observations()

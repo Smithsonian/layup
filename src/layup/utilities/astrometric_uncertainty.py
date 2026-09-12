@@ -1,3 +1,30 @@
+# obs80 supplies the single-character MPC star-catalog CODE (column 72); ADES
+# supplies the NAME. The branches below are keyed on names, so a code has to be
+# decoded first or every name-keyed test is unreachable and the observation
+# falls through to the station's `else` -- silently, and by up to a factor of 15
+# (issue #548). `debias()` already normalises both spellings; this is the same
+# treatment for the sigma path.
+#
+# This map is deliberately SEPARATE from `debiasing.MPC_CATALOGS` rather than
+# derived from it. That one exists to key the Farnocchia bias tables, which have
+# no column for Gaia DR2, Gaia EDR3, UCAC-5 or ATLAS-2 -- correctly, since
+# Gaia-referenced astrometry needs no bias correction. The Veres model does
+# distinguish them, so borrowing the debiasing map would leave `V` and `X`, the
+# two most common catalogs in the modern archive, undecodable.
+#
+# Only the names the model actually branches on need an entry. Anything else
+# passes through unchanged and reaches the same generic branch it does today.
+_CODE_TO_CATALOG_NAME = {
+    "o": "USNOB1",  # USNO-B1.0
+    "s": "USNOB2",  # USNO-B2.0 -- resolves the "unsure of the abbreviation" note below
+    "q": "UCAC4",  # UCAC-4
+    "t": "PPMXL",  # PPM-XL
+    "U": "Gaia1",  # Gaia DR1
+    "V": "Gaia2",  # Gaia DR2
+    "W": "Gaia3",  # Gaia DR3
+    "X": "Gaia3E",  # Gaia EDR3
+}
+
 EARLY_703_JD = 2456658.5
 EARLY_691_JD = 2452640.5
 EARLY_644_JD = 2452883.5
@@ -27,6 +54,9 @@ def astrometric_uncertainty_Veres2017(obsCode, jd_tdb, catalog=None, program=Non
     float
         Astrometric uncertainty in arcseconds
     """
+
+    # Accept either spelling: a code becomes its name, a name passes through.
+    catalog = _CODE_TO_CATALOG_NAME.get(catalog, catalog)
 
     sigma_arcsec = 1.5
     if obsCode == "703":
@@ -102,7 +132,7 @@ def astrometric_uncertainty_Veres2017(obsCode, jd_tdb, catalog=None, program=Non
             sigma_arcsec = 1.5
     elif obsCode == "568":
         if catalog:
-            if catalog in ["USNOB1", "USNOB2"]:  # TODO Unsure if "USNOB2" is correct abbreviation!!!
+            if catalog in ["USNOB1", "USNOB2"]:  # MPC codes o and s
                 sigma_arcsec = 0.5
             elif catalog in ["Gaia1", "Gaia2", "Gaia3", "Gaia3E"]:
                 sigma_arcsec = 0.1

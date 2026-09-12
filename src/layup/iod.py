@@ -37,9 +37,9 @@ import math
 from typing import Callable, Optional, Sequence
 
 from layup.constants import GMtotal, SPEED_OF_LIGHT
-from layup.routines import FitResult, Observation, gauss, get_ephem
 from layup.utilities.herget_iod import herget_with_assist
 from layup.orbit_maths import build_ephem_and_mus
+from layup.routines import FitResult, Observation, gauss, get_ephem, residuals_at_state
 
 logger = logging.getLogger(__name__)
 
@@ -249,25 +249,54 @@ def _passes_physical_bounds(candidate, min_r_au: float = _MIN_R_AU, max_r_au: fl
     return True
 
 
-def _predict_rho_hat(ephem, state, state_epoch, obs):
-    """Propagate `state` to `obs.epoch` via full ASSIST and return the
-    predicted apparent unit direction (no light-time correction; coarse
-    filter only).
+def _candidate_residuals_sigma(ephem, candidate, observations):
+    """Per-observation residual of `candidate`, in units of sigma, over the
+    whole arc.
+
+    One ``residuals_at_state`` call does the entire set in a single
+    forward+backward pass over the sorted times, reusing one simulation.
+    The predecessor built a fresh ``rebound.Simulation`` plus
+    ``assist.Extras`` per observation and integrated from the seed epoch
+    each time -- 587 observations x 2 candidates took 29.7 s, against
+    0.255 s here, a factor of 116 (issue #555).
+
+    Two differences from that predecessor are improvements rather than
+    side effects. ``residuals_at_state`` sets IAS15 ``adaptive_mode = 2``
+    after attaching ASSIST, which is what fixed the close-Earth grind in
+    #324 and which the per-observation path never did. And its residuals
+    carry the light-time correction, where the old ones were explicitly
+    uncorrected ("coarse filter only"); the correct root therefore scores
+    slightly better than it used to, which is the safe direction for a
+    filter whose job is to not discard it.
+
+    Parameters
+    ----------
+    ephem : assist_ephem
+        The C ephemeris handle from ``layup.routines.get_ephem``.
+    candidate : FitResult
+        An IOD candidate; its ``state`` and ``epoch`` are used.
+    observations : sequence[Observation]
+        The full observation set.
+
+    Returns
+    -------
+    list[float]
+        One residual per observation, in sigma, in input order.
     """
-    import rebound, assist
     import numpy as np
 
-    sim = rebound.Simulation()
-    sim.t = float(state_epoch) - ephem.jd_ref
-    sim.add(x=state[0], y=state[1], z=state[2], vx=state[3], vy=state[4], vz=state[5])
-    extras = assist.Extras(sim, ephem)
-    extras.integrate_or_interpolate(float(obs.epoch) - ephem.jd_ref)
-    p = sim.particles[0]
-    rx = p.x - obs.observer_position[0]
-    ry = p.y - obs.observer_position[1]
-    rz = p.z - obs.observer_position[2]
-    rho = math.sqrt(rx * rx + ry * ry + rz * rz)
-    return np.array([rx / rho, ry / rho, rz / rho])
+    # The mapped covariance is returned alongside the residual and is not
+    # used here; a zero matrix keeps the call cheap and well defined.
+    zero_cov = np.zeros((6, 6))
+    rows = residuals_at_state(ephem, candidate, list(observations), zero_cov)
+
+    out = []
+    for obs, row in zip(observations, rows):
+        sigma_ra = float(obs.ra_unc if obs.ra_unc is not None else 1.0 / 206265)
+        sigma_dec = float(obs.dec_unc if obs.dec_unc is not None else 1.0 / 206265)
+        sigma = max(sigma_ra, sigma_dec)
+        out.append(math.hypot(float(row[0]), float(row[1])) / sigma)
+    return out
 
 
 def _inertial_min_geocentric_AU(state, state_epoch, observations) -> float:
@@ -369,14 +398,23 @@ def filter_candidates_by_residual(
     tracklet groups is not waved through.
 
     Candidates whose inertial trajectory passes within `close_earth_AU`
-    of the observer at any obs time are passed through unfiltered. Full
-    ASSIST integration gets stuck on close Earth encounters (tens of
-    seconds per propagation), and replacing it with a 2-body
-    approximation would silently mishandle the real physics of NEO close
-    passes — those are valid science targets that need a different
-    solution. Until that solution exists, we just skip the filter for
-    such candidates and let LM handle them (slowly, on the same close
-    encounters, but that's a separate known issue).
+    of the observer at any obs time are passed through unfiltered,
+    because full ASSIST integration used to get stuck on close Earth
+    encounters -- tens of seconds per propagation.
+
+    That is no longer the cost it was. The residual pass now runs through
+    ``residuals_at_state``, which sets IAS15 ``adaptive_mode = 2``, the
+    setting that fixed the close-Earth grind in #324 and which the old
+    per-observation path never applied. Measured on five objects carrying
+    a near-Earth candidate, disabling the pass-through costs about 0.1 s
+    and correctly rejects the candidate the guard waves through.
+
+    The guard is kept anyway. Those five are main-belt objects whose
+    *phantom* roots happen to approach the Earth; the case the guard
+    exists for is a genuine near-Earth object, where the *correct* root
+    is the close one, and that has not been tested. Removing it changes
+    which candidates survive rather than how fast they are scored, so it
+    wants its own measurement on near-Earth objects.
 
     Parameters
     ----------
@@ -433,25 +471,15 @@ def filter_candidates_by_residual(
             survivors.append(c)
             continue
 
-        resids_sigma = []
-        integrable = True
-        for obs in observations:
-            try:
-                pred = _predict_rho_hat(ephem, c.state, c.epoch, obs)
-            except Exception:
-                # ASSIST refused to integrate (e.g. state walked outside
-                # the kernel time range). Treat as a failed candidate.
-                integrable = False
-                break
-            actual = np.asarray(obs.rho_hat).flatten()
-            cos_sep = float(np.clip(pred @ actual, -1.0, 1.0))
-            sep_rad = math.acos(cos_sep)
-            sigma_ra = float(obs.ra_unc if obs.ra_unc is not None else 1.0 / 206265)
-            sigma_dec = float(obs.dec_unc if obs.dec_unc is not None else 1.0 / 206265)
-            sigma = max(sigma_ra, sigma_dec)
-            resids_sigma.append(sep_rad / sigma)
+        try:
+            resids_sigma = _candidate_residuals_sigma(ephem, c, observations)
+        except Exception:
+            # The integration failed for this candidate -- most often because
+            # the state walked outside the ephemeris time range. Treat it as a
+            # failed candidate rather than letting it take the whole call down.
+            continue
 
-        if not integrable or not resids_sigma:
+        if not resids_sigma:
             continue
         # Robust per-candidate metric: a high percentile of the per-obs
         # residuals rather than the single worst point, so a minority of

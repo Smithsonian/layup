@@ -3,8 +3,9 @@ import json
 import logging
 import multiprocessing
 import os
+import sys
+import signal
 import tempfile
-from concurrent.futures import ProcessPoolExecutor
 from importlib.resources import files
 
 import numpy as np
@@ -164,6 +165,164 @@ def write_fallback_obscodes():
     return dest
 
 
+def _init_worker():
+    """
+    This removes signal error for the subprocesses that are parallised.
+    Therefore the main process is the only thing in control of a keyboard error
+    and terminates the subprocesses.
+
+    Copyright (c) Amethyst Reese
+    Licensed under the MIT License
+    Adapted from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
+    """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def _pool_is_up(_=None):
+    """A no-op task, used only to wait for a worker to finish starting."""
+    return True
+
+
+def _apply_func_with_kwargs(func, data, kwargs):
+    """
+    Utility function that unpacks the tuple to run the function and
+    kwargs.
+    """
+    return func(data, **kwargs)
+
+
+def _run_pool(tuple_task_list, n_workers, per_task_budget_s=None, task_labels=None):
+    """
+    General function to run multi_processing.Pool.
+    This function spawns (_MP_CONTEXT) a pool of n_workers and
+    uses pool.starmap to iterate through the list of tuples in tuple_task_list for function
+    _apply_with_kwargs. Code then returns the concatenated results from the workers.
+
+    Copyright (c) Amethyst Reese
+    Licensed under the MIT License
+    Adapted parts from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
+
+
+    Parameters
+    -----------
+
+    tuple_task_list : list of (func, chunked_data, kwargs) tuples
+        list of tuples containing arguments used for the _apply_with_kwargs function.
+    n_workers : int
+        Number of workers/cores used.
+    per_task_budget_s : float, optional
+        Wall-clock budget per task, in seconds. ``None`` (the default) keeps the
+        original behaviour exactly: ``starmap``, which returns only once every
+        task has finished.
+
+        When set, the pool is given an overall deadline of
+        ``per_task_budget_s * ceil(n_tasks / n_workers)`` -- the time the whole
+        batch should take if every task used its full budget. Tasks still
+        running at the deadline are abandoned, the pool is terminated, and the
+        results of everything that finished are returned (issue #492).
+
+        The budget is enforced against the batch rather than against each task
+        because a worker cannot report when its task *started*: the parent sees
+        only submission and completion. A per-task deadline would need a fresh
+        pool per wave of ``n_workers`` tasks, which is exact but respawns a
+        worker (~80 ms) every wave.
+    task_labels : sequence, optional
+        One label per task, used only to name the abandoned ones in the warning.
+        Without it they are reported by index.
+
+    Returns
+    --------
+    results : np.array
+        The concatenated results of all the cores/workers. With a budget set,
+        this omits any abandoned task -- which is the point: one object that
+        never converges used to hold every other result in the run.
+    """
+    with _MP_CONTEXT.Pool(processes=n_workers, initializer=_init_worker) as pool:  # parallel across n_workers
+        try:
+            if per_task_budget_s is None:
+                # starmaps takes a function and an iterable parameter (in this casue the list)
+                # and iterates through all the chunked data. (each chunk is given a core)
+                results = pool.starmap(_apply_func_with_kwargs, tuple_task_list, chunksize=1)
+            else:
+                results = _collect_within_budget(
+                    pool, tuple_task_list, n_workers, per_task_budget_s, task_labels
+                )
+        except KeyboardInterrupt:
+            # if keyboard interupt stop all processes
+            pool.terminate()
+            pool.join()
+            logger.error("Processing canceled due to keyboard exit.")
+            raise
+        else:
+            pool.close()
+            pool.join()
+    if not results:
+        return np.empty(0)
+    return np.concatenate(results)
+
+
+def _collect_within_budget(pool, tuple_task_list, n_workers, per_task_budget_s, task_labels=None):
+    """Submit every task, and return the results of those that finish in time.
+
+    ``starmap`` returns only once the slowest task has finished, so a single
+    object that never converges withholds every other result in the run --
+    fitting 108 short arcs took over an hour with no output, where the same 108
+    fitted one at a time took under a minute, because two of them ground
+    indefinitely (issue #492).
+
+    Nothing here interrupts a running task. A fit that has entered the C
+    integrator cannot be preempted from Python -- a signal handler runs only at
+    a bytecode boundary -- so the budget is enforced by abandoning the task and
+    terminating the pool, not by unwinding the call. The worker is killed with
+    it.
+    """
+    import math
+    import time
+
+    # Wait for every worker to finish starting BEFORE the clock starts. Worker
+    # startup is not task time, and it is not small or predictable: spawning a
+    # process and importing Layup into it took 80 ms on a warm developer
+    # machine and longer than a 2 s budget on a cold CI runner, where it
+    # consumed the whole budget and every task was abandoned before it began.
+    for warm in [pool.apply_async(_pool_is_up) for _ in range(n_workers)]:
+        warm.get()
+
+    pending = {}
+    for i, task in enumerate(tuple_task_list):
+        pending[pool.apply_async(_apply_func_with_kwargs, task)] = i
+
+    waves = math.ceil(len(tuple_task_list) / max(n_workers, 1))
+    deadline = time.monotonic() + per_task_budget_s * waves
+
+    results = []
+    while pending:
+        for async_result in [a for a in pending if a.ready()]:
+            results.append(async_result.get())
+            del pending[async_result]
+        if not pending:
+            break
+        if time.monotonic() >= deadline:
+            abandoned = sorted(pending.values())
+            names = [str(task_labels[i]) if task_labels is not None else f"#{i}" for i in abandoned]
+            logger.warning(
+                "Abandoned %d of %d objects after the %.0f s budget "
+                "(%.0f s per object x %d waves of %d workers): %s. "
+                "Results for the other %d are returned.",
+                len(abandoned),
+                len(tuple_task_list),
+                per_task_budget_s * waves,
+                per_task_budget_s,
+                waves,
+                n_workers,
+                ", ".join(names[:10]) + (" ..." if len(names) > 10 else ""),
+                len(results),
+            )
+            pool.terminate()
+            break
+        time.sleep(0.05)
+    return results
+
+
 def process_data(data, n_workers, func, **kwargs):
     """
     Process a structured numpy array in parallel for a given function and keyword arguments
@@ -196,14 +355,13 @@ def process_data(data, n_workers, func, **kwargs):
     # and end is the last index of the block + 1.
     blocks = [(i, min(i + block_size, len(data))) for i in range(0, len(data), block_size)]
 
-    with ProcessPoolExecutor(max_workers=n_workers, mp_context=_MP_CONTEXT) as executor:
-        # Create a future applying the function to each block of data
-        futures = [executor.submit(func, data[start:end], **kwargs) for start, end in blocks]
-        # Concatenate all processed blocks together as our final result
-        return np.concatenate([future.result() for future in futures])
+    # creates a tuple of the function, chunked data and addionall args to be iterated over in the pool
+    tuple_task_list = [(func, data[start:end], kwargs) for start, end in blocks]
+
+    return _run_pool(tuple_task_list, n_workers)
 
 
-def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
+def process_data_by_id(data, n_workers, func, primary_id_column_name, per_object_budget_s=None, **kwargs):
     """
     Process a structured numpy array in parallel for a given function and
     keyword arguments. Instead of distributing the data across all available workers
@@ -225,7 +383,9 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
     Returns
     -------
     res : numpy structured array
-        The processed data concatenated from each function result
+        The processed data concatenated from each function result. With a budget
+        set, objects abandoned at the deadline are omitted and named in a
+        warning, rather than every result being withheld by the slowest (#492).
     """
     if n_workers < 1:
         raise ValueError(f"n_workers must be greater than 0, {n_workers} was provided.")
@@ -237,14 +397,14 @@ def process_data_by_id(data, n_workers, func, primary_id_column_name, **kwargs):
         return data
 
     kwargs["primary_id_column_name"] = primary_id_column_name
-    with ProcessPoolExecutor(max_workers=n_workers, mp_context=_MP_CONTEXT) as executor:
-        # Create a future applying the function to each block of data for a given object id
-        futures = [
-            executor.submit(func, data[data[primary_id_column_name] == id], **kwargs)
-            for id in np.unique(data[primary_id_column_name])
-        ]
-        # Concatenate all processed blocks together as our final result
-        return np.concatenate([future.result() for future in futures])
+    # list of pids
+    ids = np.unique(data[primary_id_column_name])
+    pid_list = [data[data[primary_id_column_name] == id] for id in ids]
+    # tuple list of function, data (pid chunked) and args used
+    tuple_task_list = [(func, pid_chunked_data, kwargs) for pid_chunked_data in pid_list]
+
+    # Each task is ONE object here, so a per-task budget is a per-object budget.
+    return _run_pool(tuple_task_list, n_workers, per_task_budget_s=per_object_budget_s, task_labels=ids)
 
 
 def get_cov_columns():

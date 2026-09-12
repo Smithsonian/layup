@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from layup.utilities.data_utilities_for_tests import get_test_filepath
-from layup.utilities.file_io.Obs80Reader import Obs80DataReader
+from layup.utilities.file_io.Obs80Reader import Obs80DataReader, two_line_rows_match
 
 # A well-formed satellite two-line record (S astrometry line + its lower-case s
 # observer-position line) and a second distinct one, plus a normal ground-based
@@ -284,3 +284,35 @@ def test_desync_count_matches_read_and_objects(tmp_path):
     # read_objects over every id present returns exactly the same rows.
     all_ids = list(set(data["provID"]))
     assert len(reader.read_objects(all_ids)) == len(data)
+
+
+# Two real records whose continuation line does not repeat columns 13-14. The
+# MPC repeats only the designation (columns 1-12) on a continuation line: it
+# carries neither the discovery asterisk (column 13) nor note 1 (column 14).
+# A pairing rule that compared columns 1-14 dropped both lines of every such
+# record -- 13,118 observations over 12,731 objects across the numbered and
+# unnumbered archives, with zero genuine desyncs among them.
+_DISC_SAT_S = "R7020K10EF0O* S2010 03 10.51885 05 36 45.64 +37 12 34.2                L~0JaDC51"
+_DISC_SAT_s = "R7020K10EF0O  s2010 03 10.51885 1 + 1932.5539 + 5273.3610 + 4018.4484   ~0JaDC51"
+_ROVING_V = "00009        KV2025 06 03.15975 14 45 01.27 -13 37 10.8           9.9 rZ~8vs0247"
+_ROVING_v = "00009         v2025 06 03.15975 1 278.4806   +40.8400     303           ~8vs0247"
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [(_DISC_SAT_S, _DISC_SAT_s), (_ROVING_V, _ROVING_v)],
+    ids=["discovery_asterisk_col13", "roving_observer_note1_col14"],
+)
+def test_continuation_line_need_not_repeat_cols_13_14(first, second):
+    """Columns 13-14 are outside the designation and are not repeated on a
+    continuation line, so they must not take part in the pairing match."""
+    assert two_line_rows_match(first, second)
+
+
+def test_pairing_still_rejects_a_different_designation():
+    """The relaxation is confined to columns 13-14: columns 1-12 and the
+    observatory code must still agree."""
+    other_desig = _DISC_SAT_s.replace("R7020K10EF0O", "R7020K10EF0P", 1)
+    assert not two_line_rows_match(_DISC_SAT_S, other_desig)
+    other_obscode = _DISC_SAT_s[:77] + "500"
+    assert not two_line_rows_match(_DISC_SAT_S, other_obscode)

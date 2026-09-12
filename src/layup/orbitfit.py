@@ -214,7 +214,29 @@ def _parse_nongrav(fit_nongrav):
 # increasing complexity, and the first that converges, is well-conditioned
 # (flag 0), and is statistically warranted (see NongravAutoThresholds) is adopted;
 # otherwise the gravity-only fit is kept.
-_AUTO_NONGRAV_LADDER = (("A2",), ("A1", "A2"), ("A1", "A2", "A3"))
+#
+# Every SINGLE parameter is tried before any pair (issue #544). The ladder began
+# as A2 -> A1A2 -> A1A2A3, which can only find a radial or out-of-plane
+# acceleration by way of a rung that is already fitting A2 alongside it -- and
+# that is not a detour, it is fatal, because the parameters are strongly
+# correlated over a single apparition. Measured on 1I/'Oumuamua (222
+# observations, Veres weights):
+#
+#     A1 alone      reduced chi2 0.217   A1 = 2.06e-07   8.7 sigma
+#     A2 alone                   0.372   A2 = -2.36e-08  2.8 sigma
+#     A3 alone                   0.389   A3 = -6.06e-09  0.8 sigma
+#     A1 + A2                    0.218   A1 8.2 sigma, A2 0.1 sigma
+#     A1 + A2 + A3               0.218   A1 0.9 sigma  <-- from 8.7
+#
+# The triplet does not fit better -- reduced chi2 is unchanged to three
+# decimals -- it just divides one detection between three parameters and
+# inflates the uncertainty tenfold. A2 is kept first so that an asteroid with a
+# Yarkovsky signal still selects the model it selected before.
+_AUTO_NONGRAV_LADDER = (
+    (("A2",), ("A1",), ("A3",)),
+    (("A1", "A2"),),
+    (("A1", "A2", "A3"),),
+)
 
 
 @dataclass(frozen=True)
@@ -230,6 +252,20 @@ class NongravAutoThresholds:
     accept_reduced_chi2 : float
         A gravity-only fit whose reduced chi-square is at or below this is kept
         as-is; non-grav models are tried only above it. Default 1.5.
+
+        This is a COST control, not a statistical one, and it is worth knowing
+        when it will not do what it looks like it does. It assumes that omitting
+        a real non-gravitational acceleration pushes the gravity-only reduced
+        chi-square above the threshold. That holds only when the astrometric
+        uncertainties are calibrated. Where they are conservative -- which is
+        most of the archive, since the majority of modern astrometry is weighted
+        by the Veres et al. (2017) catch-all rather than a per-station value --
+        the reduced chi-square sits well below 1 whether or not the acceleration
+        is there, and no non-grav model is ever tried. 1I/'Oumuamua fits
+        gravity-only at 0.263 and carries an 8.7-sigma A1 (issue #544).
+
+        Set this to 0.0 to disable the early accept and always walk the ladder,
+        at the cost of up to five extra fits per object.
     delta_chi2_per_param : float
         Minimum chi-square drop required per added non-grav parameter to adopt a
         model (9.0 ~ 3-sigma). Default 9.0.
@@ -292,13 +328,25 @@ def _select_nongrav_auto(
     if _gravity_fit_acceptable(res_grav.csq, res_grav.ndof, thresholds):
         return res_grav  # gravity-only fit is acceptable; no non-gravs needed
     gr = _gofr_arg(gofr)
-    for names in _AUTO_NONGRAV_LADDER:
-        mask = sum(_NONGRAV_BITS[n] for n in names)
-        res_ng = run_from_vector_with_initial_guess(
-            assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr
-        )
-        if res_ng.flag == 0 and _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
-            return res_ng  # parsimonious, well-determined non-grav model
+    for tier in _AUTO_NONGRAV_LADDER:
+        # Within a tier every model costs the same number of parameters, so
+        # parsimony cannot choose between them and the largest chi-square drop
+        # does. Taking the FIRST warranted model instead would make the answer
+        # depend on the order the tier happens to be written in: on
+        # 1I/'Oumuamua both A2 (3.7 sigma, dchi2 13.9) and A1 (10.9 sigma,
+        # dchi2 119.0) are warranted, and A2 wins on position alone (#544).
+        best = None
+        for names in tier:
+            mask = sum(_NONGRAV_BITS[n] for n in names)
+            res_ng = run_from_vector_with_initial_guess(
+                assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr
+            )
+            if res_ng.flag != 0 or not _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
+                continue
+            if best is None or res_ng.csq < best.csq:
+                best = res_ng
+        if best is not None:
+            return best  # best warranted model at the lowest workable complexity
     return res_grav  # no non-grav model is warranted
 
 
@@ -429,14 +477,20 @@ def _radar_observation(objID, d, epoch_jd, column_names):
     """Build a radar ``Observation`` from a row, converting JPL units to the
     fitter's internal units.
 
-    Monostatic only: an ``Observation`` carries a single station, used for both
-    the transmit and the receive leg. A bistatic measurement -- transmitted from
-    one antenna and received at another -- has no way to express its second site
-    here, and passing one silently evaluates the receive leg at the transmitting
-    antenna. On real Goldstone bistatic pairs that is a ~4% Doppler error, which
-    against a 0.1 Hz uncertainty is of order a hundred sigma. Filter such
-    observations out before fitting (see ISSUE_146_RADAR_DESIGN.md, where bistatic
-    is listed as a refinement).
+    Bistatic measurements are modelled. An ``Observation`` carries the receiving
+    station and, separately, the transmitting antenna's state at the transmit
+    epoch (``tx_pos``/``tx_vel``, gated by ``has_tx``), so the up leg uses the
+    antenna that actually transmitted rather than the receiver extrapolated
+    backwards. ``_append_transmitter_state`` resolves it from ``trx`` -- the ADES
+    field -- or the ``stnTx`` alias; without either, the receiving station is used
+    and the monostatic case is unchanged.
+
+    The one case that still falls back is an object with **no delay row at all**.
+    The transmit epoch is ``t_receive - tau``, and a Doppler-only row takes tau
+    interpolated from the object's own delay rows; with none to interpolate from,
+    the model extrapolates the receive station. So the criterion for a usable
+    bistatic fit is that the object carries at least one delay measurement, not
+    that the measurement is monostatic.
 
     delay (us, round-trip) -> days; Doppler (Hz) -> round-trip range-rate
     (au/day) via the per-observation transmit frequency ``freqTx``. The
@@ -805,9 +859,16 @@ class FitOutcome:
         if gate is not None:
             setattr(self, gate, True)
 
-    def as_row(self):
-        """The output columns, in ``OUTCOME_COLUMNS`` order."""
+    def as_row(self, flag):
+        """The output columns, in ``OUTCOME_COLUMNS`` order.
+
+        ``accepted`` is derived from the flag the row actually carries rather
+        than tracked alongside these facts, so the two cannot disagree. It is
+        taken last, after any stage marker has overwritten the fitter's own
+        verdict, because that overwritten value is what a reader will see.
+        """
         return (
+            int(flag == FLAG_CONVERGED),
             int(self.converged),
             int(self.stage),
             int(self.failed_csq),
@@ -825,10 +886,13 @@ class FitOutcome:
         gate = CXX_GATE_FLAGS.get(flag)
         if gate is not None:
             setattr(outcome, gate, True)
+        if flag == FLAG_IMPLAUSIBLE_ORBIT:
+            outcome.failed_physical = True
         outcome.stage = {
             FLAG_CONVERGED: STAGE_COMPLETE,
             FLAG_CSQ_TOO_LARGE: STAGE_COMPLETE,
             FLAG_DEGENERATE_COV: STAGE_COMPLETE,
+            FLAG_IMPLAUSIBLE_ORBIT: STAGE_COMPLETE,
             FLAG_NO_ROOT_CONVERGED: STAGE_PRIMARY,
             FLAG_BUILDUP_FAILED: STAGE_BUILDUP,
             FLAG_NO_SOLUTION: STAGE_NO_CANDIDATES,
@@ -870,7 +934,7 @@ def create_empty_result(id, dtypes):
             )
             + (np.nan,) * 36  # Flat covariance matrix
             # never attempted: not converged, no stage reached, no gate applied
-            + ((0, STAGE_NOT_ATTEMPTED, 0, 0, 0) if "converged" in dtypes.names else ())
+            + (FitOutcome().as_row(FLAG_NOT_ATTEMPTED) if "converged" in dtypes.names else ())
             # non-grav columns (issue #351): NaN per a1/a2/a3 (+ _unc) that is present
             + tuple(np.nan for n in ("a1", "a2", "a3") if n in dtypes.names for _ in (0, 1))
             # obs fingerprint (issue #419): empty hash never matches, so a failed
@@ -970,25 +1034,6 @@ _PICKER_IAS15_ADAPTIVE_MODE = 2
 # from layup.routines returns the C struct; the Python residual filter
 # needs the rebound/assist Python wrapper instead, so we cache one per
 # cache_dir.
-_assist_python_ephem_cache: dict = {}
-
-
-def _get_python_ephem(cache_dir):
-    """Lazy-load and cache the Python-side assist.Ephem for the filter."""
-    key = str(cache_dir)
-    if key in _assist_python_ephem_cache:
-        return _assist_python_ephem_cache[key]
-    try:
-        import assist
-    except ImportError:
-        return None
-    try:
-        eph = assist.Ephem(os.path.join(key, "linux_p1550p2650.440"), os.path.join(key, "sb441-n16.bsp"))
-    except Exception as e:
-        logger.warning(f"assist.Ephem load failed for {cache_dir}: {e}")
-        return None
-    _assist_python_ephem_cache[key] = eph
-    return eph
 
 
 def _pick_best_root(candidates, min_r_au):
@@ -1100,11 +1145,10 @@ def do_fit(
     # the picker loop down to 1-2 LM fits per case in the common
     # case (vs up to 8 brute-force LMs). Loose threshold (default
     # 1000σ) so the right root is never rejected.
-    py_ephem = _get_python_ephem(cache_dir)
-    if py_ephem is not None and len(solns) > 1:
+    if len(solns) > 1:
         before = len(solns)
         solns = filter_candidates_by_residual(
-            solns, observations, py_ephem, threshold_sigma=prefilter_threshold_sigma
+            solns, observations, get_ephem(cache_dir), threshold_sigma=prefilter_threshold_sigma
         )
         if len(solns) < before:
             logger.debug(
@@ -1652,7 +1696,7 @@ def _orbitfit(
                     ("BCART_EQ" if success else "NONE"),  # The base format returned by the C++ code
                 )
                 + cov_matrix  # Flat covariance matrix
-                + outcome.as_row()  # the outcome columns
+                + outcome.as_row(res.flag)  # the outcome columns
                 + nongrav_cols  # non-grav params + uncertainties (issue #351), when fit_nongrav
                 + per_arc_cols  # later-arc amplitudes (comet linkage), when per_arc
                 + (obs_hash, nobs_fit)  # obs fingerprint (issue #419)
@@ -1813,7 +1857,9 @@ def orbitfit(
     return fitted
 
 
-def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None):
+def _observations_for_update(
+    data, cache_dir, weight_data=False, bias_dict=None, primary_id_column_name="provID"
+):
     """Augment one object's observations with the observer barycentric state and
     build the C++ ``Observation`` list, mirroring ``orbitfit()``'s preprocessing.
 
@@ -1855,7 +1901,7 @@ def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None)
                 streak_rate_unc["ra_rate_unc"] = abs(d["rmsRArate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
                 streak_rate_unc["dec_rate_unc"] = abs(d["rmsDecrate"]) * ARCSEC_PER_HOUR_TO_RAD_PER_DAY
             o = Observation.from_streak_with_id(
-                str(d["provID"]),
+                str(d[primary_id_column_name]),
                 d["ra"] * DEG,
                 d["dec"] * DEG,
                 d["raRate"] * ARCSEC_PER_HOUR_TO_RAD_PER_DAY,
@@ -1867,7 +1913,7 @@ def _observations_for_update(data, cache_dir, weight_data=False, bias_dict=None)
             )
         else:
             o = Observation.from_astrometry_with_id(
-                str(d["provID"]),
+                str(d[primary_id_column_name]),
                 d["ra"] * DEG,
                 d["dec"] * DEG,
                 jd,
@@ -1912,6 +1958,7 @@ def sequential_update(
     debias_data=False,
     max_update_sigma=4.0,
     iter_max=100,
+    primary_id_column_name="provID",
 ):
     """Sequential / information-filter update of a prior orbit fit (issue #419).
 
@@ -1955,13 +2002,15 @@ def sequential_update(
     ephem = get_ephem(kernels_loc)
     bias_dict = generate_bias_dict(cache_dir) if debias_data else None
 
-    new_obs = _observations_for_update(new_data, cache_dir, weight_data, bias_dict)
+    new_obs = _observations_for_update(new_data, cache_dir, weight_data, bias_dict, primary_id_column_name)
     seq = run_sequential_update(ephem, prior_fit, new_obs, iter_max)
 
     def _full_refit():
         if all_data is None:
             return None
-        all_obs = _observations_for_update(all_data, cache_dir, weight_data, bias_dict)
+        all_obs = _observations_for_update(
+            all_data, cache_dir, weight_data, bias_dict, primary_id_column_name
+        )
         return run_from_vector_with_initial_guess(ephem, prior_fit, all_obs, iter_max)
 
     # The information update did not converge (e.g. a non-positive-definite prior,
@@ -2033,7 +2082,7 @@ def _fitresult_to_row(fit, obj_id, obs_hash, nobs_fit, dtypes):
         )
         + cov
         # The sequential update does not run the staged pipeline either.
-        + (FitOutcome.from_flag(fit.flag).as_row() if "converged" in dtypes.names else ())
+        + (FitOutcome.from_flag(fit.flag).as_row(fit.flag) if "converged" in dtypes.names else ())
         + (obs_hash, nobs_fit)
     )
     return np.array([row], dtype=dtypes)
@@ -2130,6 +2179,7 @@ def incremental_orbitfit(
                     weight_data=weight_data,
                     debias_data=debias,
                     max_update_sigma=max_update_sigma,
+                    primary_id_column_name=primary_id_column_name,
                 )
                 routing["sequential" if seq.method == "sequential_update" else "sequential_fallback"] += 1
                 seq_rows.append(_fitresult_to_row(seq, oid, obs_hash, nobs, out_dtype))
@@ -2347,21 +2397,31 @@ def orbitfit_cli(
             )
 
         if cli_args.separate_flagged:
-            # Split the results into two files: one for successful fits and one for failed fits
-            success_mask = fit_orbits["flag"] == 0
-            fit_orbits_success = fit_orbits[success_mask]
-            fit_orbits_failed = fit_orbits[~success_mask]
+            fit_orbits_success, fit_orbits_failed = split_accepted_flagged(fit_orbits)
 
             if len(fit_orbits_success) > 0:
                 _emit(fit_orbits_success, output_file)
 
             if len(fit_orbits_failed) > 0:
-                _emit(fit_orbits_failed[[_primary_id_column_name, "method", "flag"]], output_file_flagged)
+                _emit(fit_orbits_failed, output_file_flagged)
 
         else:  # All results go to a single output file
             _emit(fit_orbits, output_file)
 
     logger.info(f"Data has been written to {output_file}")
+
+
+def split_accepted_flagged(fit_orbits):
+    """Partition fit results into the accepted rows and the flagged ones.
+
+    Both halves keep every column. A flagged row may still hold a fitted orbit:
+    the flag values are defined in ``constants.py``, and those in
+    ``CONVERGED_FLAGS`` mean the differential correction reached a solution that
+    a later check then rejected. ``accepted`` and ``converged``
+    (``OUTCOME_COLUMNS``) report both facts per row.
+    """
+    accepted_mask = fit_orbits["flag"] == FLAG_CONVERGED
+    return fit_orbits[accepted_mask], fit_orbits[~accepted_mask]
 
 
 def _is_valid_data(data):

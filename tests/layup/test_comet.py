@@ -235,3 +235,67 @@ def test_comet_output(tmpdir):
     assert np.allclose(output_data["ao_barycentric"], known_data["ao_barycentric"], rtol=2e-4)
     assert np.allclose(output_data["d_ao"], known_data["d_ao"])
     assert np.allclose(output_data["e_ao"], known_data["e_ao"])
+
+
+# --- Ephemeris coverage guards: units (#563) --- #
+#
+# The guards in comet.py compare against `sim.t`, which `generate_simulations`
+# sets to `epoch - ephem.jd_ref` with `jd_ref = 2451545.0`. So the constants are
+# TDB days from J2000, not MJD, and the old `_MJD` names said otherwise. These
+# pin the units: read as MJD the same integers land in the wrong millennium.
+
+JD_REF = 2451545.0  # ephem.jd_ref, the J2000 epoch `sim.t` is measured from
+MJD_OFFSET = 2400000.5
+
+
+def _jd_to_year(jd):
+    """Gregorian year of a Julian date, good to a day -- enough to pin a unit."""
+    z = int(jd + 0.5)
+    alpha = int((z - 1867216.25) / 36524.25)
+    a = z + 1 + alpha - int(alpha / 4)
+    b = a + 1524
+    c = int((b - 122.1) / 365.25)
+    e = int((b - int(365.25 * c)) / 30.6001)
+    month = e - 1 if e < 14 else e - 13
+    return c - 4716 if month > 2 else c - 4715
+
+
+def test_timeframe_constants_are_days_from_j2000():
+    """They must convert to the coverage of `linux_p1550p2650.440` (1550-2650)."""
+    from layup.comet import (
+        ASSIST_TIMEFRAME_MAX_J2000_DAYS,
+        ASSIST_TIMEFRAME_MIN_J2000_DAYS,
+    )
+
+    assert _jd_to_year(JD_REF + ASSIST_TIMEFRAME_MIN_J2000_DAYS) == 1552
+    assert _jd_to_year(JD_REF + ASSIST_TIMEFRAME_MAX_J2000_DAYS) == 2647
+
+
+def test_timeframe_constants_are_not_mjd():
+    """The unit error this guards against: read as MJD they are absurd, and the
+    lower bound is not even representable as a date."""
+    from layup.comet import (
+        ASSIST_TIMEFRAME_MAX_J2000_DAYS,
+        ASSIST_TIMEFRAME_MIN_J2000_DAYS,
+    )
+
+    assert ASSIST_TIMEFRAME_MIN_J2000_DAYS < 0, "an MJD cannot be negative here"
+    as_mjd_year = _jd_to_year(MJD_OFFSET + ASSIST_TIMEFRAME_MAX_J2000_DAYS)
+    assert as_mjd_year != 2647, "reading the constant as an MJD must not give the kernel's end"
+
+
+def test_timeframe_constants_match_sim_t_units():
+    """`sim.t` is `epoch - jd_ref`, so a date inside coverage must fall inside
+    the guards when expressed the same way -- the comparison the code makes."""
+    from layup.comet import (
+        ASSIST_TIMEFRAME_MAX_J2000_DAYS,
+        ASSIST_TIMEFRAME_MIN_J2000_DAYS,
+    )
+
+    for jd in (2288001.0, 2451545.0, 2687999.0):  # just inside, J2000, just inside
+        sim_t = jd - JD_REF
+        assert ASSIST_TIMEFRAME_MIN_J2000_DAYS < sim_t < ASSIST_TIMEFRAME_MAX_J2000_DAYS
+
+    for jd in (2287999.0, 2688001.0):  # just outside each end
+        sim_t = jd - JD_REF
+        assert not (ASSIST_TIMEFRAME_MIN_J2000_DAYS < sim_t < ASSIST_TIMEFRAME_MAX_J2000_DAYS)
