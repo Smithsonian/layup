@@ -212,13 +212,9 @@ def herget_iod(observations, seq):
     ephem, _, _ = build_ephem_and_mus()
     solns = herget_with_assist(observations, seq, ephem)
     if solns == []:
-        solns = herget_with_assist(
-            observations, seq, ephem, initial_rho=5
-        )
+        solns = herget_with_assist(observations, seq, ephem, initial_rho=5)
     if solns == []:
-        solns = herget_with_assist(
-            observations, seq, ephem, initial_rho=40
-        )
+        solns = herget_with_assist(observations, seq, ephem, initial_rho=40)
 
     return solns
 

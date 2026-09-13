@@ -27,9 +27,9 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations
         the maximum number of iterations before the fitting stops
     initial_rho : float (optional, default: 2.0)
         The initial guess for the range (for both the first and nth observation)"""
-    seq_lengths = [len(i) for i in seq]
-    longest_i = np.argmax(seq_lengths)  # finds the sequence index with the most observations contained in it
-    obs = np.array(observations)[seq[longest_i]]
+    obs = np.array(observations)[
+        seq[0]
+    ]  # seq[0] is the longest time-span; take all of the observations from this span
 
     # Define our values
 
@@ -50,14 +50,18 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations
     iteration = 0
     delta_rho1 = tolerance + 1
     delta_rhon = tolerance + 1
-    dets = [1] # determinant of the 2x2 matrix, will stop the loop if this is too small
+    dets = [1]  # determinant of the 2x2 matrix, will stop the loop if this is too small
 
     # Get original epochs so we can light-time correct them each iteration
     epochs = np.zeros(len(obs))
     for i, observation in enumerate(obs):
         epochs[i] = observation.epoch
 
-    while (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance and iteration < max_iterations and np.median(np.array(dets)) > 0.01:
+    while (
+        (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance
+        and iteration < max_iterations
+        and np.median(np.array(dets)) > 1e-3
+    ):
 
         # Light-time correct the observation times
         for i, observation in enumerate(obs):
@@ -73,8 +77,11 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations
         if abs(delta_rhon) > rho_n / 2:
             delta_rhon = (abs(delta_rhon) / delta_rhon) * rho_n / 2
         # print(delta_rho1, delta_rhon, state_1)
-        
-        dets.append(abs(det))
+
+        if iteration == 0:
+            dets = [det]
+        else:
+            dets.append(det)
         print(det)
 
         # Update rho values
@@ -84,17 +91,16 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations
         rn = r_e_n + rho_n * np.array(rho_hat_n)
 
         iteration += 1
-        
+
     # restore observation epochs
     for i, observation in enumerate(obs):
         observation.epoch = epochs[i]
-    
-    if iteration >= max_iterations or det <= 0.01:
+
+    if iteration >= max_iterations or det <= 1e-3:
+        print(np.median(dets))
         return (
             []
         )  # if max_iterations is reached consider the IOD a failure, return empty list (will trigger flag 5)
-
-    
 
     state = state_1
     solution = FitResult()
@@ -156,27 +162,20 @@ def find_drho(
 
     # Find velocities at rho_1 and rho_n
     [vx1, vy1, vz1], [vxn, vyn, vzn] = find_velocity(t1, tn, r1, rn, tolerance * rho_1 / 100, max_iterations)
-    
+
     # finding vel using state transition matrix; uses the state_transition_matrix from universal_kepler.py to analytically
-    # determine the change in velocity 
+    # determine the change in velocity
     Phi = state_transition_matrix(MU_SUN, tn - t1, [*r1, vx1, vy1, vz1])
-    
-    if rho_1 > 2:
-        drho1 = rho_hat_1
-        drhon = rho_hat_n
-    else:
-        drho1 = rho_hat_1 * 0.01
-        drhon = rho_hat_n * 0.01
-        
-    var_vxyz_1 = -np.matmul(np.matmul(np.linalg.inv(Phi[0:3, 3:6]), Phi[0:3, 0:3]), np.transpose(drho1))
-    var_vxyz_n = np.matmul(np.matmul(Phi[3:6, 3:6], np.linalg.inv(Phi[0:3, 3:6])), np.transpose(drhon))
+
+    var_vxyz_1 = -np.matmul(np.matmul(np.linalg.inv(Phi[0:3, 3:6]), Phi[0:3, 0:3]), rho_hat_1)
+    var_vxyz_n = np.matmul(np.matmul(Phi[3:6, 3:6], np.linalg.inv(Phi[0:3, 3:6])), rho_hat_n)
 
     # Simulation setup
     sim = rebound.Simulation()
 
     sim.add(x=r1[0], y=r1[1], z=r1[2], vx=vx1, vy=vy1, vz=vz1)
     var = sim.add_variation(testparticle=0)
-    var.particles[0].xyz = drho1
+    var.particles[0].xyz = rho_hat_1
     var.particles[0].vxyz = var_vxyz_1
 
     ex = assist.Extras(sim, ephem)
@@ -204,12 +203,11 @@ def find_drho(
         a1[2 * i] = b[2 * i] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), A)
         a1[2 * i + 1] = b[2 * i + 1] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), D)
 
-
     # Do the same for rho_n, set up simulation again
     sim = rebound.Simulation()
     sim.add(x=rn[0], y=rn[1], z=rn[2], vx=vxn, vy=vyn, vz=vzn)
     var = sim.add_variation(testparticle=0)
-    var.particles[0].xyz = drhon
+    var.particles[0].xyz = rho_hat_n
     var.particles[0].vxyz = var_vxyz_n
 
     ex = assist.Extras(sim, ephem)
@@ -232,11 +230,11 @@ def find_drho(
         a2[2 * i] = b[2 * i] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), A)
         a2[2 * i + 1] = b[2 * i + 1] - np.dot((rho + r_var) / np.linalg.norm(rho + r_var), D)
 
-    sigma_a1b = sum((a1 * b)/np.linalg.norm(drho1))
-    sigma_a2b = sum((a2 * b)/np.linalg.norm(drhon))
-    sigma_a1squared = sum((a1**2)/sum(drho1**2))
-    sigma_a2squared = sum(a2**2/sum(drhon**2)) 
-    sigma_a1a2 = sum(a1 * a2/ sum(drho1*drhon))
+    sigma_a1b = sum(a1 * b)
+    sigma_a2b = sum(a2 * b)
+    sigma_a1squared = sum(a1**2)
+    sigma_a2squared = sum(a2**2)
+    sigma_a1a2 = sum(a1 * a2)
 
     delta_rho1 = (sigma_a1b * sigma_a2squared - sigma_a2b * sigma_a1a2) / (
         sigma_a1a2**2 - sigma_a1squared * sigma_a2squared
@@ -247,9 +245,12 @@ def find_drho(
     # print(sigma_a1b + delta_rho1*sigma_a1squared + delta_rhon*sigma_a1a2)
     # print(sigma_a2b + delta_rho1*sigma_a1a2 + delta_rhon*sigma_a2squared)
     # print(sum(a1*(b + delta_rho1*a1 + delta_rhon*a2)))
-    det = sigma_a1squared * sigma_a2squared - sigma_a1a2**2 # determinant of the 2x2 matrix; good check for degeneracy
+    det = (
+        sigma_a1squared * sigma_a2squared - sigma_a1a2**2
+    )  # determinant of the 2x2 matrix; good check for degeneracy
+    det_normalised = det / (sigma_a1squared * sigma_a2squared)
 
-    return delta_rho1, delta_rhon, [*r1, vx1, vy1, vz1], det
+    return delta_rho1, delta_rhon, [*r1, vx1, vy1, vz1], det_normalised
 
 
 def find_velocity(t1, tn, r1, rn, tolerance=0.0001, max_iterations=100):

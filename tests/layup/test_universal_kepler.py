@@ -391,6 +391,7 @@ def test_partials_grow_secularly_with_revolutions():
     assert norms == sorted(norms), f"STM norm should increase with revolutions: {norms}"
     assert norms[-1] > 3.0 * norms[0]
 
+
 # --------------------------------------------------------------------------
 # Input handling
 # --------------------------------------------------------------------------

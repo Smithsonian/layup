@@ -197,14 +197,14 @@ def test_find_drho(tmpdir):
     "input_filename, known_params",
     [
         (
-            "2000DM8_ephem.csv",
+            "2001XV10_ephem.csv",
             [
-                -1.347056879947840e-01,
-                -2.504771109562541e-01,
-                -6.466721968427541e-01,
-                2.282262916092779e-02,
-                -1.003982441217503e-02,
-                4.713377602770403e-03,
+                -2.259613923874405e00,
+                6.091554009210353e-01,
+                1.186980152337968e00,
+                -8.347806763179260e-03,
+                -4.333920662732153e-03,
+                -1.710437173476445e-03,
             ],
         ),
         (
@@ -259,7 +259,7 @@ def test_all(tmpdir, input_filename, known_params):
         input_file_format="ADES_csv",
         output_file=temp_out_file,
         output_file_format="csv",
-        chunk_size=1000,
+        chunk_size=3000,
         num_workers=1,
         cli_args=FakeCliArgs(
             g=None,  # Use our first run for the initial guesses
