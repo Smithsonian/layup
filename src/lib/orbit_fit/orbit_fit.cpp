@@ -941,7 +941,20 @@ namespace orbit_fit
     }
 
 
-    int converged(Eigen::MatrixXd dX, double eps, double chi2)
+    // Issue #477: the convergence test below compares each parameter step against the SAME
+    // absolute `eps`, so it is not invariant under reparameterisation and it demands more
+    // significant figures of a large parameter than of a small one. `frac` switches on the scaled
+    // test the issue asks for: accept when the step is small compared with what the data can
+    // determine, sigma_i = sqrt((N^-1)_ii).
+    //
+    // `eps` stays an absolute FLOOR, so a well-determined parameter is never held to a LOOSER bar
+    // than today, and frac = 0 (the default) reproduces the present predicate exactly.
+    //
+    // `N` is the NORMAL MATRIX (B^T W B), not the covariance -- the variable is called `C` at the
+    // call site, which is a trap: the formal variance is (N^-1)_ii, so using N_ii directly would
+    // TIGHTEN the tolerance as the data improve, i.e. exactly backwards.
+    int converged(const Eigen::MatrixXd &dX, double eps, double chi2,
+                  const Eigen::MatrixXd *N = nullptr, double frac = 0.0)
     {
         // A NaN chi-square or step means the fit has diverged, not converged.
         // Without this guard the loop below reports convergence on a NaN step,
@@ -954,9 +967,28 @@ namespace orbit_fit
         {
             return 0;
         }
+        Eigen::VectorXd sigma;   // formal 1-sigma per parameter; empty when the scaled test is off
+        if (N != nullptr && frac > 0.0 && N->rows() == dX.size() && N->rows() == N->cols())
+        {
+            Eigen::MatrixXd cov =
+                N->ldlt().solve(Eigen::MatrixXd::Identity(N->rows(), N->cols()));
+            sigma = cov.diagonal().cwiseMax(0.0).cwiseSqrt();
+        }
         for (size_t i = 0; i < dX.size(); i++)
         {
-            if (std::isnan(dX(i)) || abs(dX(i)) > eps)
+            if (std::isnan(dX(i)))
+            {
+                return 0;
+            }
+            // An unusable covariance (singular, non-finite) falls back to `eps` rather than
+            // refusing to converge.
+            double tol = eps;
+            if (sigma.size() > (Eigen::Index)i && std::isfinite(sigma((Eigen::Index)i)) &&
+                sigma((Eigen::Index)i) > 0.0)
+            {
+                tol = std::max(eps, frac * sigma((Eigen::Index)i));
+            }
+            if (abs(dX(i)) > tol)
             {
                 return 0;
             }
@@ -1094,7 +1126,8 @@ namespace orbit_fit
                                                               // or null for ordinary LSQ
                   const double *gofr = nullptr, // [alpha,nm,nn,nk,r0] Marsden g(r); null -> r^-2
                   bool per_arc = false,     // piecewise-constant per-arc non-grav amplitudes
-                  double *a123_fwd_io = nullptr) // arc-B [A1,A2,A3] seed in / fitted out (per_arc)
+                  double *a123_fwd_io = nullptr, // arc-B [A1,A2,A3] seed in/out (per_arc)
+                  double conv_frac = 0.0)   // #477 scaled convergence; 0 = today's absolute test
     { // runtime
 
         // Number of fitted parameters: 6 (state) + one per active non-grav param.
@@ -1180,6 +1213,13 @@ namespace orbit_fit
         int flag = 1;
 
         double chi2_prev = HUGE_VAL;
+        // #477: the scaled tolerance is built from the normal matrix at the CURRENT state. Before
+        // any step has been ACCEPTED that is the seed's, and on a weakly determined object its
+        // sigma is large enough that the first step passes -- the fit then returns flag = 0 having
+        // never moved. Measured on 48,000 MPC objects at frac = 0.01 that is 13.8% of the
+        // short-arc section, against zero with the absolute test. So the scaled test is not
+        // allowed to fire until the loop has accepted a step.
+        bool have_accepted_step = false;
 
         // Initialise so that a fit which runs to iter_max without converging (or
         // iter_max == 0) reports a meaningful chi-square rather than whatever the
@@ -1279,6 +1319,7 @@ namespace orbit_fit
                     for (int k = 0; k < nactive; k++)
                         a123b[active[k]] += dX(6 + nactive + k);
                 chi2_prev = obj;
+                have_accepted_step = true;
             }
             else
             {
@@ -1291,7 +1332,8 @@ namespace orbit_fit
                 lambda *= 2.0;
             }
 
-            int cflag = converged(dX, eps, chi2_d);
+            int cflag = converged(dX, eps, chi2_d,
+                                  have_accepted_step ? &C : nullptr, conv_frac);
             if (cflag)
             {
                 flag = 0;
@@ -1458,7 +1500,8 @@ namespace orbit_fit
                                                   size_t iter_max = 100,
                                                   int nongrav_mask = 0,
                                                   std::vector<double> gofr = {},
-                                                  bool per_arc = false)
+                                                  bool per_arc = false,
+                                                  double conv_frac = 0.0)
     {
         int success = 1;
         size_t iters;
@@ -1513,7 +1556,8 @@ namespace orbit_fit
             nullptr, // prior_info (ordinary LSQ)
             gofr_ptr,
             per_arc,
-            per_arc ? a123b : nullptr);
+            per_arc ? a123b : nullptr,
+            conv_frac);
 
         int nactive = 0;
         std::vector<int> active;
@@ -1709,6 +1753,7 @@ namespace orbit_fit
               py::arg("nongrav_mask") = 0,
               py::arg("gofr") = std::vector<double>{},
               py::arg("per_arc") = false,
+              py::arg("conv_frac") = 0.0,
               R"pbdoc(
                 Takes an assist_ephem object, a vector of observations, an
                 initial guess, and (optionally) a cap on LM iterations
