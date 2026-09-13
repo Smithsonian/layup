@@ -941,6 +941,12 @@ namespace orbit_fit
     }
 
 
+    // The package default for the #477 scaled convergence tolerance. Set to 0.0 to restore the
+    // purely absolute test. 3e-5 is the smallest INTERIOR value on a measured six-point sweep --
+    // see the pull request for the ledger and for what it costs.
+    constexpr double DEFAULT_CONV_FRAC = 3e-5;
+
+
     // Issue #477: the convergence test below compares each parameter step against the SAME
     // absolute `eps`, so it is not invariant under reparameterisation and it demands more
     // significant figures of a large parameter than of a small one. `frac` switches on the scaled
@@ -1127,7 +1133,7 @@ namespace orbit_fit
                   const double *gofr = nullptr, // [alpha,nm,nn,nk,r0] Marsden g(r); null -> r^-2
                   bool per_arc = false,     // piecewise-constant per-arc non-grav amplitudes
                   double *a123_fwd_io = nullptr, // arc-B [A1,A2,A3] seed in/out (per_arc)
-                  double conv_frac = 0.0)   // #477 scaled convergence; 0 = today's absolute test
+                  double conv_frac = DEFAULT_CONV_FRAC) // #477 scaled convergence; 0 = absolute test
     { // runtime
 
         // Number of fitted parameters: 6 (state) + one per active non-grav param.
@@ -1501,7 +1507,7 @@ namespace orbit_fit
                                                   int nongrav_mask = 0,
                                                   std::vector<double> gofr = {},
                                                   bool per_arc = false,
-                                                  double conv_frac = 0.0)
+                                                  double conv_frac = DEFAULT_CONV_FRAC)
     {
         int success = 1;
         size_t iters;
@@ -1753,7 +1759,7 @@ namespace orbit_fit
               py::arg("nongrav_mask") = 0,
               py::arg("gofr") = std::vector<double>{},
               py::arg("per_arc") = false,
-              py::arg("conv_frac") = 0.0,
+              py::arg("conv_frac") = DEFAULT_CONV_FRAC,
               R"pbdoc(
                 Takes an assist_ephem object, a vector of observations, an
                 initial guess, and (optionally) a cap on LM iterations
