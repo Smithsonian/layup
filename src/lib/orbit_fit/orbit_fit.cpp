@@ -1692,6 +1692,10 @@ namespace orbit_fit
 // are all in scope.
 #include "bk_iod.cpp"
 
+// Epoch propagation (issue #578). After bk_iod.cpp because it uses
+// add_variational_particles and apply_ias15_adaptive_mode from above.
+#include "propagate.cpp"
+
 #ifdef Py_PYTHON_H
     static void orbit_fit_bindings(py::module &m)
     {

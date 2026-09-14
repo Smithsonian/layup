@@ -15,6 +15,7 @@ import pytest
 
 import layup.orbitfit as orbitfit
 from layup.constants import (
+    FLAG_IMPLAUSIBLE_ORBIT,
     FLAG_BUILDUP_FAILED,
     FLAG_CONVERGED,
     FLAG_CSQ_TOO_LARGE,
@@ -153,6 +154,7 @@ def test_outcome_is_optional_so_existing_callers_are_unaffected(monkeypatch):
         (FLAG_CONVERGED, True, STAGE_COMPLETE),
         (FLAG_CSQ_TOO_LARGE, True, STAGE_COMPLETE),
         (FLAG_DEGENERATE_COV, True, STAGE_COMPLETE),
+        (FLAG_IMPLAUSIBLE_ORBIT, True, STAGE_COMPLETE),
         (FLAG_DID_NOT_CONVERGE, False, STAGE_NOT_ATTEMPTED),
         (FLAG_NO_ROOT_CONVERGED, False, STAGE_PRIMARY),
         (FLAG_BUILDUP_FAILED, False, STAGE_BUILDUP),

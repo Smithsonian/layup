@@ -142,8 +142,15 @@ OUTCOME_COLUMNS = ("accepted", "converged", "stage", "failed_csq", "failed_cov",
 # means "converged, then rejected".
 CXX_GATE_FLAGS = {FLAG_CSQ_TOO_LARGE: "failed_csq", FLAG_DEGENERATE_COV: "failed_cov"}
 
-# The flags that mean the differential correction reached a solution.
-CONVERGED_FLAGS = (FLAG_CONVERGED, FLAG_CSQ_TOO_LARGE, FLAG_DEGENERATE_COV)
+# The flags that mean the differential correction reached a solution. Every
+# flag whose comment above begins "converged" belongs here: the ones after
+# FLAG_CONVERGED are solutions a later check rejected, not failures to solve.
+CONVERGED_FLAGS = (
+    FLAG_CONVERGED,
+    FLAG_CSQ_TOO_LARGE,
+    FLAG_DEGENERATE_COV,
+    FLAG_IMPLAUSIBLE_ORBIT,
+)
 
 # The flags for which no chi-square exists to report: one where no fit was ever
 # run, and one where no initial-orbit candidate was found to score. Every other

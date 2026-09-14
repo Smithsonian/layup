@@ -145,7 +145,7 @@ def main():
     optional.add_argument(
         "-sf",
         "--separate-flagged",
-        help="Split flagged results into separate output file. Flagged results file is called `output_file_stem` + '_flagged', i.e. 'output_flagged.csv'. Default is False.",
+        help="Split flagged results into a separate output file, so the main output holds only accepted fits. The flagged file is called `output_file_stem` + '_flagged', i.e. 'output_flagged.csv', and carries the same columns as the main output: a fit that converged but was flagged still has its orbit there. Default is False.",
         dest="separate_flagged",
         action="store_true",
         required=False,
