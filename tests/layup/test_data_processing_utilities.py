@@ -1008,8 +1008,9 @@ def test_layup_observatory_explicit_none_uses_layup_cache():
     assert obs.cache_dir == str(pooch.os_cache("layup"))
 
 
-
 import signal
+
+
 def test_terminate_raises_keyboard_interrupt():
     with pytest.raises(KeyboardInterrupt):
         _terminate(signal.SIGTERM, None)
