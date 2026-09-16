@@ -249,18 +249,19 @@ def _run_pool(tuple_task_list, n_workers, per_task_budget_s=None, task_labels=No
 
     # checks if thread is main thread. If its not the main thread signal.signal will not work
     on_main_thread = threading.current_thread() is threading.main_thread()
-    _prev_term = None
-    if on_main_thread:
-        # _prev_term stores the previous way SIGTERM and SIGHUP was handled.
-        _prev_term_SIGTERM = signal.signal(signal.SIGTERM, _terminate)
-        _prev_term_SIGHUP = signal.signal(signal.SIGHUP, _terminate)
-    else:
-        logger.warning(
-            "layup is being called not on the main thread, SIGTERM will not be handled. Therefore orbitfitting may leave orphaned processes if terminated. Use: \n`ps -eo pid,ppid,args -ww | awk '$2==1' | grep -i \"multiprocessing.spawn\\|layup\"`\n to check for layup orphan processes, and `kill <pid>` to remove them."
-        )
+    _prev_term_SIGTERM = None
+    _prev_term_SIGHUP = None
     try:
         with _MP_CONTEXT.Pool(processes=n_workers, initializer=_init_worker) as pool:
             try:
+                if on_main_thread:
+                    # _prev_term's store the previous way SIGTERM and SIGHUP was handled.
+                    _prev_term_SIGTERM = signal.signal(signal.SIGTERM, _terminate)
+                    _prev_term_SIGHUP = signal.signal(signal.SIGHUP, _terminate)
+                else:
+                    logger.warning(
+                        "layup is being called not on the main thread, SIGTERM will not be handled. Therefore orbitfitting may leave orphaned processes if terminated. Use: \n`ps -eo pid,ppid,args -ww | awk '$2==1' | grep -i \"multiprocessing.spawn\\|layup\"`\n to check for layup orphan processes, and `kill <pid>` to remove them."
+                    )
                 if per_task_budget_s is None:
                     # starmaps takes a function and an iterable parameter (in this case the list)
                     # and iterates through all the chunked data. (chunks are queued waiting for a free core.)
@@ -274,6 +275,7 @@ def _run_pool(tuple_task_list, n_workers, per_task_budget_s=None, task_labels=No
                 if on_main_thread:
                     # ignore additional signal terminates until all pools are terminated.
                     signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                    signal.signal(signal.SIGHUP, signal.SIG_IGN)
                 pool.terminate()
                 pool.join()
                 logger.error("Processing canceled due to keyboard or SIGTERM (signal terminate) exit.")
@@ -289,9 +291,13 @@ def _run_pool(tuple_task_list, n_workers, per_task_budget_s=None, task_labels=No
             if _prev_term_SIGTERM is not None:
                 # resets SIGTERM to previous handler from _prev_term_SIGTERM before exiting function.
                 signal.signal(signal.SIGTERM, _prev_term_SIGTERM)
+            else:
+                signal.signal(signal.SIGTERM, signal.SIG_DFL)
             if _prev_term_SIGHUP is not None:
                 # resets SIGHUP to previous handler from _prev_term_SIGHUP before exiting function.
                 signal.signal(signal.SIGHUP, _prev_term_SIGHUP)
+            else:
+                signal.signal(signal.SIGHUP, signal.SIG_DFL)
 
 
 def _collect_within_budget(pool, tuple_task_list, n_workers, per_task_budget_s, task_labels=None):
