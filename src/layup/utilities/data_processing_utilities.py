@@ -3,9 +3,9 @@ import json
 import logging
 import multiprocessing
 import os
-import sys
 import signal
 import tempfile
+import threading
 from importlib.resources import files
 
 import numpy as np
@@ -167,8 +167,8 @@ def write_fallback_obscodes():
 
 def _init_worker():
     """
-    This removes signal error for the subprocesses that are parallised.
-    Therefore the main process is the only thing in control of a keyboard error
+    This ignores (SIG_IGN) signal interrupts (SIGINT) for the subprocesses that are paralleled.
+    Therefore the main process is the only thing in control of a signal interrupt (KeyboardInterrupt)
     and terminates the subprocesses.
 
     Copyright (c) Amethyst Reese
@@ -176,6 +176,15 @@ def _init_worker():
     Adapted from Amethyst Reese's blog, [https://noswap.com/blog/python-multiprocessing-keyboardinterrupt]
     """
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def _terminate(signum, frame):
+    """
+    Handler for SIGTERM and SIGHUP while using multiprocessing.
+    Any SIGTERM (signal terminate) or SIGHUP will be treated as a
+    KeyboardInterrupt in _run_pool()
+    """
+    raise KeyboardInterrupt
 
 
 def _pool_is_up(_=None):
@@ -237,28 +246,58 @@ def _run_pool(tuple_task_list, n_workers, per_task_budget_s=None, task_labels=No
         this omits any abandoned task -- which is the point: one object that
         never converges used to hold every other result in the run.
     """
-    with _MP_CONTEXT.Pool(processes=n_workers, initializer=_init_worker) as pool:  # parallel across n_workers
-        try:
-            if per_task_budget_s is None:
-                # starmaps takes a function and an iterable parameter (in this casue the list)
-                # and iterates through all the chunked data. (each chunk is given a core)
-                results = pool.starmap(_apply_func_with_kwargs, tuple_task_list, chunksize=1)
+
+    # checks if thread is main thread. If its not the main thread signal.signal will not work
+    on_main_thread = threading.current_thread() is threading.main_thread()
+    _prev_term_SIGTERM = None
+    _prev_term_SIGHUP = None
+    try:
+        with _MP_CONTEXT.Pool(processes=n_workers, initializer=_init_worker) as pool:
+            try:
+                if on_main_thread:
+                    # _prev_term's store the previous way SIGTERM and SIGHUP was handled.
+                    _prev_term_SIGTERM = signal.signal(signal.SIGTERM, _terminate)
+                    _prev_term_SIGHUP = signal.signal(signal.SIGHUP, _terminate)
+                else:
+                    logger.warning(
+                        "layup is being called not on the main thread, SIGTERM will not be handled. Therefore orbitfitting may leave orphaned processes if terminated. Use: \n`ps -eo pid,ppid,args -ww | awk '$2==1' | grep -i \"multiprocessing.spawn\\|layup\"`\n to check for layup orphan processes, and `kill <pid>` to remove them."
+                    )
+                if per_task_budget_s is None:
+                    # starmaps takes a function and an iterable parameter (in this case the list)
+                    # and iterates through all the chunked data. (chunks are queued waiting for a free core.)
+                    results = pool.starmap(_apply_func_with_kwargs, tuple_task_list, chunksize=1)
+                else:
+                    results = _collect_within_budget(
+                        pool, tuple_task_list, n_workers, per_task_budget_s, task_labels
+                    )
+            except KeyboardInterrupt:
+                # if keyboard interrupt, SIGTERM (signal terminate) or SIGHUP stop all pool processes
+                if on_main_thread:
+                    # ignore additional signal terminates until all pools are terminated.
+                    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+                pool.terminate()
+                pool.join()
+                logger.error("Processing canceled due to keyboard or SIGTERM (signal terminate) exit.")
+                raise
             else:
-                results = _collect_within_budget(
-                    pool, tuple_task_list, n_workers, per_task_budget_s, task_labels
-                )
-        except KeyboardInterrupt:
-            # if keyboard interupt stop all processes
-            pool.terminate()
-            pool.join()
-            logger.error("Processing canceled due to keyboard exit.")
-            raise
-        else:
-            pool.close()
-            pool.join()
-    if not results:
-        return np.empty(0)
-    return np.concatenate(results)
+                pool.close()
+                pool.join()
+                if not results:
+                    return np.empty(0)
+                return np.concatenate(results)
+    finally:
+        if on_main_thread:
+            if _prev_term_SIGTERM is not None:
+                # resets SIGTERM to previous handler from _prev_term_SIGTERM before exiting function.
+                signal.signal(signal.SIGTERM, _prev_term_SIGTERM)
+            else:
+                signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            if _prev_term_SIGHUP is not None:
+                # resets SIGHUP to previous handler from _prev_term_SIGHUP before exiting function.
+                signal.signal(signal.SIGHUP, _prev_term_SIGHUP)
+            else:
+                signal.signal(signal.SIGHUP, signal.SIG_DFL)
 
 
 def _collect_within_budget(pool, tuple_task_list, n_workers, per_task_budget_s, task_labels=None):
