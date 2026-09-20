@@ -1,6 +1,11 @@
+import logging
+from collections import Counter
+
 import numpy as np
 
 from layup.utilities.file_io.ObjectDataReader import ObjectDataReader
+
+logger = logging.getLogger(__name__)
 
 # Column 15 (0-indexed 14) is the MPC "note 2" / observation-type code. The
 # codes S (satellite), R (radar) and V (roving observer) each emit a SECOND
@@ -14,6 +19,28 @@ _TWO_LINE_CONT_NOTES = ("s", "r", "v")
 # emitting it produces a positionless record that would fall back to a per-row
 # JPL Horizons lookup during fitting.
 _DELETED_NOTES = ("X", "x")
+# Two-line record types this reader can parse but cannot represent. A radar
+# record's continuation line carries range/Doppler, for which the output dtype
+# has no columns; radar is ingested through the ADES delay/doppler path instead.
+# Such a record is skipped and counted (issue #588) rather than raised on, so
+# that one radar observation does not cost the caller the rest of the file.
+_UNSUPPORTED_FIRST_NOTES = ("R",)
+
+# Keys of the skipped-record tally. Each names why a record in the file did not
+# become a row, so a partial loss of input is visible rather than silent.
+SKIP_TRUNCATED = "truncated_line"
+SKIP_DELETED = "deleted_observation"
+SKIP_RADAR = "unsupported_radar"
+SKIP_ORPHAN = "orphan_continuation"
+SKIP_UNPAIRED = "first_line_without_continuation"
+
+_SKIP_REASONS = {
+    SKIP_TRUNCATED: "shorter than the 15 columns an obs80 record needs",
+    SKIP_DELETED: "marked deleted or replaced by the MPC (note 2 X/x)",
+    SKIP_RADAR: "a radar (R/r) record, which this reader cannot represent",
+    SKIP_ORPHAN: "a continuation line with no matching first line",
+    SKIP_UNPAIRED: "a two-line record whose continuation line is missing",
+}
 
 
 def deleted_observation(line):
@@ -41,6 +68,17 @@ def two_line_row_continuation(line):
     would be misread as RA/Dec and it would carry no observatory position.
     """
     return len(line) > 14 and line[14] in _TWO_LINE_CONT_NOTES
+
+
+def unsupported_two_line_record(first_line):
+    """Checks whether ``first_line`` starts a two-line record whose payload this
+    reader can parse but cannot represent (currently radar, note 2 R).
+
+    This is deliberately distinct from a malformed record: the file is correct
+    and we simply have nowhere to put the data, so the record is skipped and
+    counted rather than raised on.
+    """
+    return len(first_line) > 14 and first_line[14] in _UNSUPPORTED_FIRST_NOTES
 
 
 def two_line_rows_match(first_line, second_line):
@@ -192,6 +230,11 @@ class Obs80DataReader(ObjectDataReader):
         # if we try to read data for specific object IDs.
         self.obj_id_counts = {}
 
+        # Tally of records that did not become rows, keyed by reason. Reset at
+        # the start of every walk of the file, so it always describes the most
+        # recent read rather than accumulating across reads.
+        self._skip_counts = Counter()
+
     def _is_header_row(self, line):
         """Check if the line is a header row.
 
@@ -221,6 +264,54 @@ class Obs80DataReader(ObjectDataReader):
         """
         return f"Obs80DataReader:{self.filename}"
 
+    @property
+    def skipped_record_counts(self):
+        """Records skipped during the most recent walk of the file, keyed by
+        reason.
+
+        A non-empty tally means the file contained input that did not reach the
+        caller. The keys are the ``SKIP_*`` constants of this module. Reading in
+        blocks tallies only the blocks actually walked.
+
+        Returns
+        -------
+        dict
+            Reason -> count, for reasons with a non-zero count.
+        """
+        return dict(self._skip_counts)
+
+    def _record_skip(self, reason, line):
+        """Count one skipped record, and log the first of each reason."""
+        self._skip_counts[reason] += 1
+        if self._skip_counts[reason] == 1:
+            logger.warning(
+                "%s: skipping a record that is %s (designation %r). "
+                "Further records skipped for this reason will be counted, not logged.",
+                self.filename,
+                _SKIP_REASONS[reason],
+                line[0:12].strip(),
+            )
+
+    def _log_skips(self):
+        """Report the tally once a walk of the file has finished.
+
+        Called by every read path so that a partial loss of input is visible
+        rather than silent: a read that drops records otherwise looks exactly
+        like a clean one (issue #588).
+        """
+        if not self._skip_counts:
+            return
+        total = sum(self._skip_counts.values())
+        detail = ", ".join(
+            f"{count} {_SKIP_REASONS[reason]}" for reason, count in sorted(self._skip_counts.items())
+        )
+        logger.warning(
+            "%s: %d record(s) in this file did not become observations: %s.",
+            self.filename,
+            total,
+            detail,
+        )
+
     def _iter_records(self, f):
         """Yield one ``(main_line, second_line)`` tuple per logical obs80 record.
 
@@ -237,13 +328,34 @@ class Obs80DataReader(ObjectDataReader):
           otherwise be emitted as a positionless observation whose position
           columns are misread as RA/Dec;
         * a first line whose continuation is missing is dropped rather than
-          paired with the next unrelated line.
+          paired with the next unrelated line;
+        * a radar (R/r) record is skipped: it is well formed, but the output
+          dtype has no columns for range and Doppler.
+
+        Every skip is counted in ``skipped_record_counts`` and reported by
+        ``_log_skips`` once the walk finishes, so a read that loses input does
+        not look like a clean one (issue #588).
 
         ``main_line`` is the astrometry line; ``second_line`` is the
         observer-position line, or ``None`` for a single-line observation.
         """
+        self._skip_counts = Counter()
         prev_first = None
+        # A deleted line may itself have been the first line of a two-line
+        # record. Its continuation then follows with nothing to pair to; we
+        # remember the deleted line so that continuation is recognised as part
+        # of the same already-counted record rather than tallied again as an
+        # orphan. The tally has to be reconcilable to be worth printing.
+        prev_deleted = None
         check_header = True
+
+        def drop_unconsumed(first_line):
+            """Account for a first line that never got its continuation."""
+            if first_line is None:
+                return
+            reason = SKIP_RADAR if unsupported_two_line_record(first_line) else SKIP_UNPAIRED
+            self._record_skip(reason, first_line)
+
         for line in f:
             if check_header and self._is_header_row(line):
                 continue
@@ -251,28 +363,56 @@ class Obs80DataReader(ObjectDataReader):
             # Skip blank / truncated lines (issue #407): note 2 is at column 15,
             # so anything shorter cannot be an obs80 record.
             if len(line.rstrip("\n")) < 15:
+                # A wholly blank line is padding, not lost input, and is not
+                # counted; anything else short is a record we could not read.
+                if line.strip():
+                    self._record_skip(SKIP_TRUNCATED, line)
                 continue
             if deleted_observation(line):
                 # A deleted/replaced observation. If it was the first line of a
                 # two-line record its continuation is now orphaned and will be
                 # skipped by the branch below.
+                drop_unconsumed(prev_first)
                 prev_first = None
+                prev_deleted = line
+                self._record_skip(SKIP_DELETED, line)
                 continue
             if two_line_row_start(line):
                 # Start of a two-line record. Any unconsumed previous first line
                 # had no continuation and is dropped.
+                drop_unconsumed(prev_first)
                 prev_first = line
+                prev_deleted = None
                 continue
             if two_line_row_continuation(line):
                 if prev_first is not None and two_line_rows_match(prev_first, line):
-                    yield prev_first, line
-                # else: orphan / mismatched continuation -> skip (emit nothing).
+                    if unsupported_two_line_record(prev_first):
+                        # Parsable, but there is nowhere in the output dtype to
+                        # put it. Skip the record, not the file (issue #588).
+                        self._record_skip(SKIP_RADAR, prev_first)
+                    else:
+                        yield prev_first, line
+                elif prev_deleted is not None and two_line_rows_match(prev_deleted, line):
+                    # The continuation of the deleted record just skipped. It is
+                    # part of that record, which is already counted.
+                    pass
+                else:
+                    # Orphan or mismatched continuation -> emit nothing. The
+                    # unconsumed first line, if any, is separately unpaired.
+                    drop_unconsumed(prev_first)
+                    self._record_skip(SKIP_ORPHAN, line)
                 prev_first = None
+                prev_deleted = None
                 continue
             # A normal single-line observation. Any unconsumed previous first
             # line lacked its continuation and is dropped.
+            drop_unconsumed(prev_first)
             prev_first = None
+            prev_deleted = None
             yield line, None
+
+        # A first line at end of file never got its continuation.
+        drop_unconsumed(prev_first)
 
     def get_row_count(self):
         """Return the total number of rows in the file.
@@ -289,6 +429,7 @@ class Obs80DataReader(ObjectDataReader):
         with open(self.filename, "r") as f:
             for _ in self._iter_records(f):
                 row_cnt += 1
+        self._log_skips()
         return row_cnt
 
     def _read_rows_internal(self, block_start=0, block_size=None, **kwargs):
@@ -324,6 +465,7 @@ class Obs80DataReader(ObjectDataReader):
                     break
                 if curr_block >= block_start:
                     records.append(self.convert_obs80(main_line, second_line=second_line))
+        self._log_skips()
 
         return np.array(records, dtype=self.output_dtype)
 
@@ -340,6 +482,7 @@ class Obs80DataReader(ObjectDataReader):
                 obj_ids.append(obj_id)
                 # Count the number of times we see this object ID.
                 self.obj_id_counts[obj_id] = self.obj_id_counts.get(obj_id, 0) + 1
+        self._log_skips()
 
         self.obj_id_table = np.array(obj_ids, dtype=np.dtype([(self._primary_id_column_name, "U10")]))
         self.obj_id_table = self._validate_object_id_column(self.obj_id_table)
@@ -373,6 +516,7 @@ class Obs80DataReader(ObjectDataReader):
                 if skipped_rows[curr_row_idx]:
                     continue
                 records.append(self.convert_obs80(main_line, second_line=second_line))
+        self._log_skips()
         return np.array(records, dtype=self.output_dtype)
 
     def _process_and_validate_input_table(self, input_table, **kwargs):
