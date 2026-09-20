@@ -66,6 +66,62 @@ _NUM_WORKERS_ENV = "LAYUP_NUM_WORKERS"
 
 logger = logging.getLogger(__name__)
 
+# WGS84 reference ellipsoid, used to place a roving observer (MPC code 247),
+# whose position is reported as geodetic longitude/latitude and height rather
+# than as a geocentric vector (issue #282). The semi-major axis is deliberately
+# the same number sorcha's RADIUS_EARTH_KM carries, because
+# barycentricObservatoryRates scales by that constant: expressing the result in
+# units of WGS84_A_KM is what makes the two consistent.
+WGS84_A_KM = 6378.137
+WGS84_F = 1.0 / 298.257223563
+WGS84_E2 = WGS84_F * (2.0 - WGS84_F)
+
+
+def geodetic_to_earth_fixed(longitude_deg, latitude_deg, height_m):
+    """Convert a WGS84 geodetic position to a dimensionless Earth-fixed vector.
+
+    The result is in the same representation as the MPC parallax constants of a
+    fixed station -- ``(rho cos(phi') cos(lon), rho cos(phi') sin(lon),
+    rho sin(phi'))``, in units of the Earth's equatorial radius, in the ITRF
+    frame -- so a roving observer can take the ordinary ground-station path
+    through ``barycentricObservatoryRates``.
+
+    That routing is the point, and it is not merely convenient. A roving
+    observer stands on the rotating Earth, so its velocity is dominated by
+    Earth rotation (up to ~0.46 km/s at the equator). The moving-observatory
+    path adds a geocentric vector to Earth's barycentric state and falls back to
+    Earth's velocity alone, which would silently drop that term; the
+    ground-station path derives both position and velocity from the ITRF-to-J2000
+    rotation and gets it right.
+
+    Parameters
+    ----------
+    longitude_deg : float or array
+        East longitude on WGS84, in degrees.
+    latitude_deg : float or array
+        Geodetic (not geocentric) latitude on WGS84, in degrees.
+    height_m : float or array
+        Height above the WGS84 ellipsoid, in metres.
+
+    Returns
+    -------
+    tuple
+        The (x, y, z) Earth-fixed position in units of the Earth's equatorial
+        radius.
+    """
+    lon = np.radians(np.asarray(longitude_deg, dtype=float))
+    lat = np.radians(np.asarray(latitude_deg, dtype=float))
+    height_km = np.asarray(height_m, dtype=float) / 1000.0
+
+    sin_lat, cos_lat = np.sin(lat), np.cos(lat)
+    # Radius of curvature in the prime vertical.
+    prime_vertical = WGS84_A_KM / np.sqrt(1.0 - WGS84_E2 * sin_lat**2)
+
+    rho_cos_phi = (prime_vertical + height_km) * cos_lat / WGS84_A_KM
+    rho_sin_phi = (prime_vertical * (1.0 - WGS84_E2) + height_km) * sin_lat / WGS84_A_KM
+    return rho_cos_phi * np.cos(lon), rho_cos_phi * np.sin(lon), rho_sin_phi
+
+
 # default Cache directory name where the layup auxiliary files are stored when layup bootstrap is ran
 # eg on Mac ~/Library/Caches/layup
 CACHE_DIR_NAME = "layup"
@@ -688,6 +744,13 @@ class LayupObservatory(SorchaObservatory):
         # velocity for keys that are absent here.
         self.ObservatoryVel = {}
 
+        # Per-epoch cache keys whose ObservatoryXYZ entry is a dimensionless
+        # Earth-fixed vector rather than a geocentric vector in km -- currently
+        # a roving observer whose position arrived as WGS84 geodetic (issue
+        # #282). These take the fixed-station transform despite having a
+        # per-epoch key, so the dispatch cannot be made on the key alone.
+        self.ObservatoryEarthFixed = set()
+
     @staticmethod
     def _cached_obscodes_present(cache_dir, auxconfigs):
         """Whether the decompressed observatory-codes file is already cached.
@@ -818,17 +881,26 @@ class LayupObservatory(SorchaObservatory):
                 )
 
             # Check if the coordinates are in a reference frame that we support.
-            if data["sys"] not in ["ICRF_KM", "ICRF_AU"]:
+            if data["sys"] not in ["ICRF_KM", "ICRF_AU", "WGS84"]:
                 raise ValueError(
-                    f"Observatory {obscode} has an unsupported reference frame {data['sys']} at epoch {et}. Please use ICRF_KM or ICRF_AU."
+                    f"Observatory {obscode} has an unsupported reference frame {data['sys']} at epoch {et}. Please use ICRF_KM, ICRF_AU or WGS84."
                 )
             if data["ctr"] != 399:
                 raise ValueError(
                     f"Observatory {obscode} has an unsupported center {data['ctr']}. Please use the 399 (Earth)."
                 )
 
-            # Convert the coordinates to km if they are in AU
-            if data["sys"] == "ICRF_AU":
+            earth_fixed = data["sys"] == "WGS84"
+            if earth_fixed:
+                # A roving observer (code 247) reports geodetic longitude,
+                # latitude and height rather than a geocentric vector. Convert it
+                # to the dimensionless Earth-fixed form a fixed station uses, so
+                # it takes the ground-station path and picks up Earth rotation
+                # in both position and velocity (issue #282).
+                coords = np.array(geodetic_to_earth_fixed(coords[0], coords[1], coords[2]))
+                self.ObservatoryEarthFixed.add(obscode_cache_key)
+            elif data["sys"] == "ICRF_AU":
+                # Convert the coordinates to km if they are in AU
                 coords *= AU_KM
 
             # A repeat position for the same (obscode, epoch) -- e.g. two objects
@@ -836,7 +908,8 @@ class LayupObservatory(SorchaObservatory):
             # only at reporting precision; warn only on a gross difference (a likely
             # units/frame error) and never crash. See _OBSERVER_POSITION_WARN_KM.
             if obscode_cache_key in self.ObservatoryXYZ:
-                diff_km = float(np.linalg.norm(self.ObservatoryXYZ[obscode_cache_key] - coords))
+                scale = WGS84_A_KM if earth_fixed else 1.0
+                diff_km = scale * float(np.linalg.norm(self.ObservatoryXYZ[obscode_cache_key] - coords))
                 if diff_km > _OBSERVER_POSITION_WARN_KM:
                     logger.warning(
                         f"Observatory {obscode} reported positions differing by {diff_km:.1f} km at the same "
@@ -849,8 +922,11 @@ class LayupObservatory(SorchaObservatory):
             # Optionally cache a user-supplied observer velocity. ADES permits the
             # velocity columns (vel1/vel2/vel3) only for space-based observers, so
             # we read them here, inside the moving-observer branch, reusing the
-            # sys/ctr already validated for the position (issue #147).
-            self._populate_observatory_velocity(obscode_cache_key, data)
+            # sys/ctr already validated for the position (issue #147). An
+            # Earth-fixed observer is excluded: its velocity is Earth rotation,
+            # which barycentricObservatoryRates derives from the position itself.
+            if not earth_fixed:
+                self._populate_observatory_velocity(obscode_cache_key, data)
         return obscode_cache_key
 
     def _populate_observatory_velocity(self, obscode_cache_key, data):
@@ -1059,7 +1135,10 @@ class LayupObservatory(SorchaObservatory):
             # it from the cache if it has already been calculated. A per-epoch cache
             # key (obscode != key) marks a moving observatory whose position was
             # supplied in the data; it must not go through the fixed-station transform.
-            if obscode_cache_key == obscode:
+            # A roving observer is the exception: its position changes per epoch,
+            # so it has a per-epoch key, but it is Earth-fixed and does take the
+            # fixed-station transform (issue #282).
+            if obscode_cache_key == obscode or obscode_cache_key in self.ObservatoryEarthFixed:
                 bary = barycentricObservatoryRates(et, obscode_cache_key, self)
             else:
                 bary = self._barycentric_moving_observatory(et, obscode_cache_key)
