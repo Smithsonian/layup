@@ -76,13 +76,11 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations
             )  # to prevent a runaway effect, cap delta_rho to half of rho
         if abs(delta_rhon) > rho_n / 2:
             delta_rhon = (abs(delta_rhon) / delta_rhon) * rho_n / 2
-        # print(delta_rho1, delta_rhon, state_1)
 
         if iteration == 0:
             dets = [det]
         else:
             dets.append(det)
-        print(det)
 
         # Update rho values
         rho_1 -= delta_rho1
@@ -96,8 +94,7 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations
     for i, observation in enumerate(obs):
         observation.epoch = epochs[i]
 
-    if iteration >= max_iterations or det <= 1e-3:
-        print(np.median(dets))
+    if iteration >= max_iterations or np.median(np.array(dets)) <= 1e-3:
         return (
             []
         )  # if max_iterations is reached consider the IOD a failure, return empty list (will trigger flag 5)
@@ -239,7 +236,7 @@ def find_drho(
     delta_rho1 = (sigma_a1b * sigma_a2squared - sigma_a2b * sigma_a1a2) / (
         sigma_a1a2**2 - sigma_a1squared * sigma_a2squared
     )
-    delta_rhon = (-delta_rho1 * sigma_a1squared - sigma_a1b) / sigma_a1a2
+    delta_rhon = -(sigma_a2b + delta_rho1 * sigma_a1a2) / sigma_a2squared
 
     # Check this is the solution, should equal zero
     # print(sigma_a1b + delta_rho1*sigma_a1squared + delta_rhon*sigma_a1a2)
