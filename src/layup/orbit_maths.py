@@ -6,10 +6,10 @@ import numpy as np
 
 from layup.utilities.layup_configs import LayupConfigs
 from layup.utilities.bootstrap_utilties.download_utilities import make_retriever, layup_downloader
+from layup.convert import convert as convert_orbit_format
 
 from sorcha.ephemeris.simulation_geometry import equatorial_to_ecliptic
 from sorcha.ephemeris.simulation_constants import ECL_TO_EQ_ROTATION_MATRIX, EQ_TO_ECL_ROTATION_MATRIX
-from sorcha.ephemeris.orbit_conversion_utilities import universal_cartesian
 
 from assist import Ephem
 
@@ -202,11 +202,12 @@ def rv_to_cart(
 
 
 def to_rv(
-    rows: np.ndarray, fmt: ORBIT_FORMAT, mu_sun: float, mu_total: float
+    rows: np.ndarray, fmt: ORBIT_FORMAT, ephem: Ephem, mu_sun: float, mu_total: float, pid: str="provID", cache_dir: Optional[str] = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Convert orbits into cartesian state vectors regardless of format utilising Sorcha functions.
-    Cometary/keplerian formats are converted using universal_cartesian()
+    Convert orbits into cartesian state vectors regardless of format. Cometary/Keplerian formats
+    converted using layup convert routines to produce barycentric equatorial cartesian state. Then
+    that state is rotated/shifted into {ecliptic, heliocentric/barycentric}
 
     Parameters
     -----------
@@ -216,11 +217,21 @@ def to_rv(
     fmt : str
         Format of the orbit. Must be one of "BCART", "BCOM", "BKEP", "CART", "COM", "KEP"
 
+    ephem : assist Ephem object
+        ASSIST built ephemeris of Sun+planets+perturbers, used to locate Sun for helio<->bary
+        origin shift, and reused by the convert call
+
     mu_sun : float
         Standard (heliocentric) gravitional parameter (au^3 / day^2)
 
     mu_total : float
         Standard (barycentric) gravitional parameter (au^3 / day^2)
+
+    pid : str, optional
+        Name of the column identifying each object
+
+    cache_dir : str, optional
+        Cache directory containing ASSIST+REBOUND files if used
 
     Returns
     --------
@@ -230,64 +241,31 @@ def to_rv(
     v : numpy float array
         Object velocity state vector with shape (N, 3) (au/day)
     """
-    epochJD = rows["epochMJD_TDB"].astype(float) + 2400000.5
-
     # if it's cartesian we can just pass it straight through
     if fmt in ("CART", "BCART"):
         r = np.vstack([rows["x"], rows["y"], rows["z"]]).T.astype(float)
         v = np.vstack([rows["xdot"], rows["ydot"], rows["zdot"]]).T.astype(float)
         return r, v
-    # if it's cometary however, we convert to cartesian for easy origin shifting
-    if fmt in ("COM", "BCOM"):
-        mu = mu_sun if fmt == "COM" else mu_total
+    
+    # if it's cometary or keplerian however, we convert to cartesian for easy origin shifting
+    if fmt in ("COM", "BCOM", "KEP", "BKEP"):
+        bcart_eq = convert_orbit_format(
+            rows, "BCART_EQ", cache_dir=cache_dir, primary_id_column_name=pid, precomputated_epehm=(ephem, mu_sun, mu_total)
+        )
+        r_bary_equ = np.vstack([bcart_eq["x"], bcart_eq["y"], bcart_eq["z"]]).T.astype(float)
+        v_bary_equ = np.vstack([bcart_eq["xdot"], bcart_eq["ydot"], bcart_eq["zdot"]]).T.astype(float)
 
-        q = rows["q"].astype(float)
-        e = rows["e"].astype(float)
-        incl = np.deg2rad(rows["inc"].astype(float))
-        node = np.deg2rad(rows["node"].astype(float))
-        argp = np.deg2rad(rows["argPeri"].astype(float))
-        tpJD = rows["t_p_MJD_TDB"].astype(float) + 2400000.5
+        # rotate into ecliptic
+        r_bary_ecl = np.dot(r_bary_equ, EQ_TO_ECL_ROTATION_MATRIX)
+        v_bary_ecl = np.dot(v_bary_equ, EQ_TO_ECL_ROTATION_MATRIX)
 
-        r = np.empty((rows.size, 3), dtype=float)
-        v = np.empty((rows.size, 3), dtype=float)
+        # COM/KEP are heliocentric, BCOM/BKEP are barycentric
+        if fmt in ("COM", "KEP"):
+            epochJD = rows["epochMJD_TDB"].astype(float) + 2400000.5
+            S_r, S_v = convert_sun_to_baryecliptic(ephem, epochJD)
+            return r_bary_ecl + S_r, v_bary_ecl + S_v
 
-        for i in range(rows.size):
-            x, y, z, vx, vy, vz = universal_cartesian(
-                mu, q[i], e[i], incl[i], node[i], argp[i], tpJD[i], epochJD[i]
-            )
-            r[i] = (x, y, z)
-            v[i] = (vx, vy, vz)
-
-        return r, v
-    # same for keplerian orbits
-    if fmt in ("KEP", "BKEP"):
-        mu = mu_sun if fmt == "KEP" else mu_total
-
-        a = rows["a"].astype(float)
-        e = rows["e"].astype(float)
-        incl = np.deg2rad(rows["inc"].astype(float))
-        node = np.deg2rad(rows["node"].astype(float))
-        argp = np.deg2rad(rows["argPeri"].astype(float))
-        M = np.deg2rad(rows["ma"].astype(float))
-
-        M_wrap = M.copy()
-        idx = M_wrap > np.pi
-        M_wrap[idx] -= 2 * np.pi
-
-        tpJD = epochJD - M_wrap * np.sqrt(a**3 / mu)
-        q = a * (1.0 - e)
-
-        r = np.empty((rows.size, 3), dtype=float)
-        v = np.empty((rows.size, 3), dtype=float)
-
-        for i in range(rows.size):
-            x, y, z, vx, vy, vz = universal_cartesian(
-                mu, q[i], e[i], incl[i], node[i], argp[i], tpJD[i], epochJD[i]
-            )
-            r[i] = (x, y, z)
-            v[i] = (vx, vy, vz)
-
-        return r, v
+        return r_bary_ecl, v_bary_ecl
 
     logger.error(f"Unsupported format: {fmt}")
     raise ValueError(f"Unsupported format: {fmt}")
@@ -376,6 +354,7 @@ def prepopulate_orbit_variants(
     input_plane: Literal["equatorial", "ecliptic"],
     input_origin: Literal["heliocentric", "barycentric"],
     pid="provID",
+    cache_dir: Optional[str] = None,
 ) -> tuple[
     dict[tuple[str, str], ClassicalConic],
     dict[tuple[str, str], np.ndarray],
@@ -402,7 +381,10 @@ def prepopulate_orbit_variants(
         Input origin of the orbits. Must be one of "heliocentric" or "barycentric"
 
     pid : str, optional
-        Name of the column identifying each object.
+        Name of the column identifying each object
+
+    cache_dir : str, optional
+            Cache directory containing ASSIST+REBOUND files if used
 
     Returns
     --------
@@ -420,7 +402,7 @@ def prepopulate_orbit_variants(
     """
     # grab our planets+major perturbers and solar gravitational parameters
     # # (mu_sun = heliocentric, mu_total = barycentric)
-    ephem, mu_sun, mu_total = build_ephem_and_mus()
+    ephem, mu_sun, mu_total = build_ephem_and_mus(cache_dir)
 
     try:
         obj_id = rows[pid].astype(str)
@@ -430,7 +412,7 @@ def prepopulate_orbit_variants(
     epochJD = rows["epochMJD_TDB"].astype(float) + 2400000.5
 
     # grab state vectors
-    r_raw, v_raw = to_rv(rows, orbit_format, mu_sun, mu_total)
+    r_raw, v_raw = to_rv(rows, orbit_format, ephem, mu_sun, mu_total, pid=pid, cache_dir=cache_dir)
     S_r, S_v = convert_sun_to_baryecliptic(ephem, epochJD)
 
     # everything is easier if we start from one frame+origin combo, so let's choose

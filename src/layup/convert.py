@@ -455,7 +455,7 @@ def _apply_convert_vectorized(
     return out
 
 
-def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None, extra_cols_to_keep=None):
+def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None, extra_cols_to_keep=None, precomputed_ephem=None):
     """
     Apply the appropriate conversion function to the data
 
@@ -471,6 +471,9 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
         The name of the column in the data that contains the primary ID of the object.
     extra_cols_to_keep : list, optional
         List of tuples containing extra column names and dtypes to keep in the output data.
+    precomputed_ephem : tuple, optional
+        Pre-built (ephem, gm_sun, gm_total) tuple returned by Sorcha to reuse instead of rebuilding
+        a new ASSIST ephemeris in visualize
 
     Returns
     -------
@@ -503,8 +506,11 @@ def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None
     )
 
     # Fetch layup configs to get the necessary auxiliary data
-    config = LayupConfigs()
-    ephem, gm_sun, gm_total = _create_assist_ephemeris(config.auxiliary, cache_dir)
+    if precomputed_ephem is not None:
+        ephem, gm_sun, gm_total = precomputed_ephem
+    else:
+        config = LayupConfigs()
+        ephem, gm_sun, gm_total = _create_assist_ephemeris(config.auxiliary, cache_dir)
 
     # Construct the output dtype for the converted data
     output_dtype = [
@@ -679,6 +685,7 @@ def convert(
     cache_dir=None,
     primary_id_column_name="ObjID",
     extra_cols_to_keep=None,
+    precomputed_ephem=None
 ):
     """
     Convert a structured numpy array to a different orbital format with support for parallel processing.
@@ -697,6 +704,9 @@ def convert(
         The name of the column in the data that contains the primary ID of the object.
     extra_cols_to_keep : list, optional
         List of tuples containing additional column names and dtypes to keep in the output data.
+    precomputed_ephem : tuple, optional
+            Pre-built (ephem, gm_sun, gm_total) tuple returned by Sorcha to reuse instead of rebuilding
+            a new ASSIST ephemeris in visualize
 
     Returns
     -------
@@ -710,6 +720,7 @@ def convert(
             cache_dir=cache_dir,
             primary_id_column_name=primary_id_column_name,
             extra_cols_to_keep=extra_cols_to_keep,
+            precomputed_ephem=precomputed_ephem
         )
     # Parallelize the conversion of the data across the requested number of workers
     return process_data(
