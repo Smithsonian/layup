@@ -163,7 +163,7 @@ INPUT_FORMAT_READERS = {
 }
 
 
-def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
+def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100, conv_frac=0.0):
     """Dispatch a single LM fit step to the configured engine.
 
     Centralizing the dispatch here keeps do_fit's IOD-then-fit pipeline
@@ -176,9 +176,17 @@ def _run_fit(assist_ephem, initial_guess, observations, engine, iter_max=100):
     it; the BK-native engine uses its own internal cap (it takes `mu` for
     the bound-orbit energy prior rather than an iteration budget), so
     `iter_max` is ignored on that path.
+
+    `conv_frac` is issue #477's scaled convergence tolerance, as a fraction
+    of each parameter's marginal sigma; 0.0 (the default) keeps the absolute
+    test and is exactly the current behaviour. Like `iter_max` it reaches the
+    Cartesian engine only -- the BK-native fitter has its own convergence
+    test and is deliberately left on the absolute one.
     """
     if engine == "cartesian":
-        return run_from_vector_with_initial_guess(assist_ephem, initial_guess, observations, iter_max)
+        return run_from_vector_with_initial_guess(
+            assist_ephem, initial_guess, observations, iter_max, conv_frac=conv_frac
+        )
     if engine == "bk_native":
         return run_bk_native_fit(assist_ephem, initial_guess, observations, MU_SUN)
     raise ValueError(f"Unknown engine {engine!r}; expected one of 'cartesian', 'bk_native'.")
@@ -316,7 +324,7 @@ def _gofr_arg(nongrav_gr):
 
 
 def _select_nongrav_auto(
-    assist_ephem, res_grav, observations, thresholds=_AUTO_DEFAULT_THRESHOLDS, gofr=None
+    assist_ephem, res_grav, observations, thresholds=_AUTO_DEFAULT_THRESHOLDS, gofr=None, conv_frac=0.0
 ):
     """Adaptive non-grav selection for ``fit_nongrav="auto"`` (issue #357).
 
@@ -339,7 +347,7 @@ def _select_nongrav_auto(
         for names in tier:
             mask = sum(_NONGRAV_BITS[n] for n in names)
             res_ng = run_from_vector_with_initial_guess(
-                assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr
+                assist_ephem, res_grav, observations, nongrav_mask=mask, gofr=gr, conv_frac=conv_frac
             )
             if res_ng.flag != 0 or not _nongrav_warranted(res_grav.csq, res_ng, names, thresholds):
                 continue
@@ -1069,6 +1077,7 @@ def do_fit(
     prefilter_threshold_sigma: float = _PREFILTER_THRESHOLD_SIGMA,
     picker_ias15_adaptive_mode: int = _PICKER_IAS15_ADAPTIVE_MODE,
     outcome: "FitOutcome | None" = None,
+    conv_frac: float = 0.0,
 ):
     """Carry out an orbit fit to a list of observations.
 
@@ -1193,13 +1202,17 @@ def do_fit(
         logger.debug(f"Deferring {len(deferred)}/{len(solns)} close-approach candidate(s)")
 
     try:
-        candidates = [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max) for soln in safe]
+        candidates = [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max, conv_frac) for soln in safe]
         x = _pick_best_root(candidates, min_r_helio_AU)
         if x is None and deferred:
-            candidates += [_run_fit(assist_ephem, soln, obs, engine, screen_iter_max) for soln in deferred]
+            candidates += [
+                _run_fit(assist_ephem, soln, obs, engine, screen_iter_max, conv_frac) for soln in deferred
+            ]
             x = _pick_best_root(candidates, min_r_helio_AU)
         if x is None:
-            candidates = [_run_fit(assist_ephem, soln, obs, engine, full_iter_max) for soln in solns]
+            candidates = [
+                _run_fit(assist_ephem, soln, obs, engine, full_iter_max, conv_frac) for soln in solns
+            ]
             x = _pick_best_root(candidates, min_r_helio_AU)
     finally:
         set_ias15_adaptive_mode(saved_mode)
@@ -1214,7 +1227,7 @@ def do_fit(
         logger.debug(f"All {len(solns)} Gauss roots failed; trying BK-IOD fallback")
         bk_seed = run_bk_iod(obs, float(obs[len(obs) // 2].epoch), MU_SUN)
         if bk_seed.flag == 0:
-            cand = _run_fit(assist_ephem, bk_seed, obs, engine, full_iter_max)
+            cand = _run_fit(assist_ephem, bk_seed, obs, engine, full_iter_max, conv_frac)
             candidates.append(cand)
             if cand.flag == 0:
                 x = cand
@@ -1244,7 +1257,7 @@ def do_fit(
     # Attempt to fit all the data, given the fit of the primary interval
     primary_x = x
     obs = observations
-    x = _run_fit(assist_ephem, x, obs, engine)
+    x = _run_fit(assist_ephem, x, obs, engine, conv_frac=conv_frac)
 
     # If that failed, build up the solution slowly
     if x.flag != 0:
@@ -1255,7 +1268,7 @@ def do_fit(
         for i, sq in enumerate(seq):
             obs += [observations[i] for i in sq]
             logger.debug(f"Incremental fit segment {i} of {len(seq)} " f"(n_obs={len(obs)})")
-            x = _run_fit(assist_ephem, x, obs, engine)
+            x = _run_fit(assist_ephem, x, obs, engine, conv_frac=conv_frac)
             if x.flag != 0:
                 outcome.stage = STAGE_BUILDUP
                 outcome.record(x)
@@ -1323,6 +1336,7 @@ def _orbitfit(
     nongrav_gr=None,
     per_arc: bool = False,
     skip_unchanged: bool = False,
+    conv_frac: float = 0.0,
 ):
     """This function will contain all of the calls to the c++ code that will
     calculate an orbit given a set of observations. Note that all observations
@@ -1575,12 +1589,15 @@ def _orbitfit(
                     iod=iod.lower(),
                     engine=engine,
                     outcome=outcome,
+                    conv_frac=conv_frac,
                 )
             else:
                 res = do_other_fit(iod=iod.lower())
         else:
             guess_to_use = parse_fit_result(initial_guess)
-            res = run_from_vector_with_initial_guess(get_ephem(kernels_loc), guess_to_use, observations)
+            res = run_from_vector_with_initial_guess(
+                get_ephem(kernels_loc), guess_to_use, observations, conv_frac=conv_frac
+            )
             # This path does not run the staged pipeline, so there is no
             # intermediate state to have observed; report what the flag allows.
             outcome = FitOutcome.from_flag(res.flag)
@@ -1599,6 +1616,7 @@ def _orbitfit(
                 observations,
                 nongrav_auto_thresholds or _AUTO_DEFAULT_THRESHOLDS,
                 gofr=nongrav_gr,
+                conv_frac=conv_frac,
             )
         elif nongrav_mask and res.flag == 0:
             res_ng = run_from_vector_with_initial_guess(
@@ -1608,6 +1626,7 @@ def _orbitfit(
                 nongrav_mask=nongrav_mask,
                 gofr=_gofr_arg(nongrav_gr),
                 per_arc=per_arc,
+                conv_frac=conv_frac,
             )
             if res_ng.flag == 0:
                 res = res_ng
@@ -1723,6 +1742,7 @@ def orbitfit(
     per_arc=False,
     skip_unchanged=False,
     configs=None,
+    conv_frac=0.0,
 ):
     """This is the function that you would call interactively. i.e. from a notebook
 
@@ -1850,6 +1870,7 @@ def orbitfit(
         nongrav_gr=nongrav_gr,
         per_arc=per_arc,
         skip_unchanged=skip_unchanged,
+        conv_frac=conv_frac,
     )
     # Re-attach objects carried forward unchanged by the #419 pre-filter.
     if carried_forward is not None and len(carried_forward):
@@ -1959,6 +1980,7 @@ def sequential_update(
     max_update_sigma=4.0,
     iter_max=100,
     primary_id_column_name="provID",
+    conv_frac=0.0,
 ):
     """Sequential / information-filter update of a prior orbit fit (issue #419).
 
@@ -2011,7 +2033,7 @@ def sequential_update(
         all_obs = _observations_for_update(
             all_data, cache_dir, weight_data, bias_dict, primary_id_column_name
         )
-        return run_from_vector_with_initial_guess(ephem, prior_fit, all_obs, iter_max)
+        return run_from_vector_with_initial_guess(ephem, prior_fit, all_obs, iter_max, conv_frac=conv_frac)
 
     # The information update did not converge (e.g. a non-positive-definite prior,
     # flag 7): fall back to a full refit if we can, else surface the failure.
@@ -2101,6 +2123,7 @@ def incremental_orbitfit(
     iod="auto",
     engine="cartesian",
     num_workers=1,
+    conv_frac=0.0,
 ):
     """Steady-state incremental fit over a batch of objects (issue #419 capstone).
 
@@ -2180,6 +2203,7 @@ def incremental_orbitfit(
                     debias_data=debias,
                     max_update_sigma=max_update_sigma,
                     primary_id_column_name=primary_id_column_name,
+                    conv_frac=conv_frac,
                 )
                 routing["sequential" if seq.method == "sequential_update" else "sequential_fallback"] += 1
                 seq_rows.append(_fitresult_to_row(seq, oid, obs_hash, nobs, out_dtype))
@@ -2201,6 +2225,7 @@ def incremental_orbitfit(
         iod=iod,
         engine=engine,
         num_workers=num_workers,
+        conv_frac=conv_frac,
     )
     if warm_ids:
         sub = data[np.isin(data[pid], warm_ids)]
