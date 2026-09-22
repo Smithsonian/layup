@@ -455,7 +455,14 @@ def _apply_convert_vectorized(
     return out
 
 
-def _apply_convert(data, convert_to, cache_dir=None, primary_id_column_name=None, extra_cols_to_keep=None, precomputed_ephem=None):
+def _apply_convert(
+    data,
+    convert_to,
+    cache_dir=None,
+    primary_id_column_name=None,
+    extra_cols_to_keep=None,
+    precomputed_ephem=None,
+):
     """
     Apply the appropriate conversion function to the data
 
@@ -685,7 +692,7 @@ def convert(
     cache_dir=None,
     primary_id_column_name="ObjID",
     extra_cols_to_keep=None,
-    precomputed_ephem=None
+    precomputed_ephem=None,
 ):
     """
     Convert a structured numpy array to a different orbital format with support for parallel processing.
@@ -720,7 +727,7 @@ def convert(
             cache_dir=cache_dir,
             primary_id_column_name=primary_id_column_name,
             extra_cols_to_keep=extra_cols_to_keep,
-            precomputed_ephem=precomputed_ephem
+            precomputed_ephem=precomputed_ephem,
         )
     # Parallelize the conversion of the data across the requested number of workers
     return process_data(

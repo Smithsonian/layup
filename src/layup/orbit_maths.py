@@ -202,7 +202,13 @@ def rv_to_cart(
 
 
 def to_rv(
-    rows: np.ndarray, fmt: ORBIT_FORMAT, ephem: Ephem, mu_sun: float, mu_total: float, pid: str="provID", cache_dir: Optional[str] = None
+    rows: np.ndarray,
+    fmt: ORBIT_FORMAT,
+    ephem: Ephem,
+    mu_sun: float,
+    mu_total: float,
+    pid: str = "provID",
+    cache_dir: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert orbits into cartesian state vectors regardless of format. Cometary/Keplerian formats
@@ -246,11 +252,15 @@ def to_rv(
         r = np.vstack([rows["x"], rows["y"], rows["z"]]).T.astype(float)
         v = np.vstack([rows["xdot"], rows["ydot"], rows["zdot"]]).T.astype(float)
         return r, v
-    
+
     # if it's cometary or keplerian however, we convert to cartesian for easy origin shifting
     if fmt in ("COM", "BCOM", "KEP", "BKEP"):
         bcart_eq = convert_orbit_format(
-            rows, "BCART_EQ", cache_dir=cache_dir, primary_id_column_name=pid, precomputated_epehm=(ephem, mu_sun, mu_total)
+            rows,
+            "BCART_EQ",
+            cache_dir=cache_dir,
+            primary_id_column_name=pid,
+            precomputated_epehm=(ephem, mu_sun, mu_total),
         )
         r_bary_equ = np.vstack([bcart_eq["x"], bcart_eq["y"], bcart_eq["z"]]).T.astype(float)
         v_bary_equ = np.vstack([bcart_eq["xdot"], bcart_eq["ydot"], bcart_eq["zdot"]]).T.astype(float)
