@@ -316,3 +316,103 @@ def test_pairing_still_rejects_a_different_designation():
     assert not two_line_rows_match(_DISC_SAT_S, other_desig)
     other_obscode = _DISC_SAT_s[:77] + "500"
     assert not two_line_rows_match(_DISC_SAT_S, other_obscode)
+
+
+# A real radar two-line record (275 = Arecibo-era delay/Doppler), the same pair
+# used by test_radar_two_line_record_raises above.
+_RADAR_R = "00433         R2011 10 23.34124006 53 03.495+46 43 06.69               X~7lwF275"
+_RADAR_r = "00433         r2011 10 23.3412401 + 4353.0030 -  481.6100 + 1382.3400   ~7lwF275"
+
+
+def test_radar_record_is_skipped_not_fatal(tmp_path):
+    """A radar record must cost the caller the record, not the file (issue #588).
+
+    Before the fix, convert_obs80 raised on the R/r pair and read_rows()
+    propagated it, so a single radar observation anywhere in a file destroyed
+    every other observation in it.
+    """
+    reader = Obs80DataReader(_write(tmp_path, [_SAT1_S, _SAT1_s, _RADAR_R, _RADAR_r, _SAT2_S, _SAT2_s]))
+    data = reader.read_rows()
+
+    # The two satellite records survive; only the radar record is lost.
+    assert len(data) == 2
+    assert list(data["sys"]) == ["ICRF_KM", "ICRF_KM"]
+    assert reader.skipped_record_counts == {"unsupported_radar": 1}
+
+
+def test_row_count_agrees_with_read_rows_when_a_record_is_skipped(tmp_path):
+    """get_row_count() must not promise rows that read_rows() will not deliver.
+
+    Both walk _iter_records, so the skip has to happen there rather than at
+    conversion time; otherwise block planning would run off the end.
+    """
+    reader = Obs80DataReader(_write(tmp_path, [_SAT1_S, _SAT1_s, _RADAR_R, _RADAR_r, _GROUND]))
+    assert reader.get_row_count() == 2
+    assert len(reader.read_rows()) == 2
+
+
+def test_convert_obs80_still_refuses_radar_directly():
+    """The skip is in the record walk; convert_obs80 keeps its guard, so calling
+    it with a radar pair directly is still an error rather than silent garbage."""
+    reader = Obs80DataReader(get_test_filepath("03666.txt"))
+    with pytest.raises(ValueError, match="[Rr]adar"):
+        reader.convert_obs80(_RADAR_R, _RADAR_r)
+
+
+def test_skipped_record_counts_names_every_reason(tmp_path):
+    """Each way of losing a record is counted under its own name, so a partial
+    loss of input is visible and attributable rather than silent."""
+    orphan_s = _SAT2_s  # a continuation line whose first line never appears
+    unpaired_S = _SAT1_S  # a first line whose continuation never appears
+    reader = Obs80DataReader(
+        _write(tmp_path, [_GROUND, _DELETED, _RADAR_R, _RADAR_r, orphan_s, unpaired_S, _GROUND])
+    )
+    data = reader.read_rows()
+
+    assert len(data) == 2  # the two ground-based observations
+    assert reader.skipped_record_counts == {
+        "deleted_observation": 1,
+        "unsupported_radar": 1,
+        "orphan_continuation": 1,
+        "first_line_without_continuation": 1,
+    }
+
+
+def test_clean_file_reports_no_skips(tmp_path):
+    """A file that loses nothing must report nothing: an empty tally is what
+    lets a caller trust a non-empty one."""
+    reader = Obs80DataReader(_write(tmp_path, [_SAT1_S, _SAT1_s, _GROUND]))
+    assert len(reader.read_rows()) == 2
+    assert reader.skipped_record_counts == {}
+
+
+def test_skips_are_logged_with_a_total(tmp_path, caplog):
+    """The tally is also reported through logging, since most callers never look
+    at the reader object."""
+    reader = Obs80DataReader(_write(tmp_path, [_GROUND, _RADAR_R, _RADAR_r]))
+    with caplog.at_level("WARNING"):
+        reader.read_rows()
+    messages = " ".join(r.getMessage() for r in caplog.records)
+    assert "radar" in messages
+    assert "1 record(s) in this file did not become observations" in messages
+
+
+def test_skip_counts_describe_the_most_recent_read(tmp_path):
+    """The tally is reset per walk, so reading twice does not double it."""
+    reader = Obs80DataReader(_write(tmp_path, [_GROUND, _RADAR_R, _RADAR_r]))
+    reader.read_rows()
+    reader.read_rows()
+    assert reader.skipped_record_counts == {"unsupported_radar": 1}
+
+
+def test_deleted_two_line_record_is_counted_once(tmp_path):
+    """A deleted record that had a continuation line must tally once, not twice.
+
+    The continuation is part of the record already counted as deleted; counting
+    it again as an orphan would make the tally irreconcilable with the file.
+    """
+    deleted_S = _SAT1_S[:14] + "x" + _SAT1_S[15:]
+    reader = Obs80DataReader(_write(tmp_path, [_GROUND, deleted_S, _SAT1_s, _GROUND]))
+
+    assert len(reader.read_rows()) == 2
+    assert reader.skipped_record_counts == {"deleted_observation": 1}

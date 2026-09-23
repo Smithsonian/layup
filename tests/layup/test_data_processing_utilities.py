@@ -10,6 +10,8 @@ from layup.utilities.data_processing_utilities import (
     resolve_num_workers,
     AU_KM,
     LayupObservatory,
+    WGS84_A_KM,
+    geodetic_to_earth_fixed,
     get_cov_columns,
     get_format,
     has_cov_columns,
@@ -235,7 +237,8 @@ def test_moving_observatory_coordinate_cache():
     ]
 
     # Test errors when required observatory position columns have invalid values.
-    # The only valid system is "ICRF_KM" and "ICRF_AU" which are tested below
+    # The valid systems are "ICRF_KM", "ICRF_AU" and "WGS84" (issue #282); the
+    # first two are tested below and the third has its own tests.
     row_invalid_sys = np.array(("BAD", 399, 1.0, 2.0, 3.0), dtype=row_dtype)
     with pytest.raises(ValueError):
         observatory.populate_observatory(obscode, ets[0], row_invalid_sys)
@@ -1014,3 +1017,158 @@ import signal
 def test_terminate_raises_keyboard_interrupt():
     with pytest.raises(KeyboardInterrupt):
         _terminate(signal.SIGTERM, None)
+# ---------------------------------------------------------------------------
+# Roving observer (MPC code 247): WGS84 geodetic position -> issue #282
+# ---------------------------------------------------------------------------
+
+WGS84_B_OVER_A = 1.0 - 1.0 / 298.257223563
+
+
+def test_geodetic_to_earth_fixed_known_answers():
+    """Two positions whose Earth-fixed vector is known exactly from the WGS84
+    definition, so the conversion is pinned without reference to any data file."""
+    # On the equator at sea level the vector is a unit vector along the prime
+    # meridian: the equatorial radius is exactly the unit of the output.
+    x, y, z = geodetic_to_earth_fixed(0.0, 0.0, 0.0)
+    assert x == pytest.approx(1.0, abs=1e-15)
+    assert y == pytest.approx(0.0, abs=1e-15)
+    assert z == pytest.approx(0.0, abs=1e-15)
+
+    # At the pole the only non-zero component is the polar radius, b/a.
+    x, y, z = geodetic_to_earth_fixed(0.0, 90.0, 0.0)
+    assert z == pytest.approx(WGS84_B_OVER_A, rel=1e-14)
+    assert np.hypot(x, y) == pytest.approx(0.0, abs=1e-15)
+
+    # Height enters along the local vertical: 1 km up on the equator is exactly
+    # 1 km further out.
+    x, _, _ = geodetic_to_earth_fixed(0.0, 0.0, 1000.0)
+    assert (x - 1.0) * WGS84_A_KM == pytest.approx(1.0, rel=1e-12)
+
+
+def test_roving_observer_reproduces_a_fixed_station_at_the_same_place():
+    """The decisive test for issue #282.
+
+    Place a roving observer at the geodetic position of a real MPC station and
+    require that layup computes the same barycentric state it computes for that
+    station through the ordinary fixed-site path. This checks the geodetic
+    conversion, the frame, and the routing all at once, against layup's own
+    machinery rather than against a number typed into the test.
+    """
+    obscode = "703"  # Catalina Sky Survey: a well-determined, high-altitude site
+    observatory = LayupObservatory()
+    # ObservatoryXYZ already holds the station's dimensionless Earth-fixed
+    # vector, which is exactly the representation the roving path must produce.
+    x, y, z = (float(v) for v in observatory.ObservatoryXYZ[obscode])
+    lon = np.degrees(np.arctan2(y, x)) % 360.0
+
+    # Invert the parallax constants to geodetic latitude/height (Bowring).
+    a = WGS84_A_KM
+    f = 1.0 / 298.257223563
+    e2 = f * (2.0 - f)
+    b = a * np.sqrt(1.0 - e2)
+    ep2 = (a * a - b * b) / (b * b)
+    xk, yk, zk = x * a, y * a, z * a
+    p = np.hypot(xk, yk)
+    theta = np.arctan2(zk * a, p * b)
+    lat = np.arctan2(zk + ep2 * b * np.sin(theta) ** 3, p - e2 * a * np.cos(theta) ** 3)
+    height_m = (p / np.cos(lat) - a / np.sqrt(1.0 - e2 * np.sin(lat) ** 2)) * 1000.0
+
+    et = 7.5e8
+    dtype = [
+        ("stn", "U3"),
+        ("et", "<f8"),
+        ("sys", "U7"),
+        ("ctr", "i4"),
+        ("pos1", "<f8"),
+        ("pos2", "<f8"),
+        ("pos3", "<f8"),
+    ]
+    fixed = np.array([(obscode, et, "", 399, np.nan, np.nan, np.nan)], dtype=dtype)
+    roving = np.array([("247", et, "WGS84", 399, lon, np.degrees(lat), height_m)], dtype=dtype)
+
+    bary_fixed = observatory.obscodes_to_barycentric(fixed)[0]
+    bary_roving = LayupObservatory().obscodes_to_barycentric(roving)[0]
+
+    pos_diff_m = (
+        np.linalg.norm(
+            np.array([bary_fixed["x"], bary_fixed["y"], bary_fixed["z"]])
+            - np.array([bary_roving["x"], bary_roving["y"], bary_roving["z"]])
+        )
+        * AU_KM
+        * 1000.0
+    )
+    vel_diff_ms = (
+        np.linalg.norm(
+            np.array([bary_fixed["vx"], bary_fixed["vy"], bary_fixed["vz"]])
+            - np.array([bary_roving["vx"], bary_roving["vy"], bary_roving["vz"]])
+        )
+        * AU_KM
+        * 1000.0
+        / 86400.0
+    )
+    assert pos_diff_m < 1e-3  # sub-millimetre
+    assert vel_diff_ms < 1e-6  # sub-micrometre per second
+
+
+def test_roving_observer_carries_its_diurnal_velocity():
+    """A roving observer stands on the rotating Earth, so its barycentric
+    velocity must differ from Earth's by the diurnal term.
+
+    Routing it through the moving-observatory path instead would add its
+    position to Earth's state and fall back to Earth's velocity alone, silently
+    dropping a few hundred m/s. This is what that mistake would look like.
+    """
+    import spiceypy as spice
+
+    et = 7.5e8
+    lon, lat, height_m = 249.26736, 32.41703, 2487.0  # a mid-latitude site
+    dtype = [
+        ("stn", "U3"),
+        ("et", "<f8"),
+        ("sys", "U7"),
+        ("ctr", "i4"),
+        ("pos1", "<f8"),
+        ("pos2", "<f8"),
+        ("pos3", "<f8"),
+    ]
+    roving = np.array([("247", et, "WGS84", 399, lon, lat, height_m)], dtype=dtype)
+    bary = LayupObservatory().obscodes_to_barycentric(roving)[0]
+
+    posvel, _ = spice.spkezr("EARTH", et, "J2000", "NONE", "SSB")
+    earth_vel_kms = np.array(posvel[3:6])
+    obs_vel_kms = np.array([bary["vx"], bary["vy"], bary["vz"]]) * AU_KM / 86400.0
+
+    diurnal_ms = np.linalg.norm(obs_vel_kms - earth_vel_kms) * 1000.0
+    # Earth rotation at this latitude and radius: omega * sqrt(x^2 + y^2).
+    x, y, _ = geodetic_to_earth_fixed(lon, lat, height_m)
+    expected_ms = 7.292115e-5 * np.hypot(x, y) * WGS84_A_KM * 1000.0
+    assert diurnal_ms == pytest.approx(expected_ms, rel=1e-3)
+    assert expected_ms > 300.0  # the term the ICRF path would have dropped
+
+
+def test_wgs84_position_is_stored_earth_fixed_not_in_km():
+    """The stored vector is dimensionless and Earth-fixed, which is what makes
+    the fixed-station transform applicable; storing km here would misplace the
+    observer by a factor of the Earth radius."""
+    observatory = LayupObservatory()
+    et = 7.5e8
+    row = np.array(
+        ("WGS84", 399, 249.26736, 32.41703, 2487.0),
+        dtype=[("sys", "U7"), ("ctr", "i4"), ("pos1", "<f8"), ("pos2", "<f8"), ("pos3", "<f8")],
+    )
+    key = observatory.populate_observatory("247", et, row)
+
+    assert key in observatory.ObservatoryEarthFixed
+    stored = np.asarray(observatory.ObservatoryXYZ[key])
+    assert np.linalg.norm(stored) == pytest.approx(1.0, rel=2e-3)  # ~1 Earth radius, dimensionless
+
+
+def test_unsupported_reference_frame_still_refused():
+    """WGS84 is now accepted; anything else is still refused by name."""
+    observatory = LayupObservatory()
+    row = np.array(
+        ("ITRF", 399, 1.0, 2.0, 3.0),
+        dtype=[("sys", "U7"), ("ctr", "i4"), ("pos1", "<f8"), ("pos2", "<f8"), ("pos3", "<f8")],
+    )
+    with pytest.raises(ValueError, match="unsupported reference frame"):
+        observatory.populate_observatory("247", 7.5e8, row)
