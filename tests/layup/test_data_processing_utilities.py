@@ -1017,6 +1017,8 @@ import signal
 def test_terminate_raises_keyboard_interrupt():
     with pytest.raises(KeyboardInterrupt):
         _terminate(signal.SIGTERM, None)
+
+
 # ---------------------------------------------------------------------------
 # Roving observer (MPC code 247): WGS84 geodetic position -> issue #282
 # ---------------------------------------------------------------------------
