@@ -19,6 +19,7 @@ from layup.utilities.data_processing_utilities import (
     process_data,
     skyplane_cov_to_radec_cov,
     write_fallback_obscodes,
+    _terminate,
 )
 from layup.utilities.data_utilities_for_tests import get_test_filepath
 from layup.utilities.file_io.CSVReader import CSVDataReader
@@ -1008,6 +1009,14 @@ def test_resolve_num_workers_is_one_under_pytest_xdist(monkeypatch):
 def test_layup_observatory_explicit_none_uses_layup_cache():
     obs = LayupObservatory(cache_dir=None)
     assert obs.cache_dir == str(pooch.os_cache("layup"))
+
+
+import signal
+
+
+def test_terminate_raises_keyboard_interrupt():
+    with pytest.raises(KeyboardInterrupt):
+        _terminate(signal.SIGTERM, None)
 
 
 # ---------------------------------------------------------------------------
