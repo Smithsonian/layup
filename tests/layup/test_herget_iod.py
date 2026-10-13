@@ -192,6 +192,50 @@ def test_find_drho(tmpdir):
     assert sum_residuals_2 < sum_residuals_1
 
 
+def test_kepler_failure_is_a_failed_start(tmpdir, monkeypatch):
+    """A KeplerConvergenceError inside the iteration must fail only this starting
+    range (empty list, so herget_iod tries the next one), not escape and end the
+    whole fit, and must leave the caller's observation epochs as they were."""
+
+    os.chdir(tmpdir)
+    data = CSVDataReader(
+        get_test_filepath("2000OK67_ephem.csv"), "csv", primary_id_column_name="provID"
+    ).read_rows()
+
+    layup_observatory = LayupObservatory(cache_dir=None)
+    et_col = np.array([spice.str2et(row["obsTime"]) for row in data], dtype="<f8")
+    data = rfn.append_fields(data, "et", et_col, usemask=False, asrecarray=True)
+    pos_vel = layup_observatory.obscodes_to_barycentric(data)
+    data = rfn.merge_arrays([data, pos_vel], flatten=True, asrecarray=True, usemask=False)
+
+    observations = []
+    for d in data:
+        o = Observation.from_astrometry_with_id(
+            str(d["provID"]),
+            d["ra"] * np.pi / 180.0,
+            d["dec"] * np.pi / 180.0,
+            convert_tdb_date_to_julian_date(d["obsTime"], None),
+            [d["x"], d["y"], d["z"]],
+            [d["vx"], d["vy"], d["vz"]],
+        )
+        observations.append(o)
+    epochs_before = [o.epoch for o in observations]
+
+    jds = convert_tdb_date_to_julian_date(data["obsTime"])
+    sequence = _build_sequence(jds, sep_dt=90.0)
+
+    # find_drho runs after the epochs have been light-time shifted, so failing
+    # there is the case in which the shift would otherwise be left behind.
+    def raise_kepler(*args, **kwargs):
+        raise herget.KeplerConvergenceError("forced for the test")
+
+    monkeypatch.setattr(herget, "find_drho", raise_kepler)
+
+    ephem, _, _ = build_ephem_and_mus()
+    assert herget.herget_with_assist(observations, sequence, ephem) == []
+    assert_equal([o.epoch for o in observations], epochs_before)
+
+
 # Testing the Herget method on a NEO, a TNO and an MBA respectively
 @pytest.mark.parametrize(
     "input_filename, known_params",

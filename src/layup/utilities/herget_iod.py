@@ -57,44 +57,51 @@ def herget_with_assist(observations, seq, ephem, tolerance=0.003, max_iterations
     for i, observation in enumerate(obs):
         epochs[i] = observation.epoch
 
-    while (
-        (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance
-        and iteration < max_iterations
-        and np.median(np.array(dets)) > 1e-3
-    ):
+    kepler_failed = False
+    try:
+        while (
+            (abs(delta_rho1) + abs(delta_rhon)) / 2 > tolerance
+            and iteration < max_iterations
+            and np.median(np.array(dets)) > 1e-3
+        ):
 
-        # Light-time correct the observation times
+            # Light-time correct the observation times
+            for i, observation in enumerate(obs):
+                observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT)
+
+            delta_rho1, delta_rhon, state_1, det = find_drho(
+                obs, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations
+            )
+            if abs(delta_rho1) > rho_1 / 2:
+                delta_rho1 = (
+                    (abs(delta_rho1) / delta_rho1) * rho_1 / 2
+                )  # to prevent a runaway effect, cap delta_rho to half of rho
+            if abs(delta_rhon) > rho_n / 2:
+                delta_rhon = (abs(delta_rhon) / delta_rhon) * rho_n / 2
+
+            if iteration == 0:
+                dets = [det]
+            else:
+                dets.append(det)
+
+            # Update rho values
+            rho_1 -= delta_rho1
+            r1 = r_e_1 + rho_1 * np.array(rho_hat_1)
+            rho_n -= delta_rhon
+            rn = r_e_n + rho_n * np.array(rho_hat_n)
+
+            iteration += 1
+    except KeplerConvergenceError:
+        # The two-body transfer between the two anchors could not be solved from
+        # these ranges. Treat it as a failure of this starting range, so that
+        # herget_iod can try the next one, rather than ending the whole fit.
+        kepler_failed = True
+    finally:
+        # restore observation epochs; the caller's Observation objects share them
         for i, observation in enumerate(obs):
-            observation.epoch = epochs[i] - ((rho_1) + (rho_n)) / (2 * SPEED_OF_LIGHT)
+            observation.epoch = epochs[i]
 
-        delta_rho1, delta_rhon, state_1, det = find_drho(
-            obs, t1, tn, r1, rn, tolerance, ephem, rho_1, rho_hat_1, rho_n, rho_hat_n, max_iterations
-        )
-        if abs(delta_rho1) > rho_1 / 2:
-            delta_rho1 = (
-                (abs(delta_rho1) / delta_rho1) * rho_1 / 2
-            )  # to prevent a runaway effect, cap delta_rho to half of rho
-        if abs(delta_rhon) > rho_n / 2:
-            delta_rhon = (abs(delta_rhon) / delta_rhon) * rho_n / 2
-
-        if iteration == 0:
-            dets = [det]
-        else:
-            dets.append(det)
-
-        # Update rho values
-        rho_1 -= delta_rho1
-        r1 = r_e_1 + rho_1 * np.array(rho_hat_1)
-        rho_n -= delta_rhon
-        rn = r_e_n + rho_n * np.array(rho_hat_n)
-
-        iteration += 1
-
-    # restore observation epochs
-    for i, observation in enumerate(obs):
-        observation.epoch = epochs[i]
-
-    if iteration >= max_iterations or np.median(np.array(dets)) <= 1e-3:
+    if kepler_failed or iteration >= max_iterations or np.median(np.array(dets)) <= 1e-3:
         return (
             []
         )  # if max_iterations is reached consider the IOD a failure, return empty list (will trigger flag 5)
