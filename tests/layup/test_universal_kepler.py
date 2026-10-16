@@ -261,6 +261,37 @@ def test_zero_dt_is_identity():
     assert out.variation == pytest.approx(var, abs=1e-14)
 
 
+# The two solves that raised inside Herget on asteroid 415974: (r0, u = r.v,
+# alpha = gm/a) at the start of a 288-day step.  Near-radial ellipses,
+# e = 0.89 and 0.97, which the elliptic initial guess handles badly.
+NEAR_RADIAL_415974 = [
+    (2.0243871739821855, -0.005532724097067084, 0.00026827913000487065),
+    (1.6123781603216418, -0.01795946983494775, 0.00023411970213988595),
+]
+
+
+@pytest.mark.parametrize("r0, u, alpha", NEAR_RADIAL_415974)
+def test_near_radial_step_converges_from_the_series_guess(r0, u, alpha):
+    """The elliptic guess is far off here; the retry from the series guess
+    must find the root, and it must be the right one."""
+    from layup.utilities.universal_kepler import _initial_guess
+
+    dt = 287.62318735569715
+    vr = u / r0
+    vt = math.sqrt(2.0 * MU_SUN / r0 - alpha - vr * vr)
+    state = np.array([r0, 0.0, 0.0, vr, vt, 0.0])
+
+    out = universal_step(MU_SUN, dt, state)
+
+    # The case is only a test of the retry if the first guess is bad.
+    s_guess, _ = _initial_guess(MU_SUN, dt, r0, alpha, u)
+    assert abs(s_guess - out.s) > 10.0 * abs(out.s)
+
+    assert out.state == pytest.approx(_propagate_via_elements(MU_SUN, dt, state), rel=1e-10, abs=1e-12)
+    back = universal_step(MU_SUN, -dt, out.state).state
+    assert back == pytest.approx(state, rel=1e-10, abs=1e-12)
+
+
 # --------------------------------------------------------------------------
 # 3. The variational output -- the reason this module exists
 # --------------------------------------------------------------------------

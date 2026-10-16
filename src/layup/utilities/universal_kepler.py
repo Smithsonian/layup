@@ -70,6 +70,18 @@ DIFFERENCES FROM THE C
 5.  Non-convergence raises rather than returning a flag the caller may
     ignore -- as ``universal_step`` itself does in the C.
 
+6.  **A second start from the series guess.**  The elliptic guess takes an
+    RK4 step of the eccentric-anomaly rotation whose rate goes as
+    ``1/(1 - e cos E)``; on a near-radial orbit (e -> 1, perihelion far
+    inside r0) that step is ill-conditioned and the guess can land tens of
+    times too far out with the wrong sign.  Herget's trial transfers reach
+    exactly this regime -- on asteroid 415974, e = 0.89 and 0.97 with
+    perihelia of 0.12 and 0.04 AU, stepped across 288 days, more than half
+    an orbit -- and both Newton and Laguerre-Conway
+    then fail from it, though the root is unique.  When they do, the solve
+    is repeated from the alpha-free series guess ``dt/r0 - dt^2 u/(2 r0^3)``,
+    which converges in a handful of iterations there.  The C has no retry.
+
 The unused ``stumpff()`` in the C (dead code -- both call sites use
 ``cfun()``) is not ported.  Note that layup's own
 ``utilities.orbit_conversion.stumpff`` returns c0..c3 only; the variational
@@ -178,6 +190,15 @@ def stumpff_c(z: float) -> tuple[float, float, float, float, float, float]:
     return c0, c1, c2, c3, c4, c5
 
 
+def _series_guess(dt: float, r0: float, u: float) -> float:
+    """The short-step series guess, s ~ dt/r0 - dt^2 u / (2 r0^3).
+
+    Independent of alpha, so it cannot be thrown off by the orbit's
+    eccentricity; see note 6 in the module docstring for why that matters.
+    """
+    return dt / r0 - (dt * dt * u) / (2.0 * r0**3)
+
+
 def _initial_guess(gm: float, dt: float, r0: float, alpha: float, u: float) -> tuple[float, int]:
     """Starting value for the universal variable, and the revolution count.
 
@@ -188,7 +209,7 @@ def _initial_guess(gm: float, dt: float, r0: float, alpha: float, u: float) -> t
     # Short step relative to the current distance: the series guess is good
     # and there is no revolution structure to unwrap.
     if abs(dt / r0) <= 0.2:
-        return dt / r0 - (dt * dt * u) / (2.0 * r0**3), 0
+        return _series_guess(dt, r0, u), 0
 
     if alpha <= 0.0:
         # Hyperbolic.  a < 0 here, so the sqrt arguments below are positive.
@@ -261,25 +282,25 @@ def _solve_kepler(gm, dt, r0, alpha, u, zeta):
         fppp = zeta * c0 - u * alpha * c1
         return f, fp, fpp, fppp
 
-    # Newton with Danby's cubic correction: three nested refinements of the
-    # same step reuse one function evaluation.
-    s = s_guess
-    ds = math.inf
-    solver, n_iter = "newton", 0
-    for n_iter in range(1, _NEWTON_MAX + 1):
-        f, fp, fpp, fppp = _fvals(s)
-        ds = -f / fp
-        ds = -f / (fp + ds * fpp / 2.0)
-        ds = -f / (fp + ds * fpp / 2.0 + ds * ds * fppp / 6.0)
-        s += ds
-        if _converged(ds, s):
-            break
+    def _iterate(s_start):
+        # Newton with Danby's cubic correction: three nested refinements of
+        # the same step reuse one function evaluation.
+        s = s_start
+        ds = math.inf
+        solver, n_iter = "newton", 0
+        for n_iter in range(1, _NEWTON_MAX + 1):
+            f, fp, fpp, fppp = _fvals(s)
+            ds = -f / fp
+            ds = -f / (fp + ds * fpp / 2.0)
+            ds = -f / (fp + ds * fpp / 2.0 + ds * ds * fppp / 6.0)
+            s += ds
+            if _converged(ds, s):
+                return s, ds, n_iter, solver
 
-    if not _converged(ds, s):
-        # Laguerre-Conway from the original guess: larger convergence basin,
-        # at the cost of a square root per iteration.
+        # Laguerre-Conway from the same start: larger convergence basin, at
+        # the cost of a square root per iteration.
         solver = "laguerre-conway"
-        s = s_guess
+        s = s_start
         ln = 5.0
         for n_iter in range(1, _LAGCON_MAX + 1):
             f, fp, fpp, _ = _fvals(s)
@@ -288,11 +309,23 @@ def _solve_kepler(gm, dt, r0, alpha, u, zeta):
             s += ds
             if _converged(ds, s):
                 break
-        if not _converged(ds, s):
-            raise KeplerConvergenceError(
-                f"Kepler equation did not converge: dt={dt!r} r0={r0!r} "
-                f"alpha={alpha!r} u={u!r} last |ds|={abs(ds):.3e} s={s!r}"
-            )
+        return s, ds, n_iter, solver
+
+    s, ds, n_iter, solver = _iterate(s_guess)
+
+    if not _converged(ds, s):
+        # The elliptic guess can be far off on a near-radial orbit (note 6).
+        # f is monotonic in s (f' = r > 0), so there is one root whatever the
+        # start, and n_rev, which depends only on dt and the period, stands.
+        s_series = _series_guess(dt, r0, u)
+        if s_series != s_guess:
+            s, ds, n_iter, solver = _iterate(s_series)
+
+    if not _converged(ds, s):
+        raise KeplerConvergenceError(
+            f"Kepler equation did not converge: dt={dt!r} r0={r0!r} "
+            f"alpha={alpha!r} u={u!r} last |ds|={abs(ds):.3e} s={s!r}"
+        )
 
     c0, c1, c2, c3, c4, c5 = stumpff_c(s * s * alpha)
     g0 = c0
