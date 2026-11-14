@@ -174,3 +174,17 @@ def test_debias_correction_is_arcsec_scale():
         ra_deb, dec_deb = debias(ra, dec, epoch, name, bias_dict)
         shift = np.hypot((ra_deb - ra) * np.cos(np.deg2rad(dec)), dec_deb - dec) * 3600.0
         assert shift < 2.0, f"{name}: debias shift {shift:.2f} arcsec too large (epoch/ordering bug?)"
+
+
+def test_catalog_codes_match_bias_dat_header():
+    """The bias.dat header lists its catalogs, by MPC code, in column order. The
+    last one is Y (UCAC-5), not W (Gaia DR3): labelling it W gave Gaia DR3
+    observations UCAC-5 corrections and left UCAC-5 observations uncorrected
+    (issue #603)."""
+    from pathlib import Path
+
+    cache_dir = pooch.os_cache("layup")
+    with open(Path(cache_dir) / "bias.dat") as f:
+        header = [next(f) for _ in range(5)]
+    codes = header[4].lstrip("!").split()
+    assert codes == list(MPC_CATALOGS.values()), f"bias.dat catalogs {codes} do not match MPC_CATALOGS"

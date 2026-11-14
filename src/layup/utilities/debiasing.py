@@ -33,7 +33,7 @@ MPC_CATALOGS = {
     "SSTRC4": "R",
     "URAT1": "S",
     "Gaia1": "U",
-    "Gaia3": "W",
+    "UCAC5": "Y",
 }
 COORDS = ["ra", "dec", "pm_ra", "pm_dec"]
 
