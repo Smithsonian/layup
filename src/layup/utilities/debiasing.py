@@ -91,10 +91,12 @@ def debias(ra, dec, epoch_jd_tdb, catalog, bias_dict, nside=256):
     if catalog_key is None or catalog_key not in bias_dict:
         return ra, dec
 
-    # find pixel from RADEC. The Farnocchia et al. (2015) / hires-2018 bias tables
-    # are stored in NESTED healpix ordering, so a RING lookup pulls the bias from
-    # the wrong sky pixel.
-    idx = hp.ang2pix(nside, ra, dec, nest=True, lonlat=True)
+    # find pixel from RADEC. The rows of the hires-2018 bias table are in RING
+    # healpix order: tiles.dat in the same archive lists the tile centres in the
+    # same row order as bias.dat, and each centre falls in the RING pixel with its
+    # row number (issue #603). A NESTED lookup pulls the bias from the wrong sky
+    # pixel.
+    idx = hp.ang2pix(nside, ra, dec, nest=False, lonlat=True)
 
     # Retrieve the offsets and proper motions from the bias dictionary
     ra_off = bias_dict[catalog_key]["ra"][idx]

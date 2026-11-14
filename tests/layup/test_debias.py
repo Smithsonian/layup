@@ -109,31 +109,58 @@ def test_debias_accepts_catalog_code_like_a_name():
     assert (ra_code, dec_code) != (ra, dec)
 
 
-def test_debias_epoch_and_nested_ordering():
+def test_debias_epoch_and_ring_ordering():
     """Regression (no data files): the proper-motion term must use *years since
     J2000*, not the raw JD -- the raw JD extrapolates the proper motion over ~6700
     years and inflates the correction from sub-arcsec to ~10 arcsec, which turns
     every catalogued observation into a gross outlier. The bias table must also be
-    read in NESTED healpix ordering. A synthetic one-pixel table pins both: 1"/yr
-    of proper motion placed only at the NESTED pixel of (ra, dec), sampled 10 yr
-    after J2000, must yield exactly 10" -- which requires both the J2000 epoch and
-    the nested lookup.
+    read in RING healpix ordering (issue #603). A synthetic one-pixel table pins
+    both: 1"/yr of proper motion placed only at the RING pixel of (ra, dec),
+    sampled 10 yr after J2000, must yield exactly 10" -- which requires both the
+    J2000 epoch and the RING lookup.
     """
     import healpy as hp
 
     nside = 256
     ra, dec = 100.0, 20.0
     npix = hp.nside2npix(nside)
-    nest_pix = hp.ang2pix(nside, ra, dec, nest=True, lonlat=True)
+    ring_pix = hp.ang2pix(nside, ra, dec, nest=False, lonlat=True)
+    assert ring_pix != hp.ang2pix(nside, ra, dec, nest=True, lonlat=True)
     zeros = np.zeros(npix)
     pm_dec = zeros.copy()
-    pm_dec[nest_pix] = 1000.0  # 1000 mas/yr = 1 arcsec/yr, only at the nested pixel
+    pm_dec[ring_pix] = 1000.0  # 1000 mas/yr = 1 arcsec/yr, only at the RING pixel
     bias_dict = {"q": {"ra": zeros, "dec": zeros, "pm_ra": zeros, "pm_dec": pm_dec}}
 
     epoch = 2451545.0 + 10.0 * 365.25  # J2000 + 10 Julian years
     _, dec_deb = debias(ra, dec, epoch, "q", bias_dict)
     ddec_arcsec = (dec - dec_deb) * 3600.0
     assert abs(ddec_arcsec - 10.0) < 1e-6, f"expected 10 arcsec (10 yr x 1 arcsec/yr), got {ddec_arcsec}"
+
+
+def test_debias_lookup_matches_tiles_dat():
+    """Real tables (issue #603): tiles.dat, from the same archive as bias.dat,
+    gives the centre of each tile with its rows in the same order as bias.dat.
+    Every tile centre must fall in the pixel with its own row number, and debias
+    at a tile centre at J2000 must apply exactly that row's offsets."""
+    import healpy as hp
+    import pandas as pd
+    from pathlib import Path
+
+    cache_dir = pooch.os_cache("layup")
+    tiles = pd.read_csv(
+        Path(cache_dir) / "tiles.dat", sep="\\s+", comment="!", header=None, names=["row", "ra", "dec"]
+    )
+    ra = np.rad2deg(tiles["ra"].values)
+    dec = np.rad2deg(tiles["dec"].values)
+    pix = hp.ang2pix(256, ra, dec, nest=False, lonlat=True)
+    assert np.array_equal(pix, tiles["row"].values), "tile centres do not match their RING pixels"
+
+    bias_dict = generate_bias_dict(cache_dir=cache_dir)
+    code = "c"  # USNO-A2.0, which has large corrections
+    for row in (0, 12345, 393216, 700000, len(tiles) - 1):
+        ra_deb, dec_deb = debias(ra[row], dec[row], 2451545.0, code, bias_dict)
+        ddec = (dec[row] - dec_deb) * 3600.0
+        assert abs(ddec - bias_dict[code]["dec"][row]) < 1e-6, f"row {row}: wrong tile used"
 
 
 def test_debias_correction_is_arcsec_scale():
